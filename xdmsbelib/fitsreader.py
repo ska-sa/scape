@@ -11,6 +11,10 @@ import misc
 import logging
 import numpy as np
 import xdmsbe.fitsgen.fits_generator as fgen
+import cPickle
+import re
+from acsm.coordinate import Coordinate
+import acsm.transform
 
 logger = logging.getLogger("xdmsbe.xdmsbelib.fitsreader")
 
@@ -94,12 +98,15 @@ class SelectedPower(object):
     #
     # @param     self       the current object
     # @param    timeSamples Sequence of timestamps for data block
-    # @param    azAng       azimuth angle sequence for data block 
-    # @param    elAng       elevation angle sequence for data block
-    # @param    rotAng      rotator stage angle for data block
+    # @param    azAng       azimuth angle sequence for data block (in radians)
+    # @param    elAng       elevation angle sequence for data block (in radians)
+    # @param    rotAng      rotator stage angle for data block (in radians)
     # @param    powerData   The selected block of power data
     # @param    stokesFlag  True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
-    def __init__(self, timeSamples, azAng, elAng, rotAng, powerData, stokesFlag):
+    # @param    mountCoordSystem Mount coordinate system object (see acsm module)
+    # @param    targetCoordSystem Target coordinate system object (see acsm module)
+    def __init__(self, timeSamples, azAng, elAng, rotAng, powerData, stokesFlag, mountCoordSystem=None, \
+                 targetCoordSystem=None):
         ## @var powerData
         # The selected block of power data        
         self.powerData = powerData
@@ -110,10 +117,10 @@ class SelectedPower(object):
         # Sequence of timestamps for data block        
         self.timeSamples = timeSamples
         ## @var azAng
-        # azimuth angle sequence for data block         
+        # mount azimuth angle sequence for data block         
         self.azAng = azAng
         ## @var elAng
-        # elevation angle sequence for data block        
+        # mount elevation angle sequence for data block        
         self.elAng = elAng
         ## @var rotAng
         # rotator stage angle for data block        
@@ -121,6 +128,28 @@ class SelectedPower(object):
         
         self._numTimeSamples = len(self.timeSamples)
         self._midPoint = int(self._numTimeSamples//2)
+        
+        self._targetCoordSystem = None
+        self._mountCoordSystem = None
+        
+        if (mountCoordSystem and targetCoordSystem):
+            self.set_coordinate_systems(mountCoordSystem, targetCoordSystem)
+    
+    ## Set mount and target coordinate systems which was used for data capture.
+    #
+    # @param    mountCoordSys Mount coordinate system object (see acsm module)
+    # @param    targetCoordSys Target coordinate system object (see acsm module)
+    def set_coordinate_systems(self, mountCoordSys, targetCoordSys):
+        self._mountCoordSys = mountCoordSys
+        self._targetCoordSys = targetCoordSys
+        self._transformer = acsm.transform.get_factory_instance().get_transformer(mountCoordSys, targetCoordSys)
+                
+        self.targetCoords = np.zeros((self._numTimeSamples, targetCoordSys.get_degrees_of_freedom()), dtype='double')
+                
+        for k in np.arange(self._numTimeSamples):
+            mountCoordinate = Coordinate(mountCoordSys, [self.azAng[k], self.elAng[k], self.rotAng[k]])
+            targetCoordinate = self._transformer.transform_coordinate(mountCoordinate, self.timeSamples[k])
+            self.targetCoords[k, :] = targetCoordinate.get_vector()
     
     ## Returns the median (middle) time stamp for a given block of data
     #
@@ -142,6 +171,18 @@ class SelectedPower(object):
     # @return   medianElAng The median (middle) azimuth angle [deg]
     def get_median_elevation(self):
         return self.elAng[self._midpoint]
+
+    ## Returns the median (middle) target coordinates for a given block of data
+    #
+    # @param    self                    The current object
+    # @return   medianTargetCoordinate  The median (middle) azimuth angle [deg]
+    def get_median_target_coordinate(self):
+        if self._targetCoordSystem:
+            return self._targetCoords[self._midpoint, :]
+        else:
+            message = "Target coordinate system has not been set."
+            logger.error(message)
+            raise AttributeError
     
     ## Returns the median (middle) rotator stage angle for a given block of data
     #
@@ -150,7 +191,7 @@ class SelectedPower(object):
     def get_median_rotation(self):
         return self.rotAng[self._midpoint]
     
-    
+    ## Integrate selected power channels into bands excluding RFI corrupted channels
     def power_channels_to_bands_ex_rfi(self, fitsReader):
         for k, powerBlock in enumerate(self.powerData):
             _tempData = np.zeros((powerBlock.shape[0], len(fitsReader.bandNoRfiChannelList)), dtype='double')
@@ -225,10 +266,13 @@ class FitsReader(object):
         self.dataIdSeqNumListDict = None
         self._extract_data_ids()
         
-        self._startTime = np.double(self._primHdr['TSTART'])
+        self._startTime = np.double(self._primHdr['TEPOCH'])
+        self._startTimeOffset = np.double(self._primHdr['TSTART'])
         self._samplePeriod = np.double(self._primHdr['PERIOD'])
         self._numSamples = int(self._primHdr['SAMPLES'])
-    
+        
+        self._mountCoordSys = self.get_pickle_from_table('Objects', 'Mount')
+        self._targetCoordSys = self.get_pickle_from_table('Objects', 'Target')
         
     ## Get access to the primary header
     # @param self the current object
@@ -262,6 +306,15 @@ class FitsReader(object):
     # @return the specified hdu object
     def get_hdu(self, hduName):
         return self._hduL[hduName]
+    
+    ## Extract and unpickle a pickled Python object stored in a binary table HDU
+    # @param self the current object
+    # @param hduName the name of the desired binary table HDU [objects]
+    # @param colName Column name in binary table HDU from which to extract pickled object
+    # @return Unpickled object
+    def get_pickle_from_table(self, hduName, colName):
+        pickleString = (self.get_hdu_data(hduName).field(colName))[0]
+        return cPickle.loads(pickleString)
     
     ## Close the fits file
     def close(self):
@@ -334,35 +387,39 @@ class FitsReader(object):
         
                 
         if mask == None:
-            timeSamples = np.arange(self._numSamples) * self._samplePeriod + self._startTime
+            timeSamples = np.arange(self._numSamples) * self._samplePeriod + self._startTime + self._startTimeOffset
         else:
-            timeSamples = np.arange(self._numSamples)[mask] * self._samplePeriod + self._startTime
+            timeSamples = np.arange(self._numSamples)[mask] * self._samplePeriod + self._startTime + self._startTimeOffset
             
-        azAng = self.select_masked_column('MSDATA', 'AzAng', mask)
-        elAng = self.select_masked_column('MSDATA', 'ElAng', mask)        
-        rotAng = self.select_masked_column('MSDATA', 'RotAng', mask)        
+        azAng = self.select_masked_column('MSDATA', 'AzAng', mask) / 180.0 * np.pi
+        elAng = self.select_masked_column('MSDATA', 'ElAng', mask) / 180.0 * np.pi        
+        rotAng = self.select_masked_column('MSDATA', 'RotAng', mask) / 180.0 * np.pi        
         
         if stokesType:
             try:
                 I, Q, U, V = get_stokes_power(mask)
-                return SelectedPower(timeSamples, azAng, elAng, rotAng, powerData=[I, Q, U, V], stokesFlag=True)
+                return SelectedPower(timeSamples, azAng, elAng, rotAng, powerData=[I, Q, U, V], stokesFlag=True, \
+                                     mountCoordSystem=self._mountCoordSys, targetCoordSystem=self._targetCoordSys)
             except KeyError:
                 try:
                     XX, XY, YX, YY = get_cross_power(mask)
                     return SelectedPower(timeSamples, azAng, elAng, rotAng, \
-                                         powerData=[XX+YY, XX+YY, XY+YX, 1j*(YX-XY)], stokesFlag=True)
+                                         powerData=[XX+YY, XX+YY, XY+YX, 1j*(YX-XY)], stokesFlag=True, \
+                                         mountCoordSystem=self._mountCoordSys, targetCoordSystem=self._targetCoordSys)
                 except KeyError, e:
                     logger.error("Neither full (XX, XY, YX, YY) nor (I, Q, U, V) power measurments in data set")
                     raise e
         else:
             try:
                 XX, XY, YX, YY = get_cross_power(mask)
-                return SelectedPower(timeSamples, azAng, elAng, rotAng, powerData=[XX, XY, YX, YY], stokesFlag=False)
+                return SelectedPower(timeSamples, azAng, elAng, rotAng, powerData=[XX, XY, YX, YY], stokesFlag=False, \
+                                     mountCoordSystem=self._mountCoordSys, targetCoordSystem=self._targetCoordSys)
             except KeyError:
                 try:
                     I, Q, U, V = get_stokes_power(mask)
                     return SelectedPower(timeSamples, azAng, elAng, rotAng, \
-                                         powerData=[I+Q, U+1j*V, U-1j*V, U-1j*V], stokesFlag = False)
+                                         powerData=[I+Q, U+1j*V, U-1j*V, U-1j*V], stokesFlag = False, \
+                                         mountCoordSystem=self._mountCoordSys, targetCoordSystem=self._targetCoordSys)
                 except KeyError, e:
                     logger.error("Neither full (XX, XY, YX, YY) nor (I, Q, U, V) power measurments in data set")
                     raise e
@@ -470,7 +527,7 @@ class FitsReader(object):
     
     # pylint: disable-msg=R0912,R0915
     
-    def extract_data(self, dataIdList, dataSelectionList):
+    def extract_data(self, dataIdList, dataSelectionList):        
         
         dataDict = {}
         
@@ -486,9 +543,7 @@ class FitsReader(object):
                         selectDict['ID'] = dataId
                         selectDict['ID_SeqN'] = dataIdSeqNum
                         selectMask = self.get_select_mask('MSDATA', selectDict)                    
-                        dataDict[selectIdStr + '_' + dataIdStr] = self.select_masked_power(selectMask, 
-                                                                                           stokesType=stokes)
-        
+                        dataDict[selectIdStr + '_' + dataIdStr] = self.select_masked_power(selectMask, stokesType=stokes)
         return dataDict
     
 
