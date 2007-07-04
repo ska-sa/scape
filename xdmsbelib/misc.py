@@ -78,7 +78,6 @@ def fmt_seq_num(seqNum, digits):
 # pylint: disable-msg=R0913
 #
 def get_power(numChannels, numIntegrationBins, temperature, channelBandwidth, rxGain):
-
     np.random.seed()
     numSamples = len(temperature)
     pMean  =  np.array(temperature) * (boltzmannK * channelBandwidth * pow(10.0, rxGain / 10.0))
