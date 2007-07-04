@@ -416,8 +416,11 @@ class DistributionStatsArray(object):
         #self.var[index] = 1/(data.size-1)*((data - self.mean[index])**2)
         self.num[index] = data.size
     
-    
-
+    ## Find instances of zeros variance and set it to some small finite value
+    # @param self  the current object
+    # @param minVar  minimum variance floor
+    def floor_zero_var(self, minVar):
+        self.var[self.var==0] = minVar
 
 
 #-----------------------------------------------------------------------------------------------------------------
