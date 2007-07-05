@@ -507,33 +507,14 @@ class FitsReader(object):
     #    extracted from the FITS file (if available).
     #
     #    @param   fitsReader        Object for reading the fits file
-    #    @param   dataIdList        List of data ID strings for which to extract data, i.e. ['hot', 'cold']
+    #    @param   dataIdNameList    List of data ID names for which to extract data, i.e. ['hot', 'cold']
     #    @param   dataSelectionList List of data selection 3-tuples of the following form:
     #                                (selectionIdentifierString, selectionDictionary, stokesTypeFlag) , e.g.,
     #                                ('onND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)
     #
-    #    @return     dataDict    Data dictionary containing the following entries for each dataId in the mapping of 
-    #                            dataIdList ID strings to ID numbers in the data set:
-    #        \verbatim
-    #                    'time_<dataId>-<dataIdSeqNum>': time stamp of specific dataId and dataIdSeqNum chunck of data
-    #                    'azAng_<dataId>-<dataIdSeqNum>': azimuth angle (degrees) for specific dataId and 
-    #                                                     dataIdSeqNum chunck of data
-    #                    'elAng_<dataId>-<dataIdSeqNum>': elevation angle (degrees) for specific dataId and 
-    #                                                     dataIdSeqNum chunck of data
-    #                    'rotAng_<dataId>-<dataIdSeqNum>': rotator angle (degrees) for specific dataId and 
-    #                                                      dataIdSeqNum chunck of data
-    #                    And for each entry in dataSelectionList :
-    #                    '<selectionIdentifierString>_<dataId>-<dataIdSeqNum>' : Measured data for given selection, 
-    #                                                                            dataID and dataID sequence number
+    #    @return  dataDict    Data dictionary containing a SelectedPower object for each of the selection products of
+    #                            dataIdNameList[i] X dataSelectionList[j] 
     #
-    #        \endverbatim
-    #
-    #    \verbatim
-    #    Data formats:
-    #
-    #                dataDict:    List of 4 numpy.ndarrays, each corresponding to one of the 4 Stokes configurations.
-    #                             Each ndarray has dimensions numberOfSamples-by-numberOfChannels
-    #    \endverbatim
     
     # pylint: disable-msg=R0912,R0915
     
