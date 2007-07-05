@@ -461,7 +461,8 @@ class FitsReader(object):
     # @todo revisit dataIDs == 0, check test code
     def _extract_data_ids(self):
         msHdr = self.get_hdu_header('MSDATA')
-        # Determine what calibration ID's are present in the data set
+        
+        # Determine what calibration ID is present in this FITS file
         dataIdNumList = list(set(self._msData.field('ID')))
         dataIdNumList.sort()
         
