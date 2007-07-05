@@ -277,23 +277,41 @@ def check_equality_of_means(deltaDeltaMeanConfInterval):
 ## Calculate interpolated tippinbg curve system temperatures at a list of desired elevation angles
 #  given known values.
 #
-# @param    knownElAngs      list of known frequencies
-# @param    knownTsys       list of known system temperatures in same order as knownFreqs
-# @param    desiredElAngs    list of desired frequencies for temperatures
+# @param    knownElAngs      array of elevation angles (in rad) at which tipping curve is known
+# @param    knownFreqs       array of band frequencies at which tipping curve is known    
+# @param    knownTsys        2D array of known system temperatures, indexed by knownElAngs x knownFreqs
+# @param    desiredElAngs    array of desired elevation angles (in rad) for system temperatures
+# @param    desiredFreqs     array of desired frequencies for system temperatures
 #
-# @return   list of desired temperatures corresponding to desiredElAngs
+# @return   interpolatedTsys 2D array of interpolated system temperatures (interpolated tipping curve)
 
-def interpolate_tipping_curve(knownElAngs, knownTsys, desiredElAngs):
-    knownElAngs = np.atleast_1d(knownElAngs)
-    knownTsys = np.atleast_1d(knownTsys)
-    desiredElAngs = np.atleast_1d(desiredElAngs)
-    assert(len(knownElAngs.shape) == 1)
-    assert(knownElAngs.shape == knownTsys.shape)
-    assert(knownElAngs.size > 5)
-    polynomialDegree = 4    
-    p1 = np.polyfit(knownElAngs, knownTsys, deg=polynomialDegree)
-    return np.polyval(p1, desiredElAngs)
+def interpolate_tipping_curve(knownElAngs, knownFreqs, knownTsys, desiredElAngs, desiredFreqs):
+    
+    import scipy.sandbox.delaunay as delaunay
+    
+    # Get 2D interpolation grid
+    yi = np.tile(desiredFreqs[np.newaxis, :], (len(desiredElAngs), 1))
+    xi = np.tile(desiredElAngs[:, np.newaxis], (1, len(desiredFreqs)))    
+    
+    # triangulate data
+    tri = delaunay.Triangulation(knownFreqs, knownElAngs)
+    
+    # interpolate data
+    interp = tri.nn_interpolator(knownTsys)
 
+    interpolatedTsys = interp(xi,yi)
+    
+    # knownElAngs = np.atleast_1d(knownElAngs)
+    # knownTsys = np.atleast_1d(knownTsys)
+    # desiredElAngs = np.atleast_1d(desiredElAngs)
+    # assert(len(knownElAngs.shape) == 1)
+    # assert(knownElAngs.shape == knownTsys.shape)
+    # assert(knownElAngs.size > 5)
+    # polynomialDegree = 4    
+    # p1 = np.polyfit(knownElAngs, knownTsys, deg=polynomialDegree)
+    # return np.polyval(p1, desiredElAngs)
+
+    return interpolatedTsys
 
 
 #---------------------------------------------------------------------------------------------------------------------
