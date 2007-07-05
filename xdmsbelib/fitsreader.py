@@ -226,6 +226,10 @@ class FitsReader(object):
         # The name of the fits file
         self.fitsFilename = self._primHdr['CFName']
         
+        ## @var expSeqNum
+        # The experiment sequence number associated with this FITS file
+        self.expSeqNum = self._primHdr['ExpSeqN']
+        
         ## @var rfiChannelList
         # List of rfi channel indexes
         self.rfiChannelList = None
@@ -249,17 +253,21 @@ class FitsReader(object):
         self.stokesIdxDict = None
         self._extract_stokes_mappings()
         
-        ## @var dataIdList
+        ## @var dataIdNameList
+        # List of data id names
+        self.dataIdNameList = None
+        
+        ## @var dataIdNumList
         # List of data id numbers
-        self.dataIdList = None
+        self.dataIdNumList = None        
         
         ## @var dataIdDict
         # Dictionary with the mapping from id names to numbers
-        self.dataIdDict = None
+        self.dataIdNameToNumDict = None
         
-        ## @var dataIdReverseDict
+        ## @var dataIdNumToNameDict
         # Dictionary with the mapping from id numbers to names        
-        self.dataIdReverseDict = None
+        self.dataIdNumToNameDict = None
         
         ## @var dataIdSeqNumListDict
         # Dictionary with lists of sequences numbers for each data id
@@ -454,37 +462,39 @@ class FitsReader(object):
     def _extract_data_ids(self):
         msHdr = self.get_hdu_header('MSDATA')
         # Determine what calibration ID's are present in the data set
-        dataIdList = list(set(self._msData.field('ID')))
-        dataIdList.sort()
+        dataIdNumList = list(set(self._msData.field('ID')))
+        dataIdNumList.sort()
         
-        if len(dataIdList) > 0:
+        if len(dataIdNumList) > 0:
             try:
-                dataIdList.remove(0)
+                dataIdNumList.remove(0)
             # pylint: disable-msg=W0704
             except ValueError:
                 pass
         else:
             logger.error("No data IDs present in measurement set meta data")
         
-        dataIdList = np.array(dataIdList, dtype=int)
+        dataIdNumList = np.array(dataIdNumList, dtype=int)
         
         # Build calibration ID dictionary
-        self.dataIdList = dataIdList
-        self.dataIdDict = {}
-        self.dataIdReverseDict = {}
+        self.dataIdNumList = dataIdNumList
+        self.dataIdNameToNumDict = {}
+        self.dataIdNumToNameDict = {}
         self.dataIdSeqNumListDict = {}
-        for dataId in dataIdList:
+        self.dataIdNameList = []
+        for dataIdNum in dataIdNumList:
             try:
-                idName = str(msHdr['ID'+str(dataId)]).upper()
+                idName = str(msHdr['ID'+str(dataIdNum)]).lower()
             except KeyError, e:
-                logger.error("Data ID %d mapping not found in MSDATA.header as expected." % dataId)
+                logger.error("Data ID %d mapping not found in MSDATA.header as expected." % dataIdNum)
                 raise e
-            self.dataIdDict[idName] = dataId
-            self.dataIdReverseDict[dataId] = idName
+            self.dataIdNameList.append(idName)    
+            self.dataIdNameToNumDict[idName] = dataIdNum
+            self.dataIdNumToNameDict[dataIdNum] = idName
             # Determine calibration ID sequence numbers present in data
-            mask = self.get_select_mask('MSDATA', {'ID' : dataId})
+            mask = self.get_select_mask('MSDATA', {'ID' : dataIdNum})
             dataIdSeqNumList = np.sort(list(set(self.select_masked_column('MSDATA', 'ID_SeqN', mask))))
-            self.dataIdSeqNumListDict[dataId] = dataIdSeqNumList
+            self.dataIdSeqNumListDict[idName] = dataIdSeqNumList
     
     
     #-------------------------------------------------------------------------------------------------------------------
@@ -497,7 +507,7 @@ class FitsReader(object):
     #    extracted from the FITS file (if available).
     #
     #    @param   fitsReader        Object for reading the fits file
-    #    @param   dataIdList        List of data ID strings for which to extract data, i.e. ['HOT', 'COLD']
+    #    @param   dataIdList        List of data ID strings for which to extract data, i.e. ['hot', 'cold']
     #    @param   dataSelectionList List of data selection 3-tuples of the following form:
     #                                (selectionIdentifierString, selectionDictionary, stokesTypeFlag) , e.g.,
     #                                ('onND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)
@@ -527,23 +537,24 @@ class FitsReader(object):
     
     # pylint: disable-msg=R0912,R0915
     
-    def extract_data(self, dataIdList, dataSelectionList):        
+    def extract_data(self, dataIdNameList, dataSelectionList):        
         
         dataDict = {}
         
-        for dataId in self.dataIdList:
-        
-            if self.dataIdReverseDict[dataId] in dataIdList:
-                
-                for dataIdSeqNum in self.dataIdSeqNumListDict[dataId]:
+        for dataIdName in self.dataIdNameList:
             
-                    dataIdStr = str(dataId) + '-' + str(dataIdSeqNum)
+            if dataIdName in dataIdNameList:
+                
+                for dataIdSeqNum in self.dataIdSeqNumListDict[dataIdName]:
+            
+                    dataIdStr = 'esn' + str(self.expSeqNum) + '_' + dataIdName + str(dataIdSeqNum)
+                    #dataIdStr = str(dataId) + '-' + str(dataIdSeqNum)    # This is the old way of doing it...
         
-                    for selectIdStr, selectDict, stokes in dataSelectionList:
-                        selectDict['ID'] = dataId
+                    for tagStr, selectDict, stokes in dataSelectionList:
+                        selectDict['ID'] = self.dataIdNameToNumDict[dataIdName]
                         selectDict['ID_SeqN'] = dataIdSeqNum
                         selectMask = self.get_select_mask('MSDATA', selectDict)                    
-                        dataDict[selectIdStr + '_' + dataIdStr] = self.select_masked_power(selectMask, stokesType=stokes)
+                        dataDict[dataIdStr + '_' + tagStr] = self.select_masked_power(selectMask, stokesType=stokes)
         return dataDict
     
 
