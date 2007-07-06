@@ -269,6 +269,10 @@ class FitsReader(object):
         # Dictionary with the mapping from id numbers to names        
         self.dataIdNumToNameDict = None
         
+        ## @var dataIdSeqNumList
+        # List of sequences numbers for each data id
+        self.dataIdSeqNumList = None
+        
         ## @var dataIdSeqNumListDict
         # Dictionary with lists of sequences numbers for each data id
         self.dataIdSeqNumListDict = None
@@ -336,6 +340,24 @@ class FitsReader(object):
     # @param colValueDict dictionary of column names and desired values to select by
     # @return a mask array (Boolean numarray object)
     def get_select_mask(self, hduName, colValueDict):
+        # This next block was added after we (Richard & Simon) decided to only ever use one dataId and one dataIdSeqNum
+        # per fits file. This means these parameters are constant over one FITS file, resulting in them now being
+        # specified in the MSDATA header, and no longer as seperate columns in the MSDATA data table.
+        try:
+            dataId = colValueDict.pop('ID')
+            if dataId not in self.dataIdNumList:
+                mask = []
+                return mask
+            try:
+                dataIdSeqNum = colValueDict.pop('ID_SeqN')
+                if dataIdSeqNum not in self.dataIdSeqNumList:
+                    mask = []
+                    return mask
+            except KeyError:
+                dataIdSeqNum = None
+        except KeyError:
+            dataID = None
+        
         mask = None
         hdu = self.get_hdu(hduName)
         colNames = [x.lower() for x in hdu.columns.names]        
@@ -463,12 +485,17 @@ class FitsReader(object):
         msHdr = self.get_hdu_header('MSDATA')
         
         # Determine what calibration ID is present in this FITS file
-        dataIdNumList = list(set(self._msData.field('ID')))
-        dataIdNumList.sort()
+        dataId = msHdr['DATAID']
+        
+        #dataIdNumList = list(set(self._msData.field('ID')))
+        #dataIdNumList.sort()
+        dataIdNumList = [dataId]
         
         if len(dataIdNumList) > 0:
             try:
                 dataIdNumList.remove(0)
+                if len(dataIdNumList) == 0:
+                    logger.error("No data IDs present in measurement set meta data")
             # pylint: disable-msg=W0704
             except ValueError:
                 pass
@@ -493,9 +520,11 @@ class FitsReader(object):
             self.dataIdNameToNumDict[idName] = dataIdNum
             self.dataIdNumToNameDict[dataIdNum] = idName
             # Determine calibration ID sequence numbers present in data
-            mask = self.get_select_mask('MSDATA', {'ID' : dataIdNum})
-            dataIdSeqNumList = np.sort(list(set(self.select_masked_column('MSDATA', 'ID_SeqN', mask))))
-            self.dataIdSeqNumListDict[idName] = dataIdSeqNumList
+            dataIdSeqNum = msHdr['SEQUID']
+            #mask = self.get_select_mask('MSDATA', {'ID' : dataIdNum})
+            #dataIdSeqNumList = np.sort(list(set(self.select_masked_column('MSDATA', 'ID_SeqN', mask))))
+            self.dataIdSeqNumList = [dataIdSeqNum]
+            self.dataIdSeqNumListDict[idName] = self.dataIdSeqNumList
     
     
     #-------------------------------------------------------------------------------------------------------------------
