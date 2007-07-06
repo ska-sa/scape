@@ -371,7 +371,6 @@ class FitsReader(object):
                 mask = (hdu.data.field(colName) == value)
         present = np.any(mask)
         if not present:
-            import pdb; pdb.set_trace()         # ***** INTERACTIVE DEBUGGING *****
             message = 'Mask with colValueDict=%s is EMPTY!' % colValueDict
             logger.error(message)
             raise ValueError, message

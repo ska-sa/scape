@@ -289,16 +289,28 @@ def interpolate_tipping_curve(knownElAngs, knownFreqs, knownTsys, desiredElAngs,
     
     import scipy.sandbox.delaunay as delaunay
     
-    # Get 2D interpolation grid
-    yi = np.tile(desiredFreqs[np.newaxis, :], (len(desiredElAngs), 1))
-    xi = np.tile(desiredElAngs[:, np.newaxis], (1, len(desiredFreqs)))    
+    freqScale = np.std(np.ravel(knownFreqs))
+    angleScale = np.std(np.ravel(knownElAngs)) 
     
+    # Scale variables to comparable ranges
+    kElAngs = knownElAngs / angleScale
+    dElAngs = desiredElAngs / angleScale
+    kFreqs = knownFreqs / freqScale
+    dFreqs = desiredFreqs / freqScale
+    
+    # Get 2D interpolation grid
+    yi = np.tile(dFreqs[np.newaxis, :], (len(dElAngs), 1))
+    xi = np.tile(dElAngs[:, np.newaxis], (1, len(dFreqs)))    
+    
+    y = np.tile(kFreqs[np.newaxis, :], (len(kElAngs), 1))
+    x = np.tile(kElAngs[:, np.newaxis], (1, len(kFreqs)))
+        
     # triangulate data
-    tri = delaunay.Triangulation(knownFreqs, knownElAngs)
+    tri = delaunay.Triangulation(np.ravel(x), np.ravel(y))
     
     # interpolate data
-    interp = tri.nn_interpolator(knownTsys)
-
+    interp = tri.nn_interpolator(np.ravel(knownTsys))
+    
     interpolatedTsys = interp(xi,yi)
     
     # knownElAngs = np.atleast_1d(knownElAngs)
@@ -310,7 +322,7 @@ def interpolate_tipping_curve(knownElAngs, knownFreqs, knownTsys, desiredElAngs,
     # polynomialDegree = 4    
     # p1 = np.polyfit(knownElAngs, knownTsys, deg=polynomialDegree)
     # return np.polyval(p1, desiredElAngs)
-
+    
     return interpolatedTsys
 
 
