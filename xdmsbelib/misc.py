@@ -362,11 +362,11 @@ def randn_complex(dim, numSamples, complexType='complex128', power=1, whiten=Tru
 #
 # @param    numPowerSamples                 dimension of random variables
 # @param    numVoltSamplesPerIntPeriod      number of samples
-# @param    TotalPowerOfOriginalSignal      Data type of samples (default = 'complex128')
+# @param    desiredTotalPower               desired total power of generated signal
 # @param    stokesVector                    Desired Stokes parameters of polarized signal  ( default=[1,0,0,0] )
 # @param    outputFormat                    'stokes' or 'coherency' vectors             ()
 # @return   sigBuf                          data sample buffer
-def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, TotalPowerOfOriginalSignal=1, stokesVector=[1,0,0,0], \
+def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTotalPower=1, stokesVector=[1,0,0,0], \
                         outputFormat='stokes'):
     
     RVec = np.dot(stokes2coherencyMatrix, np.array(stokesVector)) # Coherency vector 
@@ -383,11 +383,15 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, TotalPowerO
     SS = np.array(np.outer(S,np.transpose(np.conjugate(S))), dtype='complex128')     # Complex Tensor product of S
         
     e_u_pseudo_int = np.zeros((4, numPowerSamples), dtype='complex128')
-    scale = (TotalPowerOfOriginalSignal/2)/(2*numVoltSamplesPerIntPeriod)
+    scale = 1/(4*numVoltSamplesPerIntPeriod)
     e_u_pseudo_int[0, :] = scale * np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples))
     e_u_pseudo_int[3, :] = scale * np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples))
     
     sigBuf = np.dot(SS, e_u_pseudo_int)
+    
+    totalPower = np.mean(np.abs(sigBuf[0,:]) + np.abs(sigBuf[3,:]))
+     
+    sigBuf *= (desiredTotalPower / totalPower)
     
     if outputFormat == 'stokes':
         sigBuf = np.dot(coherency2stokesMatrix, sigBuf)
