@@ -14,6 +14,7 @@ import xdmsbe.fitsgen.fits_generator as fgen
 import cPickle
 from acsm.coordinate import Coordinate
 import acsm.transform
+from misc import stokes2coherencyMatrix, coherency2stokesMatrix
 
 logger = logging.getLogger("xdmsbe.xdmsbelib.fitsreader")
 
@@ -139,9 +140,136 @@ class SelectedPower(object):
         self._targetCoords = None
         self._transformer = None
         self._targetCoordSys = None
+        self._FptPost = None
+        self._FptPre = None
+        self._FptPostTime = None
+        self._FptPreTime = None        
+        self._Fpt_func = None
+        self._tipCurveX = None
+        self._tipCurveY = None
+        self._tipCurveSubtracted = False
+        self._powerConvertedToTemp = False
+        self._channelsConvertedToBands = False
     
+    ## Convert the contained power buffer from stokes to coherency vectors
+    # @param self the current object
+    # @return self the current object
+    def convert_to_coherency(self):
+        if self.stokesFlag:
+            self.stokesFlag = False
+            self.powerData = [0.5*(self.powerData[0]+self.powerData[1]), 0.5*(self.powerData[2]+1j*self.powerData[3]), \
+                              0.5*(self.powerData[2]-1j*self.powerData[3]), 0.5*(self.powerData[0]-self.powerData[1])]
+        return self
+        
+    ## Convert the contained power buffer from coherency to stokes vectors
+    # @param self the current object        
+    # @return self the current object
+    def convert_to_stokes(self):
+        if not(self.stokesFlag):
+            self.stokesFlag = True
+            self.powerData = [self.powerData[0]+self.powerData[3], self.powerData[0]-self.powerData[3], \
+                              self.powerData[1]+self.powerData[2], 1j*(self.powerData[2]-self.powerData[1])]
+        return self
+        
+    ## Set the operating tipping curve for the given elevation angle range of the power measurements scan
+    #
+    # @param    self            The object
+    # @param    tipCurveX       The tipping curve (Tsys [K] as a function of elevation angle and band) for the X pol.
+    # @param    tipCurveY       The tipping curve (Tsys [K] as a function of elevation angle and band) for the Y pol.
+    def set_tipping_curve(self, tipCurveX, tipCurveY):
+        self._tipCurveX = tipCurveX
+        self._tipCurveY = tipCurveY
+        return self
+        
+    ## Subtract the tipping curve from the scan data
+    # @param self the current object
+    # @return self the current object
+    def subtract_tipping_curve(self):
+        if not(self._tipCurveSubtracted):
+            if self._powerConvertedToTemp:
+                if (not(self._tipCurveX == None) and not(self._tipCurveY==None)):
+                    if not(self.stokesFlag):
+                        self.powerData[0] -= self._tipCurveX
+                        self.powerData[3] -= self._tipCurveY
+                    else:
+                        message = "Cannot subtract tipping curve if power is in Stokes vector format. First convert to coherency vector format"
+                        logger.error(message)
+                        raise ValueError, message
+                else:
+                    message = "Cannot subtract tipping curve. Tipping curve not set."
+                    logger.error(message)
+                    raise ValueError, message                    
+            else:
+                message = "Cannot subtract tipping curve from uncoverted (raw) power measurments."
+                logger.error(message)
+                raise ValueError, message
+        return self
+        
+    ## Set the power-to-temperature conversion factor (Fpt : gain term) for the given selected power object
+    # This function takes two inputs. The gain before the scan and/or the gain after the scan. If only one is 
+    # specified, that is used as the operative gain for the whole scan. If both are specified, a linearly 
+    # interpolated gain profile is used.
+    #
+    # @param    self            The current object
+    # @param    FptPre          The Fpt gain term before the scan
+    # @param    FptPreTime      Timestamp (seconds) of the Fpt data
+    # @param    FptPost         The Fpt gain term after the scan
+    # @param    FptPostTime     Timestamp (seconds) of the Fpt data    
+    # @return   self            The current object
+    def set_Fpt(self, FptPre = None, FptPreTime = None, FptPost = None, FptPostTime = None):
+        if not(FptPost==None):
+            self._FptPost = FptPost
+            self._FptPostTime = FptPostTime
+        if not(FptPre==None):
+            self._FptPre = FptPre
+            self._FptPreTime = FptPreTime
+        return self
+    
+    ## Convert the selected power measurements into temperature using the contained power-temp gain profile
+    def convert_power_to_temp(self):
+        
+        if not(self._powerConvertedToTemp):
+        
+            def get_Fpt_func(slope, offset):
+                def f(X):
+                    foo = f.m * X + f.c
+                    return foo
+            
+                f.m = slope
+                f.c = offset 
+                return f
+        
+            if (self._FptPre == None) and (self._FptPost == None):
+                message = 'Either have to specifiy a positive finite pre-Fpt or post-Fpt or both.'
+                logger.error(message)
+                raise ValueError, message
+            elif not(self._FptPre == None) and (self._FptPost == None):
+                slope = 0
+                offset = self._FptPre
+            elif not(self._FptPost == None) and (self._FptPre == None):
+                slope = 0
+                offset = self._FptPost
+            else:
+                slope = (self._FptPost - self._FptPre) / (self._FptPostTime - self._FptPreTime)
+                offset = self._FptPre - slope * self.timeSamples[0]
+            self._Fpt_func = get_Fpt_func(slope, offset)
+            
+            for n, t in enumerate(self.timeSamples):
+                Fpt = self._Fpt_func(t)
+                self.powerData[0][n, :] *= Fpt[0, :]
+                self.powerData[1][n, :] *= Fpt[1, :]
+                self.powerData[2][n, :] *= Fpt[2, :]
+                self.powerData[3][n, :] *= Fpt[3, :]
+            
+            self._powerConvertedToTemp = True
+            
+        return self
+                        
+            
+        
     ## Set mount and target coordinate systems which was used for data capture.
     #
+    # @param    self          the current object
     # @param    mountCoordSys Mount coordinate system object (see acsm module)
     # @param    targetCoordSys Target coordinate system object (see acsm module)
     def set_coordinate_systems(self, mountCoordSys, targetCoordSys):
@@ -155,6 +283,8 @@ class SelectedPower(object):
             mountCoordinate = Coordinate(mountCoordSys, [self.azAng[k], self.elAng[k], self.rotAng[k]])
             targetCoordinate = self._transformer.transform_coordinate(mountCoordinate, self.timeSamples[k])
             self.targetCoords[k, :] = targetCoordinate.get_vector()
+            
+        return self
     
     ## Returns the median (middle) time stamp for a given block of data
     #
@@ -197,12 +327,18 @@ class SelectedPower(object):
         return self.rotAng[self._midpoint]
     
     ## Integrate selected power channels into bands excluding RFI corrupted channels
+    # @params self          the current object
+    # @params fitsReader    A FitsReader object containing the relevant channel-to-band mapping and 
+    #         RFI channel information
+    # @return self          the updated current object
     def power_channels_to_bands_ex_rfi(self, fitsReader):
-        for k, powerBlock in enumerate(self.powerData):
-            _tempData = np.zeros((powerBlock.shape[0], len(fitsReader.bandNoRfiChannelList)), dtype='double')
-            for b, bandChannels in enumerate(fitsReader.bandNoRfiChannelList):
-                _tempData[:, b] = np.mean(powerBlock[:, bandChannels], 1)
-            self.powerData[k] = _tempData
+        if not(self._channelsConvertedToBands):
+            for k, powerBlock in enumerate(self.powerData):
+                _tempData = np.zeros((powerBlock.shape[0], len(fitsReader.bandNoRfiChannelList)), dtype='double')
+                for b, bandChannels in enumerate(fitsReader.bandNoRfiChannelList):
+                    _tempData[:, b] = np.mean(powerBlock[:, bandChannels], 1)
+                self.powerData[k] = _tempData
+                self._channelsConvertedToBands = True
         return self 
     
 
@@ -442,7 +578,7 @@ class FitsReader(object):
                 try:
                     XX, XY, YX, YY = get_cross_power(mask)
                     return SelectedPower(timeSamples, azAng, elAng, rotAng, \
-                                         powerData=[XX+YY, XX+YY, XY+YX, 1j*(YX-XY)], stokesFlag=True, \
+                                         powerData=[XX+YY, XX-YY, XY+YX, 1j*(YX-XY)], stokesFlag=True, \
                                          mountCoordSystem=self._mountCoordSys, targetCoordSystem=self._targetCoordSys)
                 except KeyError, e:
                     logger.error("Neither full (XX, XY, YX, YY) nor (I, Q, U, V) power measurments in data set")
@@ -456,7 +592,7 @@ class FitsReader(object):
                 try:
                     I, Q, U, V = get_stokes_power(mask)
                     return SelectedPower(timeSamples, azAng, elAng, rotAng, \
-                                         powerData=[I+Q, U+1j*V, U-1j*V, U-1j*V], stokesFlag = False, \
+                                         powerData=[0.5*(I+Q), 0.5*(U+1j*V), 0.5*(U-1j*V), 0.5*(I-Q)], stokesFlag = False, \
                                          mountCoordSystem=self._mountCoordSys, targetCoordSystem=self._targetCoordSys)
                 except KeyError, e:
                     logger.error("Neither full (XX, XY, YX, YY) nor (I, Q, U, V) power measurments in data set")

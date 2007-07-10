@@ -375,7 +375,8 @@ def calc_power_stats(bandNoRfiChannelList, numStokes, dataObj):
     for b, bandChannels in enumerate(bandNoRfiChannelList):
         for s in xrange(numStokes):
             data = (dataObj.powerData[s])[:, bandChannels]
-            statsArray.add_data(data, (s, b))
+            timeStamps = dataObj.timeSamples
+            statsArray.add_data(data, timeStamps, (s, b))
     return statsArray
 
 
@@ -413,15 +414,17 @@ class DistributionStatsArray(object):
     # @param mean  array of mean values
     # @param var   array of variance values
     # @param num   array of number of samples
+    # @param timeStamp timestamp associated with data
     # @param shape desired shape of statistics arrays   
-    def __init__(self, mean=None, var=None, num=None, shape=None):
+    def __init__(self, mean=None, var=None, num=None, timeStamp=None, shape=None):
         
         if shape:
-            if mean or var or num:
+            if mean or var or num or timeStamp:
                 logger.warn("shape arg overrides mean, var and num args")
             self.mean = np.zeros(shape, 'double')
             self.var = np.zeros(shape, 'double')
             self.num = np.zeros(shape, 'double')
+            self.timeStamp = None
         else:
             if mean == None or var == None or num == None:
                 message = "Must specify all of mean, var and num"
@@ -430,6 +433,7 @@ class DistributionStatsArray(object):
             self.mean = np.atleast_1d(mean)
             self.var = np.atleast_1d(var)
             self.num = np.atleast_1d(num)
+            self.timeStamp = None
         # Check that all inputs have correct dimensions
         dimSet = set([self.mean.shape, self.var.shape, self.num.shape])
         assert(len(dimSet) == 1)
@@ -439,12 +443,14 @@ class DistributionStatsArray(object):
     # array of data.
     # @param self  the current object
     # @param data  numpy.ndarray of sample values
+    # @param timeStamps timestamps of data block samples
     # @param index the index in the stats array for the mean, var and num
-    def add_data(self, data, index):
+    def add_data(self, data, timeStamps, index):
         self.mean[index] = np.mean(data.ravel())
         self.var[index] = np.cov(data.ravel())
         #self.var[index] = 1/(data.size-1)*((data - self.mean[index])**2)
         self.num[index] = data.size
+        self.timeStamp = np.mean(timeStamps.ravel())
         return self
         
     ## Find instances of zeros variance and set it to some small finite value
