@@ -338,19 +338,19 @@ def default_usage(parser):
 # @return   sigBuf        data sample buffer
 def randn_complex(dim, numSamples, complexType='complex128', power=1, whiten=True):
     shapeTuple = (dim, numSamples)
-    c = np.ndarray(shapeTuple, dtype=complexType)
-    scale = np.sqrt(power/dim)
-    c.real = np.random.standard_normal(shapeTuple)
-    c.imag = np.random.standard_normal(shapeTuple)
-    P = np.zeros((dim,dim), dtype='complex128')    
+    sigBuf = np.ndarray(shapeTuple, dtype=complexType)
+    scale = np.sqrt(power / dim)
+    sigBuf.real = np.random.standard_normal(shapeTuple)
+    sigBuf.imag = np.random.standard_normal(shapeTuple)
+    P = np.zeros((dim, dim), dtype='complex128')    
     if whiten:
         for k in np.arange(numSamples):
-            P = P + np.outer(c[:,k],c[:,k].conj())
-        P = (1/(numSamples-1)) * P
+            P = P + np.outer(sigBuf[:, k], sigBuf[:, k].conj())
+        P = (1 / (numSamples - 1)) * P
         A = np.linalg.inv(np.linalg.cholesky(P)) # Whiten the data
-        c = np.dot(A, c)
-    c = scale * c
-    return c
+        sigBuf = np.dot(A, sigBuf)
+    sigBuf *= scale
+    return sigBuf
     
 
 #---------------------------------------------------------------------------------------------------------
@@ -366,8 +366,9 @@ def randn_complex(dim, numSamples, complexType='complex128', power=1, whiten=Tru
 # @param    stokesVector                    Desired Stokes parameters of polarized signal  ( default=[1,0,0,0] )
 # @param    outputFormat                    'stokes' or 'coherency' vectors             ()
 # @return   sigBuf                          data sample buffer
-def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTotalPower=1, stokesVector=[1,0,0,0], \
-                        outputFormat='stokes'):
+# pylint: disable-msg=W0102,R0914
+def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTotalPower=1, 
+                        stokesVector=[1, 0, 0, 0], outputFormat='stokes'):
     
     RVec = np.dot(stokes2coherencyMatrix, np.array(stokesVector)) # Coherency vector 
     Rxx = RVec[0]
@@ -376,14 +377,14 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
     Ryy = RVec[3]
     P = np.array([[Rxx, Rxy], [Ryx, Ryy]],'complex128')  # Correlation matrix for given Stokes parameters
     # Have to check for matrices which are non-positive definite
-    if ((P[0,1]==0) and (P[1,0]==0)) and ((P[0,0]==0) or (P[1,1]==0)):
+    if ((P[0, 1]==0) and (P[1, 0]==0)) and ((P[0, 0]==0) or (P[1, 1]==0)):
         S = np.sqrt(P)
     else:
         S = np.linalg.cholesky(P)    
-    SS = np.array(np.outer(S,np.transpose(np.conjugate(S))), dtype='complex128')     # Complex Tensor product of S
+    SS = np.array(np.outer(S, np.transpose(np.conjugate(S))), dtype='complex128')     # Complex Tensor product of S
         
     e_u_pseudo_int = np.zeros((4, numPowerSamples), dtype='complex128')
-    scale = 1/(4*numVoltSamplesPerIntPeriod)
+    scale = 1 / (4 * numVoltSamplesPerIntPeriod)
     e_u_pseudo_int[0, :] = scale * np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples))
     e_u_pseudo_int[3, :] = scale * np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples))
     
@@ -397,3 +398,5 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
         sigBuf = np.dot(coherency2stokesMatrix, sigBuf)
     
     return sigBuf
+
+

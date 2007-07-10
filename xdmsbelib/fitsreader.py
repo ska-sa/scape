@@ -12,7 +12,6 @@ import logging
 import numpy as np
 import xdmsbe.fitsgen.fits_generator as fgen
 import cPickle
-import re
 from acsm.coordinate import Coordinate
 import acsm.transform
 
@@ -105,6 +104,7 @@ class SelectedPower(object):
     # @param    stokesFlag  True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
     # @param    mountCoordSystem Mount coordinate system object (see acsm module)
     # @param    targetCoordSystem Target coordinate system object (see acsm module)
+    # pylint: disable-msg=R0913
     def __init__(self, timeSamples, azAng, elAng, rotAng, powerData, stokesFlag, mountCoordSystem=None, \
                  targetCoordSystem=None):
         ## @var powerData
@@ -134,6 +134,11 @@ class SelectedPower(object):
         
         if (mountCoordSystem and targetCoordSystem):
             self.set_coordinate_systems(mountCoordSystem, targetCoordSystem)
+    
+        self._mountCoordSys = None
+        self._targetCoords = None
+        self._transformer = None
+        self._targetCoordSys = None
     
     ## Set mount and target coordinate systems which was used for data capture.
     #
@@ -339,6 +344,7 @@ class FitsReader(object):
     # @param hduName name of HDU to select from
     # @param colValueDict dictionary of column names and desired values to select by
     # @return a mask array (Boolean numarray object)
+    # pylint: disable-msg=R0914
     def get_select_mask(self, hduName, colValueDict):
         # This next block was added after we (Richard & Simon) decided to only ever use one dataId and one dataIdSeqNum
         # per fits file. This means these parameters are constant over one FITS file, resulting in them now being
@@ -395,6 +401,7 @@ class FitsReader(object):
     # @param mask the mask (typically created using get_select_mask() - Boolean numarray object)
     # @param stokesType True for IQUV, False for cross power
     # @return list of np.arrays of power values passed by the mask [I, Q, U, V] or [XX, XY, YX, YY]
+    # pylint: disable-msg=R0914
     def select_masked_power(self, mask=None, stokesType=True):
         
         def get_masked_power_col(name, mask=None):
@@ -419,7 +426,8 @@ class FitsReader(object):
         if mask == None:
             timeSamples = np.arange(self._numSamples) * self._samplePeriod + self._startTime + self._startTimeOffset
         else:
-            timeSamples = np.arange(self._numSamples)[mask] * self._samplePeriod + self._startTime + self._startTimeOffset
+            timeSamples = np.arange(self._numSamples)[mask] * self._samplePeriod + self._startTime + \
+                          self._startTimeOffset
             
         azAng = self.select_masked_column('MSDATA', 'AzAng', mask) / 180.0 * np.pi
         elAng = self.select_masked_column('MSDATA', 'ElAng', mask) / 180.0 * np.pi        
@@ -571,6 +579,7 @@ class FitsReader(object):
 
 
             
+# pylint: disable-msg=R0903
 class SingleShotIterator(object):
     
     def __init__(self, fitsReader):

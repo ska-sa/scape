@@ -311,7 +311,7 @@ def interpolate_tipping_curve(knownElAngs, knownFreqs, knownTsys, desiredElAngs,
     # interpolate data
     interp = tri.nn_interpolator(np.ravel(knownTsys))
     
-    interpolatedTsys = interp(xi,yi)
+    interpolatedTsys = interp(xi, yi)
     
     # knownElAngs = np.atleast_1d(knownElAngs)
     # knownTsys = np.atleast_1d(knownTsys)
@@ -451,7 +451,7 @@ class DistributionStatsArray(object):
     # @param self  the current object
     # @param minVar  minimum variance floor
     def floor_zero_var(self, minVar):
-        self.var[self.var==0] = minVar
+        self.var[self.var == 0] = minVar
         return self
 
 #-----------------------------------------------------------------------------------------------------------------
@@ -459,6 +459,7 @@ class DistributionStatsArray(object):
 #------------------------------------
 
 ## Multi variate gaussian class
+# pylint: disable-msg=R0903
 class MultiVariateGaussian(object):
     
     ## Initialiser/Constructor
