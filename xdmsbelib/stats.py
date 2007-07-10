@@ -491,7 +491,7 @@ class SpStatsFuncWrapper(object):
     # @param    inputShapeDict  Dict of {paramName: np.shape} tuples specifying the input parameter shapes
     # @param    outputShapeList List of np.shape tuples specifying the output (return) variables shapes
     # @param    constantDict    Dict of {paramName: constant} parameters
-    def __init__(self, func, inputShapeDict, outputShapeList, constantDict):
+    def __init__(self, func, inputShapeDict, outputShapeList, constantDict=None):
         self._func = func
         self._inputShapeDict = inputShapeDict
         self._outputShapeDict = {}
@@ -516,8 +516,9 @@ class SpStatsFuncWrapper(object):
         for k in xrange(numSigmaPoints):
             Xk = X[:, k]
             paramDict = self.devectorize_input(Xk)
-            for key, constant in self._constantDict.items():
-                paramDict[key] = constant
+            if self._constantDict:
+                for key, constant in self._constantDict.items():
+                    paramDict[key] = constant
             # pylint: disable-msg=W0142
             Y[:, k] = self.vectorize_output(self._func(**paramDict))
         return Y
