@@ -152,7 +152,7 @@ def figure_to_svg(fig, dpi=100):
 # @param    sigLineType     matplotlib linetype string for outline (boundary) of std-corridor [None]
 # @return   sigCor          handle to std-corridor object
 # @return   muPlot          handle to mean plot
-# @return   sigPosPlot      handle to possitive sigma-line (if sigLineType != None)
+# @return   sigPosPlot      handle to positive sigma-line (if sigLineType != None)
 # @return   sigNegPlot      handle to negative sigma-line (if sigLineType != None)
           
 # pylint: disable-msg=R0913,R0914
@@ -186,3 +186,5 @@ def draw_std_corridor(mu,
         return sigCor, muPlot, sigPosPlot, sigNegPlot
     else:
         return sigCor, muPlot
+
+
