@@ -400,3 +400,18 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
     return sigBuf
 
 
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  calc_ant_eff_area_and_gain
+#----------------------------------------------------
+
+## Calculate the effective area and gain of an antenna
+#
+# @param    pointSourceSens     antenna point source sensitivity as a function of frequency (one per band) [Jy/K] 
+# @param    freq                center frequency of bands
+# @return   effArea             effective area per frequency band [m^2]
+# @return   antGain             antenna gain per frequency band [dB]
+def calc_ant_eff_area_and_gain(pointSourceSens, freq):
+    effArea = boltzmannK / (pointSourceSens*Jy)
+    waveLength = lightSpeed / freq
+    antGain = (4 * np.pi * effArea) / (waveLength**2)
+    return effArea, 10*np.log10(antGain)

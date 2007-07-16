@@ -97,7 +97,30 @@ def check_model_fit_agn(xMu=None, xSig=None, y=None, func=None, alpha=0.05, expR
         resStdCorrect = ((resStd**2)/(expResStd[0]**2) <= fValXY) and ((expResStd[0]**2)/(resStd**2) <= fValYX)
         return resGaussian, pVal, k2, chiSqThreshold, resMuCorrect, resStdCorrect    
 
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  propagate_scalar_stats
+#--------------------------------------
 
+## Propagate statistics through a function to determine the resultant stats. Wrapper for
+# sp_stats function for the special case of scalar independent random variables.
+# @todo Write a new wrapper around sp_stats so that externally we can pass in the lists of
+#       means and covariances and get back the resultant means and covariances, ie hide the
+#       vectorizing from the user.
+# @param func the function that is going to be applied to the stats
+# @param muX input mean vector
+# @param sigmaX input standard deviation vector
+# @return muY output mean vector
+# @return sigmaY output standard deviation vector
+def propagate_scalar_stats(func, muX, sigmaX):
+    
+    # NOTE that this can only be used like this because we have scalar and independent
+    # random variables.
+    muY, covY = sp_stats(func, muX, np.diag(sigmaX**2))
+    
+    muY = func.devectorize_output(muY)
+    sigmaY = func.devectorize_output(np.sqrt(np.diag(covY)))
+        
+    return muY, sigmaY
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  sp_stats
@@ -526,7 +549,10 @@ class SpStatsFuncWrapper(object):
                 for key, constant in self._constantDict.items():
                     paramDict[key] = constant
             # pylint: disable-msg=W0142
-            Y[:, k] = self.vectorize_output(self._func(**paramDict))
+            output = self._func(**paramDict)
+            if self._numOutputs == 1:
+                output = (output,)
+            Y[:, k] = self.vectorize_output(*output)
         return Y
     
     ## Devectorize an input vector
@@ -539,13 +565,16 @@ class SpStatsFuncWrapper(object):
     ## Devectorize an output vector
     # @param self the current object
     # @param Y output vector
-    # @return dictionary of {'ov'+str(paramNumber): np.array} or just np.array if only one
+    # @return devectorized output of function
     def devectorize_output(self, Y):
         result = SpStatsFuncWrapper._devectorize(Y, self._outputShapeDict, self._outputIdxDict)
         if len(result) == 1:
             return result.values()[0]
         else:
-            return result
+            resultList = []
+            for i in np.arange(self._numOutputs):
+                resultList.append(result['ov'+str(i)]) 
+            return resultList
     
     ## Vectorize a dictionary of input arrays
     # @param self the current object

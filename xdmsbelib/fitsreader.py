@@ -11,6 +11,7 @@ import misc
 import logging
 import numpy as np
 import xdmsbe.fitsgen.fits_generator as fgen
+import xdmsbe.xdmsbelib.stats as stats
 import cPickle
 from acsm.coordinate import Coordinate
 import acsm.transform
@@ -127,6 +128,10 @@ class SelectedPower(object):
         # rotator stage angle for data block        
         self.rotAng = rotAng
         
+        # @var powerDataStd
+        # standard deviation of power measurments if known
+        self.powerDataStd = None
+        
         self._numTimeSamples = len(self.timeSamples)
         self._midPoint = int(self._numTimeSamples//2)
         
@@ -211,18 +216,21 @@ class SelectedPower(object):
     # interpolated gain profile is used.
     #
     # @param    self            The current object
-    # @param    FptPre          The Fpt gain term before the scan
+    # @param    FptPreMean      The Fpt gain term (mean) before the scan
+    # @param    FptPreSigma       The Fpt gain term (standard deviation) before the scan
     # @param    FptPreTime      Timestamp (seconds) of the Fpt data
-    # @param    FptPost         The Fpt gain term after the scan
+    # @param    FptPostMean     The Fpt gain term (mean) after the scan
+    # @param    FptPostSigma      The Fpt gain term (standard deviation) after the scan
     # @param    FptPostTime     Timestamp (seconds) of the Fpt data    
     # @return   self            The current object
-    def set_Fpt(self, FptPre = None, FptPreTime = None, FptPost = None, FptPostTime = None):
-        if not(FptPost==None):
-            self._FptPost = FptPost
-            self._FptPostTime = FptPostTime
-        if not(FptPre==None):
-            self._FptPre = FptPre
-            self._FptPreTime = FptPreTime
+    def set_Fpt(self, FptPreMean = None, FptPreSigma = None, FptPreTime = None, \
+                FptPostMean = None, FptPostSigma = None, FptPostTime = None):                
+        self._FptPostMean = FptPostMean            
+        self._FptPostSigma = FptPostSigma            
+        self._FptPostTime = FptPostTime
+        self._FptPreMean = FptPreMean
+        self._FptPreSigma = FptPreSigma                        
+        self._FptPreTime = FptPreTime
         return self
     
     ## Convert the selected power measurements into temperature using the contained power-temp gain profile
@@ -230,43 +238,116 @@ class SelectedPower(object):
         
         if not(self._powerConvertedToTemp):
         
-            def get_Fpt_func(slope, offset):
-                def f(X):
-                    foo = f.m * X + f.c
-                    return foo
-            
-                f.m = slope
-                f.c = offset 
-                return f
-        
-            if (self._FptPre == None) and (self._FptPost == None):
+            if (self._FptPreMean == None) and (self._FptPostMean == None):
                 message = 'Either have to specifiy a positive finite pre-Fpt or post-Fpt or both.'
                 logger.error(message)
-                raise ValueError, message
-            elif not(self._FptPre == None) and (self._FptPost == None):
-                slope = 0
-                offset = self._FptPre
-            elif not(self._FptPost == None) and (self._FptPre == None):
-                slope = 0
-                offset = self._FptPost
-            else:
-                slope = (self._FptPost - self._FptPre) / (self._FptPostTime - self._FptPreTime)
-                offset = self._FptPre - slope * self.timeSamples[0]
-            self._Fpt_func = get_Fpt_func(slope, offset)
+                raise ValueError, message        
+                
+            def propagate_stats(func, muX, covX):        
+                # NOTE that this can only be used like this because we have scalar and independent
+                # random variables.
+                muY, covY = stats.sp_stats(func, muX, covX)
+                muY = func.devectorize_output(muY)
+                sigmaY = func.devectorize_output(np.sqrt(np.diag(covY)))
+                return muY, sigmaY
             
-            for n, t in enumerate(self.timeSamples):
-                Fpt = self._Fpt_func(t)
-                self.powerData[0][n, :] *= Fpt[0, :]
-                self.powerData[1][n, :] *= Fpt[1, :]
-                self.powerData[2][n, :] *= Fpt[2, :]
-                self.powerData[3][n, :] *= Fpt[3, :]
+                
+            def p2t_func(FptPre=None, FptPreTime=None, FptPost=None, FptPostTime=None, timeSamples=None, powerData=None):
+                if FptPre==None:
+                    slope = 0.0
+                    offset = 1.0/FptPost
+                elif FptPost==None:
+                    slope = 0.0
+                    offset = 1.0/FptPre
+                else:
+                    slope = (1.0/FptPost - 1.0/FptPre) / (FptPostTime - FptPreTime)
+                    offset = 1.0/FptPre - slope * FptPreTime            
+                powerDataTemp = np.zeros((4, len(timeSamples), offset.shape[1]), dtype='complex128')
+                FptProfile = np.zeros((4, len(timeSamples), offset.shape[1]), dtype='complex128')
+                for n, t in enumerate(timeSamples):
+                    IFpt = slope * t + offset
+                    Fpt = IFpt**(-1.0)
+                    FptProfile[0, n, :] = Fpt[0, :]
+                    FptProfile[1, n, :] = Fpt[1, :]
+                    FptProfile[2, n, :] = Fpt[2, :]
+                    FptProfile[3, n, :] = Fpt[3, :] 
+                    powerDataTemp[0, n, :] = Fpt[0, :] * powerData[0][n, :]
+                    powerDataTemp[1, n, :] = Fpt[1, :] * powerData[1][n, :]
+                    powerDataTemp[2, n, :] = Fpt[2, :] * powerData[2][n, :]
+                    powerDataTemp[3, n, :] = Fpt[3, :] * powerData[3][n, :]
+                
+                return powerDataTemp, FptProfile
+            
+                            
+            output1, output2 = p2t_func(self._FptPreMean, self._FptPreTime, self._FptPostMean, self._FptPostTime, \
+                                        self.timeSamples, self.powerData)
+            
+            if self._FptPreMean == None:
+                inputShapeDict = {"FptPost": self._FptPostMean.shape}                             
+                outputShapeList = [output1.shape, output2.shape]
+                output1 = None
+                output2 = None
+                constantDict = {"FptPostTime": self._FptPostTime, \
+                                "timeSamples": self.timeSamples, "powerData": self.powerData}
+                func = stats.SpStatsFuncWrapper(p2t_func, inputShapeDict, outputShapeList, constantDict)
+                muX = func.vectorize_input(FptPost=self._FptPostMean)
+                sigmaXdiag = func.vectorize_input(FptPost=self._FptPostSigma)
+            elif self._FptPostMean == None:
+                inputShapeDict = {"FptPre": self._FptPreMean.shape}                             
+                outputShapeList = [output1.shape, output2.shape]
+                output1 = None
+                output2 = None
+                constantDict = {"FptPreTime": self._FptPreTime, \
+                                "timeSamples": self.timeSamples, "powerData": self.powerData}
+                func = stats.SpStatsFuncWrapper(p2t_func, inputShapeDict, outputShapeList, constantDict)
+                muX = func.vectorize_input(FptPre=self._FptPreMean)
+                sigmaXdiag = func.vectorize_input(FptPre=self._FptPreSigma)                
+            else:
+                inputShapeDict = {"FptPre": self._FptPreMean.shape, "FptPost": self._FptPostMean.shape}                             
+                outputShapeList = [output1.shape, output2.shape]
+                output1 = None
+                output2 = None
+                constantDict = {"FptPreTime": self._FptPreTime, "FptPostTime": self._FptPostTime, \
+                                "timeSamples": self.timeSamples, "powerData": self.powerData}
+                func = stats.SpStatsFuncWrapper(p2t_func, inputShapeDict, outputShapeList, constantDict)
+                muX = func.vectorize_input(FptPre=self._FptPreMean, FptPost=self._FptPostMean)
+                sigmaXdiag = func.vectorize_input(FptPre=self._FptPreSigma, FptPost=self._FptPostSigma)
+            
+            muY, sigmaY = stats.propagate_scalar_stats(func, muX, sigmaXdiag)
+                        
+            powerDataTempMu = muY[0]
+            FptMu = muY[1]
+            powerDataTempSigma = sigmaY[0] 
+            FptSigma = sigmaY[1]
+            
+            self.powerData = [powerDataTempMu[0, :, :], powerDataTempMu[1, :, :], \
+                              powerDataTempMu[2, :, :], powerDataTempMu[3, :, :]]
+            self.powerDataSigma = [powerDataTempSigma[0, :, :], powerDataTempSigma[1, :, :], \
+                                   powerDataTempSigma[2, :, :], powerDataTempSigma[3, :, :]]
+            
+            self.FptProfile = [FptMu[0, :, :], FptMu[1, :, :], \
+                              FptMu[2, :, :], FptMu[3, :, :]]
+            self.FptProfileSigma = [FptSigma[0, :, :], FptSigma[1, :, :], \
+                                   FptSigma[2, :, :], FptSigma[3, :, :]]            
             
             self._powerConvertedToTemp = True
             
         return self
+                          
                         
-            
-        
+                        
+    ## Return the nominal power-temperature-gain factor at a given point in time
+    # @param self    The current object
+    # @param timeVal The timevalue in seconds at which to evaluate the gain function
+    def get_Fpt(self, timeVal):
+        if self._Fpt_func:
+            return self._Fpt_func(timeVal)
+        else:
+            message = "Fpt calibration data not yet set."
+            logger.error(message)
+            raise ValueError, message
+    
+    
     ## Set mount and target coordinate systems which was used for data capture.
     #
     # @param    self          the current object
@@ -326,6 +407,26 @@ class SelectedPower(object):
     def get_median_rotation(self):
         return self.rotAng[self._midpoint]
     
+    ## Returns the maximum power in the selected block of power measurments
+    #
+    # @param    self            The current object
+    # @return   maxVal          The maximum total power value (max Stokes I) Given as a function of bands.
+    # @return   timeVal         The corresponding time stamp of the maximum value
+    def get_max_total_power(self):
+
+        if self.stokesFlag:
+            I = self.powerData[0]
+        else:
+            I = self.powerData[0] + self.powerData[3]
+            
+        totalPower = np.sum(I, 1)
+        maxTotalPower = np.max(totalPower)
+        maxIdx = np.where(totalPower == maxTotalPower)[0][0]
+        maxTotalPower = self.powerData[0][maxIdx, :]
+        timeVal = self.timeSamples[maxIdx]
+            
+        return maxTotalPower, timeVal
+
     ## Integrate selected power channels into bands excluding RFI corrupted channels
     # @params self          the current object
     # @params fitsReader    A FitsReader object containing the relevant channel-to-band mapping and 
