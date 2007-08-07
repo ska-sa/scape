@@ -358,7 +358,7 @@ class SelectedPower(object):
         self._targetCoordSys = targetCoordSys
         self._transformer = acsm.transform.get_factory_instance().get_transformer(mountCoordSys, targetCoordSys)
                 
-        self.targetCoords = np.zeros((self._numTimeSamples, targetCoordSys.get_degrees_of_freedom()), dtype='double')
+        self.targetCoords = np.zeros((self._numTimeSamples, targetCoordSys.get_dimensions()), dtype='double')
                 
         for k in np.arange(self._numTimeSamples):
             mountCoordinate = Coordinate(mountCoordSys, [self.azAng[k], self.elAng[k], self.rotAng[k]])
