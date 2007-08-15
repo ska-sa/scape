@@ -485,6 +485,11 @@ class FitsReader(object):
         self.bandNoRfiChannelList = None
         self._extract_channel_mappings()
         
+        ## @var bandNoRfiFrequencies
+        # List of band centre frequencies in Hz (after RFI channels are removed)
+        self.bandNoRfiFrequencies = None
+        self._calc_band_frequencies()
+        
         ## @var polIdxDict
         # Dictionary with the mappings from polarisation names to indexes
         self.polIdxDict = None
@@ -701,12 +706,16 @@ class FitsReader(object):
     
     
     def _extract_channel_mappings(self):
-        self.rfiChannelList = np.array(self._hduL['RFI'].data.field('CHANNELS')).tolist()[0]
-        self.bandChannelList = [x.tolist() for x in self._hduL['BANDS'].data.field('CHANNELS')]
+        self.rfiChannelList = [x[0] for x in self._hduL['RFI'].data.field('Channels')]
+        self.bandChannelList = [x.tolist() for x in self._hduL['BANDS'].data.field('Channels')]
         rfiCSet = set(self.rfiChannelList)
-        # Remove rfi channels from bandChannelList
-        self.bandNoRfiChannelList = [list(set.difference(set(x), rfiCSet)) for x in self.bandChannelList]
-    
+        # Remove rfi channels from bandChannelList, and delete any resulting empty bands
+        tempBandNoRfiChannelList = [list(set.difference(set(x), rfiCSet)) for x in self.bandChannelList]
+        self.bandNoRfiChannelList = [x for x in tempBandNoRfiChannelList if len(x) > 0]
+
+    def _calc_band_frequencies(self):
+        channelFreqs = self._hduL['CHANNELS'].data.field('Freq')
+        self.bandNoRfiFrequencies = np.array([(channelFreqs[x]).mean() for x in self.bandNoRfiChannelList], dtype='double')
     
     def _extract_polarisation_mappings(self):
         pol0 = str(self.get_primary_header()['Pol0'])

@@ -163,8 +163,12 @@ def sp_stats(func, muX, covX, h=np.sqrt(3)):
     if L == 1:
         S = np.atleast_2d(np.sqrt(covX))
     else:
-        S = np.atleast_2d(np.linalg.cholesky(covX))
-    
+        # Cholesky don't like NaNs... Rather run with it, as the error message is misleading otherwise
+        if np.isnan(covX).any():
+            S = np.atleast_2d(np.tile(np.NaN, covX.shape))
+        else:
+            S = np.atleast_2d(np.linalg.cholesky(covX))
+
     muXX = muX[:, np.newaxis]
     X[:, 1:L+1] = muXX + h*S
     X[:, L+1:] = muXX - h*S
@@ -469,8 +473,14 @@ class DistributionStatsArray(object):
     # @param timeStamps timestamps of data block samples
     # @param index the index in the stats array for the mean, var and num
     def add_data(self, data, timeStamps, index):
-        self.mean[index] = np.mean(data.ravel())
-        self.var[index] = np.cov(data.ravel())
+        # An empty data array results in NaNs 
+        # (this happens if all channels in a band are marked as RFI)
+        if data.size > 0:
+            self.mean[index] = np.mean(data.ravel())
+            self.var[index] = np.cov(data.ravel())
+        else:
+            self.mean[index] = np.NaN
+            self.var[index] = np.NaN
         #self.var[index] = 1/(data.size-1)*((data - self.mean[index])**2)
         self.num[index] = data.size
         self.timeStamp = np.mean(timeStamps.ravel())
