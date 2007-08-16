@@ -335,6 +335,7 @@ def default_usage(parser):
 # @param    numSamples    number of samples
 # @param    complexType   Data type of samples (default = 'complex128')
 # @param    power         total signal power
+# @param    whiten        flag indicating whether data should be whitened by its sample covariance matrix
 # @return   sigBuf        data sample buffer
 def randn_complex(dim, numSamples, complexType='complex128', power=1, whiten=True):
     shapeTuple = (dim, numSamples)

@@ -28,7 +28,7 @@ logger = logging.getLogger("xdmsbe.xdmsbelib.fitsreader")
 # @param sourceFile The source FITS file
 # @param destFile   The destination FITS file
 # @param inHduName  The name of the HDU to copy from source to destination
-# @param outHduName If this is set, the HDU is renamed to <outHduName> in the destination file [None]
+# @param outHduName If this is set, the HDU is renamed to this in the destination file [None]
 # @param chainFiles If this boolean flag is set, the HDU is copied to all FITS files in the FITS file chain starting at
 #                   destFile
 def hdu_copy(sourceFile, destFile, inHduName, outHduName=None, chainFiles=False):
@@ -419,8 +419,8 @@ class SelectedPower(object):
         return maxTotalPower, timeVal
 
     ## Integrate selected power channels into bands excluding RFI corrupted channels
-    # @params self          the current object
-    # @params fitsReader    A FitsReader object containing the relevant channel-to-band mapping and 
+    # @param  self          the current object
+    # @param  fitsReader    A FitsReader object containing the relevant channel-to-band mapping and 
     #         RFI channel information
     # @return self          the updated current object
     def power_channels_to_bands_ex_rfi(self, fitsReader):
@@ -497,14 +497,14 @@ class FitsReader(object):
         
         ## @var dataIdNumList
         # List of data id numbers
-        self.dataIdNumList = None        
+        self.dataIdNumList = None
         
-        ## @var dataIdDict
+        ## @var dataIdNameToNumDict
         # Dictionary with the mapping from id names to numbers
         self.dataIdNameToNumDict = None
         
         ## @var dataIdNumToNameDict
-        # Dictionary with the mapping from id numbers to names        
+        # Dictionary with the mapping from id numbers to names
         self.dataIdNumToNameDict = None
         
         ## @var dataIdSeqNumList
@@ -784,7 +784,7 @@ class FitsReader(object):
     #    This function returns a number of dictionaries containing different sets of data and meta-data
     #    extracted from the FITS file (if available).
     #
-    #    @param   fitsReader        Object for reading the fits file
+    #    @param   self              Object for reading the fits file
     #    @param   dataIdNameList    List of data ID names for which to extract data, i.e. ['hot', 'cold']
     #    @param   dataSelectionList List of data selection 3-tuples of the following form:
     #                                (selectionIdentifierString, selectionDictionary, stokesTypeFlag) , e.g.,

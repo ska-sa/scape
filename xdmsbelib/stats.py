@@ -435,6 +435,9 @@ class DistributionStatsArray(object):
     ## @var shape
     # the shape of the arrays as a tuple
     
+    ## @var timeStamp
+    # timestamp associated with data
+    
     ## Initialiser/constructor. Note that the arrays should all have the same dimensions.
     # It is possible that they are all scalars in the degenerative case.
     # @param self  the current object
