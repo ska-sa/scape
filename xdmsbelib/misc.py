@@ -219,7 +219,7 @@ def hdr_keyval_copy(hdrS, hdrD, keyList):
 
 
 #---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  check_set
+#--- FUNCTION :  set_or_check
 #-----------------------------
 
 ## Set a dictionary key to val if it is not yet set, otherwise check for equality with val.
@@ -230,8 +230,28 @@ def hdr_keyval_copy(hdrS, hdrD, keyList):
 #
 # @return    True or False
 
-def check_set(dic, key, val):
+def set_or_check(dic, key, val):
     return np.all(val == dic.setdefault(key, val))
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  set_or_check_param_continuity
+#----------------------------------------
+
+## Set parameter if it doesn't exist in dictionary; otherwise, check if it equals given value.
+# If the parameter paramName does not yet exist in workDict, it is added to the dictionary with
+# value paramValue. Otherwise, its existing value is checked against paramValue, and a ValueError
+# exception is raised if they differ. It is assumed that each run of this function refers to a
+# different FITS file. Same as set_or_check(), with FITS-specific error messages on a failed check.
+# @param workDict   dictionary of current values
+# @param paramName  name of the parameter
+# @param paramValue new value for the parameter
+# pylint: disable-msg=C0103
+def set_or_check_param_continuity(workDict, paramName, paramValue):
+    if not(set_or_check(workDict, paramName, paramValue)):
+        message = "Parameter %s changed from one FITS file to the next." % paramName
+        logger.error(message)
+        raise ValueError, message
 
 
 ## Extend a shape tuple by appending x to it
@@ -248,26 +268,6 @@ def tuple_append(tuple1, tuple2):
     except TypeError:
         tempList.append(tuple2)
     return tuple(tempList)
-
-
-# pylint: disable-msg=C0103
-
-#---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  check_param_continuity
-#----------------------------------------
-
-## Check continuity of a parameter from one file to the next. If the parameter does not
-# yet exist then it is added to workDict, otherwise it must equal the value in workDict.
-# @param workDict  dictionary of current values
-# @param paramName name of the parameter
-# @param param     new value for the parameter
-def check_param_continuity(workDict, paramName, param):
-    if not(check_set(workDict, paramName, param)):
-        message = "Parameter %s changed from one FITS file to the next." % paramName
-        logger.error(message)
-        raise ValueError, message
-        
-
 
 
 #---------------------------------------------------------------------------------------------------------
@@ -390,7 +390,7 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
     
     sigBuf = np.dot(SS, e_u_pseudo_int)
     
-    totalPower = np.mean(np.abs(sigBuf[0,:]) + np.abs(sigBuf[3,:]))
+    totalPower = np.mean(np.abs(sigBuf[0, :]) + np.abs(sigBuf[3, :]))
      
     sigBuf *= (desiredTotalPower / totalPower)
     

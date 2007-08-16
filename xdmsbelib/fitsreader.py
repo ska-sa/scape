@@ -15,7 +15,6 @@ import xdmsbe.xdmsbelib.stats as stats
 import cPickle
 from acsm.coordinate import Coordinate
 import acsm.transform
-from misc import stokes2coherencyMatrix, coherency2stokesMatrix
 
 logger = logging.getLogger("xdmsbe.xdmsbelib.fitsreader")
 
@@ -38,7 +37,7 @@ def hdu_copy(sourceFile, destFile, inHduName, outHduName=None, chainFiles=False)
         try:
             HDUKey = hduListDest.index_of(outHduName)
             hduListDest.pop(HDUKey)
-        except KeyError:
+        except KeyError:    # pylint: disable-msg=W0704
             pass
         hduListDest.append(inHDU)
         hduListDest.writeto(outFitsFileName, clobber=True)
@@ -197,7 +196,8 @@ class SelectedPower(object):
                         self.powerData[0] -= self._tipCurveX
                         self.powerData[3] -= self._tipCurveY
                     else:
-                        message = "Cannot subtract tipping curve if power is in Stokes vector format. First convert to coherency vector format"
+                        message = "Cannot subtract tipping curve if power is in Stokes vector format. " + \
+                                  "First convert to coherency vector format."
                         logger.error(message)
                         raise ValueError, message
                 else:
@@ -243,20 +243,12 @@ class SelectedPower(object):
                 logger.error(message)
                 raise ValueError, message        
                 
-            def propagate_stats(func, muX, covX):        
-                # NOTE that this can only be used like this because we have scalar and independent
-                # random variables.
-                muY, covY = stats.sp_stats(func, muX, covX)
-                muY = func.devectorize_output(muY)
-                sigmaY = func.devectorize_output(np.sqrt(np.diag(covY)))
-                return muY, sigmaY
-            
-                
-            def p2t_func(FptPre=None, FptPreTime=None, FptPost=None, FptPostTime=None, timeSamples=None, powerData=None):
-                if FptPre==None:
+            def p2t_func(FptPre=None, FptPreTime=None, FptPost=None, FptPostTime=None, \
+                         timeSamples=None, powerData=None):
+                if FptPre == None:
                     slope = 0.0
                     offset = 1.0/FptPost
-                elif FptPost==None:
+                elif FptPost == None:
                     slope = 0.0
                     offset = 1.0/FptPre
                 else:
@@ -303,7 +295,7 @@ class SelectedPower(object):
                 muX = func.vectorize_input(FptPre=self._FptPreMean)
                 sigmaXdiag = func.vectorize_input(FptPre=self._FptPreSigma)                
             else:
-                inputShapeDict = {"FptPre": self._FptPreMean.shape, "FptPost": self._FptPostMean.shape}                             
+                inputShapeDict = {"FptPre": self._FptPreMean.shape, "FptPost": self._FptPostMean.shape}
                 outputShapeList = [output1.shape, output2.shape]
                 output1 = None
                 output2 = None
@@ -328,14 +320,13 @@ class SelectedPower(object):
             self.FptProfile = [FptMu[0, :, :], FptMu[1, :, :], \
                               FptMu[2, :, :], FptMu[3, :, :]]
             self.FptProfileSigma = [FptSigma[0, :, :], FptSigma[1, :, :], \
-                                   FptSigma[2, :, :], FptSigma[3, :, :]]            
+                                   FptSigma[2, :, :], FptSigma[3, :, :]]
             
             self._powerConvertedToTemp = True
             
         return self
-                          
-                        
-                        
+        
+        
     ## Return the nominal power-temperature-gain factor at a given point in time
     # @param self    The current object
     # @param timeVal The timevalue in seconds at which to evaluate the gain function
@@ -591,6 +582,7 @@ class FitsReader(object):
         # This next block was added after we (Richard & Simon) decided to only ever use one dataId and one dataIdSeqNum
         # per fits file. This means these parameters are constant over one FITS file, resulting in them now being
         # specified in the MSDATA header, and no longer as seperate columns in the MSDATA data table.
+        # pylint: disable-msg=W0612
         try:
             dataId = colValueDict.pop('ID')
             if dataId not in self.dataIdNumList:
@@ -698,8 +690,9 @@ class FitsReader(object):
                 try:
                     I, Q, U, V = get_stokes_power(mask)
                     return SelectedPower(timeSamples, azAng, elAng, rotAng, \
-                                         powerData=[0.5*(I+Q), 0.5*(U+1j*V), 0.5*(U-1j*V), 0.5*(I-Q)], stokesFlag = False, \
-                                         mountCoordSystem=self._mountCoordSys, targetCoordSystem=self._targetCoordSys)
+                                         powerData=[0.5*(I+Q), 0.5*(U+1j*V), 0.5*(U-1j*V), 0.5*(I-Q)], \
+                                         stokesFlag = False, mountCoordSystem=self._mountCoordSys, \
+                                         targetCoordSystem=self._targetCoordSys)
                 except KeyError, e:
                     logger.error("Neither full (XX, XY, YX, YY) nor (I, Q, U, V) power measurments in data set")
                     raise e
@@ -715,7 +708,8 @@ class FitsReader(object):
 
     def _calc_band_frequencies(self):
         channelFreqs = self._hduL['CHANNELS'].data.field('Freq')
-        self.bandNoRfiFrequencies = np.array([(channelFreqs[x]).mean() for x in self.bandNoRfiChannelList], dtype='double')
+        self.bandNoRfiFrequencies = np.array([(channelFreqs[x]).mean() for x in self.bandNoRfiChannelList], \
+                                             dtype='double')
     
     def _extract_polarisation_mappings(self):
         pol0 = str(self.get_primary_header()['Pol0'])
