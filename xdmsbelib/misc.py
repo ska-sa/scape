@@ -76,6 +76,58 @@ def fmt_seq_num(seqNum, digits):
 
 
 #---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  ottflux
+#---------------------------------------------------------------------------------------------------------
+
+## Calculate and return calibrator source flux density
+# @param    calname    name of calibrator source
+# @param    freq       frequency of calibrator source in MHz
+#
+# References: [1] M. Ott et al, "An updated list of radio flux density calibrators", 
+#                 Astronomy and Astrophysics, vol. 284, pp. 331-339, 1994.
+#
+def ottflux(calname, freq):
+
+    #                    Name                         Fmin     Fmax      a       b       c
+    calsources = {np.str.lower('3C48'):             [ 1408.0, 23780.0, 2.465, -0.004, -0.1251],
+                  np.str.lower('0134+329'):         [ 1408.0, 23780.0, 2.465, -0.004, -0.1251],
+                  np.str.lower('0134+329 3C48'):    [ 1408.0, 23780.0, 2.465, -0.004, -0.1251],
+
+                  np.str.lower('3C123'):   [ 1408.0, 23780.0, 2.525,  0.246, -0.1638],
+                  np.str.lower('3C147'):   [ 1408.0, 23780.0, 2.806, -0.140, -0.1031],
+                  np.str.lower('3C161'):   [ 1408.0, 10550.0, 1.250,  0.726, -0.2286],
+                  np.str.lower('3C218'):   [ 1408.0, 10550.0, 4.729, -1.025,  0.0130],
+                  np.str.lower('3C227'):   [ 1408.0,  4750.0, 6.757, -2.801,  0.2969],
+                  np.str.lower('3C249.1'): [ 1408.0,  4750.0, 2.537, -0.565, -0.0404],
+                  np.str.lower('VirA'):    [ 1408.0, 10550.0, 4.484, -0.603, -0.0280],
+                  np.str.lower('3C286'):   [ 1408.0, 43200.0, 0.956,  0.584, -0.1644],
+                  np.str.lower('3C295'):   [ 1408.0, 32000.0, 1.490,  0.756, -0.2545],
+                  np.str.lower('3C309.1'): [ 1408.0, 32000.0, 2.617, -0.437, -0.0373],
+                  np.str.lower('3C348'):   [ 1408.0, 10550.0, 3.852, -0.361, -0.1053],
+                  np.str.lower('3C353'):   [ 1408.0, 10550.0, 3.148, -0.157, -0.0911],
+                  np.str.lower('CygA'):    [ 4750.0, 10550.0, 8.360, -1.565,  0.0000],
+                  np.str.lower('NGC7027'): [10550.0, 43200.0, 1.322, -0.134,  0.0000]
+                  }
+    
+    
+    calnameLowcase = np.str.lower(calname)
+    
+    # Test if specified calibrator is in table
+    if calnameLowcase not in calsources:
+        logger.error("Error: Calibrator " + calname + " does not exist in lookup table!")
+    
+    # Test if specified frequency is within range
+    if ((freq < calsources[calnameLowcase][0]) | (freq > calsources[calnameLowcase][1])):
+        logger.error("Error: Specified frequency (" + np.str(freq) + " MHz) is out of range!")
+    
+    # Calculate flux density
+    fluxDensity = pow(10.0, calsources[calnameLowcase][2] + calsources[calnameLowcase][3] * np.log10(freq) + \
+                  calsources[calnameLowcase][4] * (np.log10(freq) ** 2.0))
+
+    return fluxDensity
+
+
+#---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  get_power
 #---------------------------------------------------------------------------------------------------------
 
