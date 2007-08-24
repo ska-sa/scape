@@ -9,8 +9,10 @@ from __future__ import division
 import xdmsbe.xdmpyfits as pyfits
 import numpy as np
 import logging
+import logging.config
 import re
 import sys
+import ConfigParser
 
 logger = logging.getLogger("xdmsbe.xdmsbelib.misc")
 
@@ -64,8 +66,11 @@ def config_logging(logConfFile=None):
     if logConfFile:
         try:
             logging.config.fileConfig(logConfFile)
-        except NoSectionError:
+        except ConfigParser.NoSectionError:
             message = "Logging configuration file not found or wrong format! Using built in default."
+            logging.basicConfig(level=logging.INFO, 
+                                stream=sys.stdout, 
+                                format="%(asctime)s - %(name)s - %(filename)s:%(lineno)s - %(levelname)s - %(message)s")            
             logger.error(message)
             config_logging()
     else:
