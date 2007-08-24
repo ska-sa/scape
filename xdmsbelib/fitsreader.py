@@ -127,15 +127,26 @@ class SelectedPower(object):
         # rotator stage angle for data block        
         self.rotAng = rotAng
         
-        # @var powerDataStd
+        ## @var powerDataSigma
         # standard deviation of power measurments if known
-        self.powerDataStd = None
+        self.powerDataSigma = None
+        
+        ## @var FptProfile
+        # Power-to-temperature conversion factor profile for scan data (mean profile)
+        self.FptProfile = None
+        ## @var FptProfileSigma
+        # Power-to-temperature conversion factor profile for scan data (one-sigma profile - standard deviation)                
+        self.FptProfileSigma = None
         
         self._numTimeSamples = len(self.timeSamples)
         self._midPoint = int(self._numTimeSamples//2)
         
         self._targetCoordSystem = None
         self._mountCoordSystem = None
+        
+        ## @var targetCoords
+        # Target coordinates
+        self.targetCoords = None
         
         if (mountCoordSystem and targetCoordSystem):
             self.set_coordinate_systems(mountCoordSystem, targetCoordSystem)
@@ -234,6 +245,7 @@ class SelectedPower(object):
         return self
     
     ## Convert the selected power measurements into temperature using the contained power-temp gain profile
+    # @param self the current object
     def convert_power_to_temp(self):
         
         if not(self._powerConvertedToTemp):
@@ -820,21 +832,31 @@ class FitsReader(object):
 
             
 # pylint: disable-msg=R0903
+## Class that provides a fitsreader iterator to a single fitsreader object. This is needed
+# for cases where we only need to process one file and don't need to iterate through a chain.
 class SingleShotIterator(object):
     
+    ## Initialiser/constructor
+    # @param self the current object
+    # @param fitsReader The FitsReader object to wrap in this iterator
     def __init__(self, fitsReader):
         self._fitsReader = fitsReader
         self._finished = False
-        
+    
+    ## Return this object for use in a for loop        
     def __iter__(self):
         return self
-        
+
+    ## Get the next fits reader for this iterator. This will return the single
+    # FitsReader associated with this iterator object.
+    # @param self the current object
+    # @return a FitsReader object      
     def next(self):
         if self._finished:
             raise StopIteration
         self._finished = True
         return self._fitsReader
-        
+    
 
 ## Class for iterating over a sequence of FITS files. Starts with the given filename and
 # uses the 'NFName' tag in the primary header to determine the next filename. Finished at
