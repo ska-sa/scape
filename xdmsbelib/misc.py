@@ -10,6 +10,7 @@ import xdmsbe.xdmpyfits as pyfits
 import numpy as np
 import logging
 import re
+import sys
 
 logger = logging.getLogger("xdmsbe.xdmsbelib.misc")
 
@@ -54,6 +55,25 @@ coherency2stokesMatrix = np.array([[1, 0, 0, 1],  \
 #=======================================================================================================
 #--- FUNCTIONS -----------------------------------------------------------------------------------------
 #=======================================================================================================
+
+## Configure the logging support to either use the default (built-in) or configure using an external 
+# loggin config file
+#
+# @param logConfFile Logging configuration file [None]. If not specified, the default is used.
+def config_logging(logConfFile=None):
+    if logConfFile:
+        try:
+            logging.config.fileConfig(logConfFile)
+        except NoSectionError:
+            message = "Logging configuration file not found or wrong format! Using built in default."
+            logger.error(message)
+            config_logging()
+    else:
+        logging.basicConfig(level=logging.INFO, 
+                            stream=sys.stdout, 
+                            format="%(asctime)s - %(name)s - %(filename)s:%(lineno)s - %(levelname)s - %(message)s")
+
+    
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  fmt_seq_num
