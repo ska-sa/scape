@@ -15,8 +15,9 @@ import xdmsbe.xdmsbelib.stats as stats
 import cPickle
 from acsm.coordinate import Coordinate
 import acsm.transform
+import os
 
-logger = logging.getLogger("xdmsbe.xdmsbelib.fitsreader")
+logger = logging.getLogger("katLogger")
 
 # pylint: disable-msg=C0103,R0902
 
@@ -31,12 +32,9 @@ logger = logging.getLogger("xdmsbe.xdmsbelib.fitsreader")
 # @param outHduName If this is set, the HDU is renamed to this in the destination file [None]
 # @param chainFiles If this boolean flag is set, the HDU is copied to all FITS files in the FITS file chain starting at
 #                   destFile
-# @param workingDir fully qualified path for working directory containing FITS files
-def hdu_copy(sourceFile, destFile, inHduName, outHduName=None, chainFiles=False, workingDir='./'):
+def hdu_copy(sourceFile, destFile, inHduName, outHduName=None, chainFiles=False):
     
-    if (workingDir[-1] != '/'):
-        workingDir += '/'    
-    
+        
     def write_dest_hdu(inHDU, hduListDest, outHduName, outFitsFileName):
         try:
             HDUKey = hduListDest.index_of(outHduName)
@@ -45,10 +43,10 @@ def hdu_copy(sourceFile, destFile, inHduName, outHduName=None, chainFiles=False,
             pass
         hduListDest.append(inHDU)
         
-        hduListDest.writeto(workingDir + outFitsFileName, clobber=True)
+        hduListDest.writeto(outFitsFileName, clobber=True)
     
     
-    hduListSource = misc.load_fits(workingDir + sourceFile, hduNames = set([inHduName]))
+    hduListSource = misc.load_fits(sourceFile, hduNames = set([inHduName]))
     
     try:
         inHDU = hduListSource[inHduName]
@@ -61,7 +59,7 @@ def hdu_copy(sourceFile, destFile, inHduName, outHduName=None, chainFiles=False,
     
     if not(chainFiles):
         
-        hduListDest = misc.load_fits(workingDir + destFile)
+        hduListDest = misc.load_fits(destFile)
         write_dest_hdu(inHDU, hduListDest, outHduName, destFile)
         hduListDest.close()
         
@@ -459,18 +457,19 @@ class FitsReader(object):
     ## Initialiser/constructor
     # @param self the current object
     # @param hduL optional hdu list if filename is not specified
-    # @param fitsFilename optional filename for loading hdu list (overrides hduL)
-    # @param workingDir fully qualified path for working directory containing FITS files
+    # @param fitsFilename optional fully qualified filename for loading hdu list (overrides hduL) 
     # @param hduNames optional set of hdu names to check are in the file
-    def __init__(self, hduL=None, fitsFilename=None, workingDir='./', hduNames=None):
+    def __init__(self, hduL=None, fitsFilename=None, hduNames=None):
         
         if fitsFilename:
             if hduL:
                 logger.warn("fitsFilename overrides hduL")
-            if (workingDir[-1] != '/'):
-                workingDir += '/'
-            hduL = misc.load_fits(workingDir + fitsFilename, hduNames)
-            assert(fitsFilename == hduL['PRIMARY'].header['CFName'])
+            self._workingDir = os.path.dirname(fitsFilename)
+            self.fitsFilename = os.path.basename(fitsFilename)
+            hduL = misc.load_fits(os.path.join(self._workingDir, self.fitsFilename), hduNames)
+            assert(self.fitsFilename == hduL['PRIMARY'].header['CFName'])
+        else:
+            self._workingDir = os.path.dirname(hduL._HDUList__file.name)
         self._hduL = hduL
         self._primHdr = hduL['PRIMARY'].header        
         self._msData = self.get_hdu_data('MSDATA')
@@ -875,12 +874,11 @@ class FitsIterator(object):
     
     ## Initialiser/constructor
     # @param self the current object
-    # @param fitsFilename the filename for the start of the sequence
-    # @param workingDir fully qualified path for working directory containing FITS files    
+    # @param fitsFilename the fully qualified filename for the start of the sequence 
     # @param hduNames a list of hdu names that must be present in the files
-    def __init__(self, fitsFilename, workingDir='./', hduNames=None):
-        self._filename = fitsFilename
-        self._workingDir = workingDir
+    def __init__(self, fitsFilename, hduNames=None):
+        self._workingDir = os.path.dirname(fitsFilename)
+        self._filename = os.path.basename(fitsFilename)
         self._hduNames = hduNames
         self._fitsReader = None
         
@@ -893,7 +891,7 @@ class FitsIterator(object):
     # @return a FitsReader object    
     def next(self):
         if not self._fitsReader:
-            self._fitsReader = FitsReader(fitsFilename=self._filename, workingDir=self._workingDir, \
+            self._fitsReader = FitsReader(fitsFilename=os.path.join(self._workingDir, self._filename), \
                                           hduNames=self._hduNames)
         else:
             primHdr = self._fitsReader.get_primary_header()
@@ -909,8 +907,9 @@ class FitsIterator(object):
                 message = "Next FITS filename is sequence is same as current. This will cause an infinite loop!"
                 logger.error(message)
                 raise ValueError, message
-            self._fitsReader = FitsReader(fitsFilename=nextFilename, workingDir=self._workingDir, \
+            self._fitsReader = FitsReader(fitsFilename=os.path.join(self._workingDir, nextFilename), \
                                           hduNames=self._hduNames)
+            self._filename = self._fitsReader.fitsFilename
         return self._fitsReader
         
 
@@ -924,12 +923,12 @@ class ExpFitsIterator(object):
     ## Initialiser/constructor
     # @param self the current object
     # @param fitsFilename the first filename of the experiment sequence. The experiment
-    #                     number will be read from this file.
-    # @param workingDir fully qualified path for working directory containing FITS files    
+    #                     number will be read from this file. 
     # @param hduNames a list of hdu names that must be present in the files
-    def __init__(self, fitsFilename, workingDir='./', hduNames=None):
+    def __init__(self, fitsFilename, hduNames=None):
+        self._workingDir = os.path.dirname(fitsFilename)
         self._expSeqNum = None
-        self._iter = FitsIterator(fitsFilename, workingDir, hduNames)
+        self._iter = FitsIterator(fitsFilename, hduNames)
         
         ## @var nextFilename
         # The name of the first file in the next sequence else None
@@ -961,12 +960,11 @@ class ExperimentIterator(object):
     
     ## Initialiser/constructor
     # @param self the current object
-    # @param fitsFilename the first filename of the sequence
-    # @param workingDir fully qualified path for working directory containing FITS files       
+    # @param fitsFilename the first filename of the sequence       
     # @param hduNames a list of hdu names that must be present in the files
-    def __init__(self, fitsFilename, workingDir='./', hduNames=None):
-        self._fitsFilename = fitsFilename
-        self._workingDir = workingDir
+    def __init__(self, fitsFilename, hduNames=None):
+        self._fitsFilename = os.path.basename(fitsFilename)
+        self._workingDir = os.path.dirname(fitsFilename)
         self._hduNames = hduNames
         self._fitsExpIter = None
         
@@ -980,11 +978,11 @@ class ExperimentIterator(object):
     # @return an ExpFitsIterator object    
     def next(self):
         if not self._fitsExpIter:
-            self._fitsExpIter = ExpFitsIterator(self._fitsFilename, self._workingDir, self._hduNames)
+            self._fitsExpIter = ExpFitsIterator(os.path.join(self._workingDir, self._fitsFilename), self._hduNames)
         else:
             nextFilename = self._fitsExpIter.nextFilename
             if nextFilename:
-                self._fitsExpIter = ExpFitsIterator(nextFilename, self._workingDir, self._hduNames)
+                self._fitsExpIter = ExpFitsIterator(os.path.join(self._workingDir, nextFilename), self._hduNames)
             else:
                 raise StopIteration
         return self._fitsExpIter
