@@ -33,8 +33,8 @@ logger = logging.getLogger("katLogger")
 # @param chainFiles If this boolean flag is set, the HDU is copied to all FITS files in the FITS file chain starting at
 #                   destFile
 def hdu_copy(sourceFile, destFile, inHduName, outHduName=None, chainFiles=False):
-    
         
+    
     def write_dest_hdu(inHDU, hduListDest, outHduName, outFitsFileName):
         try:
             HDUKey = hduListDest.index_of(outHduName)
@@ -53,7 +53,7 @@ def hdu_copy(sourceFile, destFile, inHduName, outHduName=None, chainFiles=False)
         if outHduName:
             inHDU.name = outHduName
     except KeyError, e:
-        message = "HDU '%s' not found in source FITS file." % (inHduName) 
+        message = "HDU '%s' not found in source FITS file." % (inHduName)
         logger.error(message)
         raise e
     
@@ -62,19 +62,19 @@ def hdu_copy(sourceFile, destFile, inHduName, outHduName=None, chainFiles=False)
         hduListDest = misc.load_fits(destFile)
         write_dest_hdu(inHDU, hduListDest, outHduName, destFile)
         hduListDest.close()
-        
+    
     else:
-
+        
         _temp_iter = FitsIterator(destFile)
         while True:
-            try:             
-                fitsReader = _temp_iter.next()        
+            try:
+                fitsReader = _temp_iter.next()
                 hduListDest = fitsReader.get_hdu_list()
-                write_dest_hdu(inHDU, hduListDest, outHduName, fitsReader.fitsFilename)                
+                write_dest_hdu(inHDU, hduListDest, outHduName, fitsReader.fitsFilename)
                 hduListDest.close()
             except StopIteration:
                 break
-        
+    
     hduListSource.close()
 
 
@@ -88,11 +88,11 @@ def get_power_idx_dict(stokes):
 
 
 #---------------------------------------------------------------------------------------------
-#--- CLASS :  SelectedData
+#--- CLASS :  SelectedPower
 #------------------------------------
 
-## This class is a container for a selected sequence of data along with its corresponding time and 
-## pointing information. 
+## This class is a container for a selected sequence of data along with its corresponding time and
+## pointing information.
 #
 
 class SelectedPower(object):
@@ -104,7 +104,7 @@ class SelectedPower(object):
     # @param    azAng       azimuth angle sequence for data block (in radians)
     # @param    elAng       elevation angle sequence for data block (in radians)
     # @param    rotAng      rotator stage angle for data block (in radians)
-    # @param    powerData   The selected block of power data
+    # @param    powerData   The selected block of power data, of dimensions: stokes x time x channels
     # @param    stokesFlag  True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
     # @param    mountCoordSystem Mount coordinate system object (see acsm module)
     # @param    targetCoordSystem Target coordinate system object (see acsm module)
@@ -112,22 +112,22 @@ class SelectedPower(object):
     def __init__(self, timeSamples, azAng, elAng, rotAng, powerData, stokesFlag, mountCoordSystem=None, \
                  targetCoordSystem=None):
         ## @var powerData
-        # The selected block of power data        
+        # The selected block of power data
         self.powerData = powerData
         ## @var stokesFlag
-        # True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format        
+        # True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
         self.stokesFlag = stokesFlag
         ## @var timeSamples
-        # Sequence of timestamps for data block        
+        # Sequence of timestamps for data block
         self.timeSamples = timeSamples
         ## @var azAng
-        # mount azimuth angle sequence for data block         
+        # mount azimuth angle sequence for data block
         self.azAng = azAng
         ## @var elAng
-        # mount elevation angle sequence for data block        
+        # mount elevation angle sequence for data block
         self.elAng = elAng
         ## @var rotAng
-        # rotator stage angle for data block        
+        # rotator stage angle for data block
         self.rotAng = rotAng
         
         ## @var powerDataSigma
@@ -138,7 +138,7 @@ class SelectedPower(object):
         # Power-to-temperature conversion factor profile for scan data (mean profile)
         self.FptProfile = None
         ## @var FptProfileSigma
-        # Power-to-temperature conversion factor profile for scan data (one-sigma profile - standard deviation)                
+        # Power-to-temperature conversion factor profile for scan data (one-sigma profile - standard deviation)
         self.FptProfileSigma = None
         
         self._numTimeSamples = len(self.timeSamples)
@@ -153,20 +153,24 @@ class SelectedPower(object):
         
         if (mountCoordSystem and targetCoordSystem):
             self.set_coordinate_systems(mountCoordSystem, targetCoordSystem)
-    
+        
         self._mountCoordSys = None
         self._targetCoords = None
         self._transformer = None
         self._targetCoordSys = None
-        self._FptPost = None
-        self._FptPre = None
+        
+        self._FptPostMean = None
+        self._FptPostSigma = None
         self._FptPostTime = None
-        self._FptPreTime = None        
+        self._FptPreMean = None
+        self._FptPreSigma = None
+        self._FptPreTime = None
         self._Fpt_func = None
+        
         self._tipCurveX = None
         self._tipCurveY = None
-        self._tipCurveSubtracted = False
         self._powerConvertedToTemp = False
+        self._tipCurveSubtracted = False
         self._channelsConvertedToBands = False
     
     ## Convert the contained power buffer from stokes to coherency vectors
@@ -178,9 +182,9 @@ class SelectedPower(object):
             self.powerData = [0.5*(self.powerData[0]+self.powerData[1]), 0.5*(self.powerData[2]+1j*self.powerData[3]), \
                               0.5*(self.powerData[2]-1j*self.powerData[3]), 0.5*(self.powerData[0]-self.powerData[1])]
         return self
-        
+    
     ## Convert the contained power buffer from coherency to stokes vectors
-    # @param self the current object        
+    # @param self the current object
     # @return self the current object
     def convert_to_stokes(self):
         if not(self.stokesFlag):
@@ -188,7 +192,7 @@ class SelectedPower(object):
             self.powerData = [self.powerData[0]+self.powerData[3], self.powerData[0]-self.powerData[3], \
                               self.powerData[1]+self.powerData[2], 1j*(self.powerData[2]-self.powerData[1])]
         return self
-        
+    
     ## Set the operating tipping curve for the given elevation angle range of the power measurements scan
     #
     # @param    self            The object
@@ -198,53 +202,54 @@ class SelectedPower(object):
         self._tipCurveX = tipCurveX
         self._tipCurveY = tipCurveY
         return self
-        
+    
     ## Subtract the tipping curve from the scan data
     # @param self the current object
     # @return self the current object
     def subtract_tipping_curve(self):
-        if not(self._tipCurveSubtracted):
-            if self._powerConvertedToTemp:
-                if (not(self._tipCurveX == None) and not(self._tipCurveY==None)):
-                    if not(self.stokesFlag):
-                        self.powerData[0] -= self._tipCurveX
-                        self.powerData[3] -= self._tipCurveY
-                    else:
-                        message = "Cannot subtract tipping curve if power is in Stokes vector format. " + \
-                                  "First convert to coherency vector format."
-                        logger.error(message)
-                        raise ValueError, message
-                else:
-                    message = "Cannot subtract tipping curve. Tipping curve not set."
-                    logger.error(message)
-                    raise ValueError, message                    
-            else:
-                message = "Cannot subtract tipping curve from uncoverted (raw) power measurments."
-                logger.error(message)
-                raise ValueError, message
+        # Already done, so don't do it again
+        if self._tipCurveSubtracted:
+            return self
+        if not self._powerConvertedToTemp:
+            message = "Cannot subtract tipping curve from uncoverted (raw) power measurments."
+            logger.error(message)
+            raise ValueError, message
+        if (self._tipCurveX == None) or (self._tipCurveY==None):
+            message = "Cannot subtract tipping curve. Tipping curve not set."
+            logger.error(message)
+            raise ValueError, message
+        if self.stokesFlag:
+            message = "Cannot subtract tipping curve if power is in Stokes vector format. " + \
+                      "First convert to coherency vector format."
+            logger.error(message)
+            raise ValueError, message
+        # Subtract tipping curve
+        self.powerData[0] -= self._tipCurveX
+        self.powerData[3] -= self._tipCurveY
+        self._tipCurveSubtracted = True
         return self
-        
+    
     ## Set the power-to-temperature conversion factor (Fpt : gain term) for the given selected power object
-    # This function takes two inputs. The gain before the scan and/or the gain after the scan. If only one is 
-    # specified, that is used as the operative gain for the whole scan. If both are specified, a linearly 
+    # This function takes two inputs. The gain before the scan and/or the gain after the scan. If only one is
+    # specified, that is used as the operative gain for the whole scan. If both are specified, a linearly
     # interpolated gain profile is used.
     #
     # @param    self            The current object
     # @param    FptPreMean      The Fpt gain term (mean) before the scan
-    # @param    FptPreSigma       The Fpt gain term (standard deviation) before the scan
+    # @param    FptPreSigma     The Fpt gain term (standard deviation) before the scan
     # @param    FptPreTime      Timestamp (seconds) of the Fpt data
     # @param    FptPostMean     The Fpt gain term (mean) after the scan
-    # @param    FptPostSigma      The Fpt gain term (standard deviation) after the scan
-    # @param    FptPostTime     Timestamp (seconds) of the Fpt data    
+    # @param    FptPostSigma    The Fpt gain term (standard deviation) after the scan
+    # @param    FptPostTime     Timestamp (seconds) of the Fpt data
     # @return   self            The current object
     def set_Fpt(self, FptPreMean = None, FptPreSigma = None, FptPreTime = None, \
-                FptPostMean = None, FptPostSigma = None, FptPostTime = None):                
-        self._FptPostMean = FptPostMean            
-        self._FptPostSigma = FptPostSigma            
-        self._FptPostTime = FptPostTime
+                FptPostMean = None, FptPostSigma = None, FptPostTime = None):
         self._FptPreMean = FptPreMean
-        self._FptPreSigma = FptPreSigma                        
+        self._FptPreSigma = FptPreSigma
         self._FptPreTime = FptPreTime
+        self._FptPostMean = FptPostMean
+        self._FptPostSigma = FptPostSigma
+        self._FptPostTime = FptPostTime
         return self
     
     ## Convert the selected power measurements into temperature using the contained power-temp gain profile
@@ -252,12 +257,12 @@ class SelectedPower(object):
     def convert_power_to_temp(self):
         
         if not(self._powerConvertedToTemp):
-        
+            
             if (self._FptPreMean == None) and (self._FptPostMean == None):
                 message = 'Either have to specifiy a positive finite pre-Fpt or post-Fpt or both.'
                 logger.error(message)
-                raise ValueError, message        
-                
+                raise ValueError, message
+            
             def p2t_func(FptPre=None, FptPreTime=None, FptPost=None, FptPostTime=None, \
                          timeSamples=None, powerData=None):
                 if FptPre == None:
@@ -268,7 +273,7 @@ class SelectedPower(object):
                     offset = 1.0/FptPre
                 else:
                     slope = (1.0/FptPost - 1.0/FptPre) / (FptPostTime - FptPreTime)
-                    offset = 1.0/FptPre - slope * FptPreTime            
+                    offset = 1.0/FptPre - slope * FptPreTime
                 powerDataTemp = np.zeros((4, len(timeSamples), offset.shape[1]), dtype='complex128')
                 FptProfile = np.zeros((4, len(timeSamples), offset.shape[1]), dtype='complex128')
                 for n, t in enumerate(timeSamples):
@@ -277,20 +282,20 @@ class SelectedPower(object):
                     FptProfile[0, n, :] = Fpt[0, :]
                     FptProfile[1, n, :] = Fpt[1, :]
                     FptProfile[2, n, :] = Fpt[2, :]
-                    FptProfile[3, n, :] = Fpt[3, :] 
+                    FptProfile[3, n, :] = Fpt[3, :]
                     powerDataTemp[0, n, :] = Fpt[0, :] * powerData[0][n, :]
                     powerDataTemp[1, n, :] = Fpt[1, :] * powerData[1][n, :]
                     powerDataTemp[2, n, :] = Fpt[2, :] * powerData[2][n, :]
                     powerDataTemp[3, n, :] = Fpt[3, :] * powerData[3][n, :]
                 
                 return powerDataTemp, FptProfile
-            
                             
+            
             output1, output2 = p2t_func(self._FptPreMean, self._FptPreTime, self._FptPostMean, self._FptPostTime, \
                                         self.timeSamples, self.powerData)
             
             if self._FptPreMean == None:
-                inputShapeDict = {"FptPost": self._FptPostMean.shape}                             
+                inputShapeDict = {"FptPost": self._FptPostMean.shape}
                 outputShapeList = [output1.shape, output2.shape]
                 output1 = None
                 output2 = None
@@ -300,7 +305,7 @@ class SelectedPower(object):
                 muX = func.vectorize_input(FptPost=self._FptPostMean)
                 sigmaXdiag = func.vectorize_input(FptPost=self._FptPostSigma)
             elif self._FptPostMean == None:
-                inputShapeDict = {"FptPre": self._FptPreMean.shape}                             
+                inputShapeDict = {"FptPre": self._FptPreMean.shape}
                 outputShapeList = [output1.shape, output2.shape]
                 output1 = None
                 output2 = None
@@ -308,7 +313,7 @@ class SelectedPower(object):
                                 "timeSamples": self.timeSamples, "powerData": self.powerData}
                 func = stats.SpStatsFuncWrapper(p2t_func, inputShapeDict, outputShapeList, constantDict)
                 muX = func.vectorize_input(FptPre=self._FptPreMean)
-                sigmaXdiag = func.vectorize_input(FptPre=self._FptPreSigma)                
+                sigmaXdiag = func.vectorize_input(FptPre=self._FptPreSigma)
             else:
                 inputShapeDict = {"FptPre": self._FptPreMean.shape, "FptPost": self._FptPostMean.shape}
                 outputShapeList = [output1.shape, output2.shape]
@@ -321,10 +326,10 @@ class SelectedPower(object):
                 sigmaXdiag = func.vectorize_input(FptPre=self._FptPreSigma, FptPost=self._FptPostSigma)
             
             muY, sigmaY = stats.propagate_scalar_stats(func, muX, sigmaXdiag)
-                        
+            
             powerDataTempMu = muY[0]
             FptMu = muY[1]
-            powerDataTempSigma = sigmaY[0] 
+            powerDataTempSigma = sigmaY[0]
             FptSigma = sigmaY[1]
             
             self.powerData = [powerDataTempMu[0, :, :], powerDataTempMu[1, :, :], \
@@ -338,10 +343,10 @@ class SelectedPower(object):
                                    FptSigma[2, :, :], FptSigma[3, :, :]]
             
             self._powerConvertedToTemp = True
-            
+        
         return self
         
-        
+    
     ## Return the nominal power-temperature-gain factor at a given point in time
     # @param self    The current object
     # @param timeVal The timevalue in seconds at which to evaluate the gain function
@@ -353,7 +358,6 @@ class SelectedPower(object):
             logger.error(message)
             raise ValueError, message
     
-    
     ## Set mount and target coordinate systems which was used for data capture.
     #
     # @param    self          the current object
@@ -363,14 +367,14 @@ class SelectedPower(object):
         self._mountCoordSys = mountCoordSys
         self._targetCoordSys = targetCoordSys
         self._transformer = acsm.transform.get_factory_instance().get_transformer(mountCoordSys, targetCoordSys)
-                
+        
         self.targetCoords = np.zeros((self._numTimeSamples, targetCoordSys.get_dimensions()), dtype='double')
-                
+        
         for k in np.arange(self._numTimeSamples):
             mountCoordinate = Coordinate(mountCoordSys, [self.azAng[k], self.elAng[k], self.rotAng[k]])
             targetCoordinate = self._transformer.transform_coordinate(mountCoordinate, self.timeSamples[k])
             self.targetCoords[k, :] = targetCoordinate.get_vector()
-            
+        
         return self
     
     ## Returns the median (middle) time stamp for a given block of data
@@ -393,7 +397,7 @@ class SelectedPower(object):
     # @return   medianElAng The median (middle) azimuth angle [deg]
     def get_median_elevation(self):
         return self.elAng[self._midpoint]
-
+    
     ## Returns the median (middle) target coordinates for a given block of data
     #
     # @param    self                    The current object
@@ -419,23 +423,23 @@ class SelectedPower(object):
     # @return   maxVal          The maximum total power value (max Stokes I) Given as a function of bands.
     # @return   timeVal         The corresponding time stamp of the maximum value
     def get_max_total_power(self):
-
+        
         if self.stokesFlag:
             I = self.powerData[0]
         else:
             I = self.powerData[0] + self.powerData[3]
-            
+        
         totalPower = np.sum(I, 1)
         maxTotalPower = np.max(totalPower)
         maxIdx = np.where(totalPower == maxTotalPower)[0][0]
         maxTotalPower = self.powerData[0][maxIdx, :]
         timeVal = self.timeSamples[maxIdx]
-            
+        
         return maxTotalPower, timeVal
-
+    
     ## Integrate selected power channels into bands excluding RFI corrupted channels
     # @param  self          the current object
-    # @param  fitsReader    A FitsReader object containing the relevant channel-to-band mapping and 
+    # @param  fitsReader    A FitsReader object containing the relevant channel-to-band mapping and
     #         RFI channel information
     # @return self          the updated current object
     def power_channels_to_bands_ex_rfi(self, fitsReader):
@@ -446,8 +450,8 @@ class SelectedPower(object):
                     _tempData[:, b] = np.mean(powerBlock[:, bandChannels], 1)
                 self.powerData[k] = _tempData
                 self._channelsConvertedToBands = True
-        return self 
-    
+        return self
+
 
 
 ## Class for reading fits files and extracting data from them. It is implemented
@@ -457,7 +461,7 @@ class FitsReader(object):
     ## Initialiser/constructor
     # @param self the current object
     # @param hduL optional hdu list if filename is not specified
-    # @param fitsFilename optional fully qualified filename for loading hdu list (overrides hduL) 
+    # @param fitsFilename optional fully qualified filename for loading hdu list (overrides hduL)
     # @param hduNames optional set of hdu names to check are in the file
     def __init__(self, hduL=None, fitsFilename=None, hduNames=None):
         
@@ -471,7 +475,7 @@ class FitsReader(object):
         else:
             self._workingDir = os.path.dirname(hduL._HDUList__file.name)
         self._hduL = hduL
-        self._primHdr = hduL['PRIMARY'].header        
+        self._primHdr = hduL['PRIMARY'].header
         self._msData = self.get_hdu_data('MSDATA')
         
         ## @var fitsFilename
@@ -542,7 +546,7 @@ class FitsReader(object):
         
         self._mountCoordSys = self.get_pickle_from_table('Objects', 'Mount')
         self._targetCoordSys = self.get_pickle_from_table('Objects', 'Target')
-        
+    
     ## Get access to the primary header
     # @param self the current object
     # @return the primary header object
@@ -619,7 +623,7 @@ class FitsReader(object):
         
         mask = None
         hdu = self.get_hdu(hduName)
-        colNames = [x.lower() for x in hdu.columns.names]        
+        colNames = [x.lower() for x in hdu.columns.names]
         for col, colVal in colValueDict.items():
             colName = col.lower()
             fitsDataTypeStr = hdu.columns.formats[colNames.index(colName)].lower()
@@ -639,7 +643,7 @@ class FitsReader(object):
     # @param self the current object
     # @param hduName the name of the HDU to select from
     # @param colName the name of the column in the specified HDU
-    # @param mask the mask (typically created using get_select_mask() - Boolean numarray object). 
+    # @param mask the mask (typically created using get_select_mask() - Boolean numarray object).
     #             If mask is None (default value), the whole column is returned.
     # @return numarray of column values passed by the mask
     def select_masked_column(self, hduName, colName, mask=None):
@@ -648,7 +652,7 @@ class FitsReader(object):
             return data.field(colName)
         else:
             return data.field(colName)[mask]
-    ## Get only the power values that are passed by the mask. Use stokesType to determine 
+    ## Get only the power values that are passed by the mask. Use stokesType to determine
     # whether the results are returned in IQUV or cross power product form.
     # @param self the current object
     # @param mask the mask (typically created using get_select_mask() - Boolean numarray object)
@@ -659,7 +663,7 @@ class FitsReader(object):
         
         def get_masked_power_col(name, mask=None):
             return np.array(self.select_masked_column('MSDATA', 'PS' + str(self.stokesIdxDict[name]), mask))
-            #return np.array(self._msData.field('PS' + str(self.stokesIdxDict[name]))[mask])    
+            #return np.array(self._msData.field('PS' + str(self.stokesIdxDict[name]))[mask])
         
         def get_stokes_power(mask=None):
             I = get_masked_power_col('I', mask)
@@ -674,17 +678,17 @@ class FitsReader(object):
             YX = get_masked_power_col('YX', mask)
             YY = get_masked_power_col('YY', mask)
             return XX, XY, YX, YY
-        
                 
+        
         if mask == None:
             timeSamples = np.arange(self._numSamples) * self._samplePeriod + self._startTime + self._startTimeOffset
         else:
             timeSamples = np.arange(self._numSamples)[mask] * self._samplePeriod + self._startTime + \
                           self._startTimeOffset
-            
+        
         azAng = self.select_masked_column('MSDATA', 'AzAng', mask) / 180.0 * np.pi
-        elAng = self.select_masked_column('MSDATA', 'ElAng', mask) / 180.0 * np.pi        
-        rotAng = self.select_masked_column('MSDATA', 'RotAng', mask) / 180.0 * np.pi        
+        elAng = self.select_masked_column('MSDATA', 'ElAng', mask) / 180.0 * np.pi
+        rotAng = self.select_masked_column('MSDATA', 'RotAng', mask) / 180.0 * np.pi
         
         if stokesType:
             try:
@@ -724,7 +728,7 @@ class FitsReader(object):
         # Remove rfi channels from bandChannelList, and delete any resulting empty bands
         tempBandNoRfiChannelList = [list(set.difference(set(x), rfiCSet)) for x in self.bandChannelList]
         self.bandNoRfiChannelList = [x for x in tempBandNoRfiChannelList if len(x) > 0]
-
+    
     def _calc_band_frequencies(self):
         channelFreqs = self._hduL['CHANNELS'].data.field('Freq')
         self.bandNoRfiFrequencies = np.array([(channelFreqs[x]).mean() for x in self.bandNoRfiChannelList], \
@@ -783,7 +787,7 @@ class FitsReader(object):
             except KeyError, e:
                 logger.error("Data ID %d mapping not found in MSDATA.header as expected." % dataIdNum)
                 raise e
-            self.dataIdNameList.append(idName)    
+            self.dataIdNameList.append(idName)
             self.dataIdNameToNumDict[idName] = dataIdNum
             self.dataIdNumToNameDict[dataIdNum] = idName
             # Determine calibration ID sequence numbers present in data
@@ -810,12 +814,12 @@ class FitsReader(object):
     #                                ('onND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)
     #
     #    @return  dataDict    Data dictionary containing a SelectedPower object for each of the selection products of
-    #                            dataIdNameList[i] X dataSelectionList[j] 
+    #                            dataIdNameList[i] X dataSelectionList[j]
     #
     
     # pylint: disable-msg=R0912,R0915
     
-    def extract_data(self, dataIdNameList, dataSelectionList):        
+    def extract_data(self, dataIdNameList, dataSelectionList):
         
         dataDict = {}
         
@@ -824,46 +828,43 @@ class FitsReader(object):
             if dataIdName in dataIdNameList:
                 
                 for dataIdSeqNum in self.dataIdSeqNumListDict[dataIdName]:
-            
+                    
                     dataIdStr = 'esn' + str(self.expSeqNum) + '_' + dataIdName + str(dataIdSeqNum)
                     #dataIdStr = str(dataId) + '-' + str(dataIdSeqNum)    # This is the old way of doing it...
-        
+                    
                     for tagStr, selectDict, stokes in dataSelectionList:
                         selectDict['ID'] = self.dataIdNameToNumDict[dataIdName]
                         selectDict['ID_SeqN'] = dataIdSeqNum
-                        selectMask = self.get_select_mask('MSDATA', selectDict)                    
+                        selectMask = self.get_select_mask('MSDATA', selectDict)
                         dataDict[dataIdStr + '_' + tagStr] = self.select_masked_power(selectMask, stokesType=stokes)
         return dataDict
-    
 
 
-            
-# pylint: disable-msg=R0903
-## Class that provides a fitsreader iterator to a single fitsreader object. This is needed
-# for cases where we only need to process one file and don't need to iterate through a chain.
+
+## Class that provides a fitsreader iterator to a single fitsreader object.
+# This is needed for cases where we only need to process one file and don't need to iterate through a chain.
 class SingleShotIterator(object):
-    
     ## Initialiser/constructor
-    # @param self the current object
+    # @param self       The current object
     # @param fitsReader The FitsReader object to wrap in this iterator
     def __init__(self, fitsReader):
         self._fitsReader = fitsReader
         self._finished = False
     
-    ## Return this object for use in a for loop        
+    ## Return this object for use in a for loop
     def __iter__(self):
         return self
-
-    ## Get the next fits reader for this iterator. This will return the single
-    # FitsReader associated with this iterator object.
-    # @param self the current object
-    # @return a FitsReader object      
+    
+    ## Get the next fits reader for this iterator.
+    # This will return the single FitsReader associated with this iterator object.
+    # @param self The current object
+    # @return a FitsReader object
     def next(self):
         if self._finished:
             raise StopIteration
         self._finished = True
         return self._fitsReader
-    
+
 
 ## Class for iterating over a sequence of FITS files. Starts with the given filename and
 # uses the 'NFName' tag in the primary header to determine the next filename. Finished at
@@ -874,21 +875,21 @@ class FitsIterator(object):
     
     ## Initialiser/constructor
     # @param self the current object
-    # @param fitsFilename the fully qualified filename for the start of the sequence 
+    # @param fitsFilename the fully qualified filename for the start of the sequence
     # @param hduNames a list of hdu names that must be present in the files
     def __init__(self, fitsFilename, hduNames=None):
         self._workingDir = os.path.dirname(fitsFilename)
         self._filename = os.path.basename(fitsFilename)
         self._hduNames = hduNames
         self._fitsReader = None
-        
+    
     ## Return this object for use in a for loop
     def __iter__(self):
         return self
-        
+    
     ## Get the next fits reader for the sequence
     # @param self the current object
-    # @return a FitsReader object    
+    # @return a FitsReader object
     def next(self):
         if not self._fitsReader:
             self._fitsReader = FitsReader(fitsFilename=os.path.join(self._workingDir, self._filename), \
@@ -911,7 +912,7 @@ class FitsIterator(object):
                                           hduNames=self._hduNames)
             self._filename = self._fitsReader.fitsFilename
         return self._fitsReader
-        
+
 
 ## Class for iterating over a sequence of FITS files in an individual experiment sequence.
 # It picks up the sequence number from the first file. Uses FitsIterator for internal
@@ -923,7 +924,7 @@ class ExpFitsIterator(object):
     ## Initialiser/constructor
     # @param self the current object
     # @param fitsFilename the first filename of the experiment sequence. The experiment
-    #                     number will be read from this file. 
+    #                     number will be read from this file.
     # @param hduNames a list of hdu names that must be present in the files
     def __init__(self, fitsFilename, hduNames=None):
         self._workingDir = os.path.dirname(fitsFilename)
@@ -940,7 +941,7 @@ class ExpFitsIterator(object):
     
     ## Get the next fits reader for the sequence. Stops if the sequence number changes
     # @param self the current object
-    # @return a FitsReader object    
+    # @return A FitsReader object
     def next(self):
         fitsReader = self._iter.next()
         primHdr = fitsReader.get_primary_header()
@@ -960,14 +961,14 @@ class ExperimentIterator(object):
     
     ## Initialiser/constructor
     # @param self the current object
-    # @param fitsFilename the first filename of the sequence       
+    # @param fitsFilename the first filename of the sequence
     # @param hduNames a list of hdu names that must be present in the files
     def __init__(self, fitsFilename, hduNames=None):
         self._fitsFilename = os.path.basename(fitsFilename)
         self._workingDir = os.path.dirname(fitsFilename)
         self._hduNames = hduNames
         self._fitsExpIter = None
-        
+    
     ## Return this object for use in a for loop
     def __iter__(self):
         return self
@@ -975,7 +976,7 @@ class ExperimentIterator(object):
     ## Get the next fits experiment iterator for the sequence. Stops if there are no
     # more experiment sequences
     # @param self the current object
-    # @return an ExpFitsIterator object    
+    # @return an ExpFitsIterator object
     def next(self):
         if not self._fitsExpIter:
             self._fitsExpIter = ExpFitsIterator(os.path.join(self._workingDir, self._fitsFilename), self._hduNames)
