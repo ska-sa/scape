@@ -67,7 +67,7 @@ def config_logging(logConfFile=None):
         try:
             logging.config.fileConfig(logConfFile)
         except ConfigParser.NoSectionError:
-            message = "Logging configuration file not found or wrong format! Using built in default."
+            message = "Logging configuration file not found or wrong format! Using built-in default."
             logging.basicConfig(level=logging.INFO, 
                                 stream=sys.stdout, 
                                 format="%(asctime)s - %(name)s - %(filename)s:%(lineno)s - %(levelname)s - %(message)s")            
