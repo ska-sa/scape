@@ -17,7 +17,7 @@ from acsm.coordinate import Coordinate
 import acsm.transform
 import os
 
-logger = logging.getLogger("katLogger")
+logger = logging.getLogger("xdmsbe.xdmsbelib.fitsreader")
 
 # pylint: disable-msg=C0103,R0902
 

@@ -7,8 +7,11 @@
 
 from __future__ import division
 import numpy as np
+import logging
 import pylab
 import os
+
+logger = logging.getLogger("xdmsbe.xdmsbelib.vis")
 
 # pylint: disable-msg=C0103
 

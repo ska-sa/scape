@@ -14,7 +14,7 @@ sp.pkgload('stats')
 import misc
 import logging
 
-logger = logging.getLogger("xdmsbe.xdbsbelib.stats")
+logger = logging.getLogger("xdmsbe.xdmsbelib.stats")
 
 #=======================================================================================================
 #=== FUNCTIONS 
