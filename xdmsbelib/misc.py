@@ -63,7 +63,6 @@ coherency2stokesMatrix = np.array([[1, 0, 0, 1],  \
 #
 # @param logConfFile Logging configuration file [None]. If not specified, the default is used.
 def config_logging(logConfFile=None):
-    print "Config logging", logConfFile
     if logConfFile:
         try:
             logging.config.fileConfig(logConfFile)
