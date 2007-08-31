@@ -254,6 +254,7 @@ class SelectedPower(object):
     
     ## Convert the selected power measurements into temperature using the contained power-temp gain profile
     # @param self the current object
+    # pylint: disable-msg=R0914,R0915
     def convert_power_to_temp(self):
         
         if not(self._powerConvertedToTemp):
@@ -352,7 +353,7 @@ class SelectedPower(object):
     # @param timeVal The timevalue in seconds at which to evaluate the gain function
     def get_Fpt(self, timeVal):
         if self._Fpt_func:
-            return self._Fpt_func(timeVal)
+            return self._Fpt_func(timeVal) # pylint: disable-msg=E1102
         else:
             message = "Fpt calibration data not yet set."
             logger.error(message)
@@ -473,7 +474,7 @@ class FitsReader(object):
             hduL = misc.load_fits(os.path.join(self._workingDir, self.fitsFilename), hduNames)
             assert(self.fitsFilename == hduL['PRIMARY'].header['CFName'])
         else:
-            self._workingDir = os.path.dirname(hduL._HDUList__file.name)
+            self._workingDir = os.path.dirname(hduL._HDUList__file.name) # pylint: disable-msg=W0212
         self._hduL = hduL
         self._primHdr = hduL['PRIMARY'].header
         self._msData = self.get_hdu_data('MSDATA')
@@ -843,6 +844,7 @@ class FitsReader(object):
 
 ## Class that provides a fitsreader iterator to a single fitsreader object.
 # This is needed for cases where we only need to process one file and don't need to iterate through a chain.
+# pylint: disable-msg=R0903
 class SingleShotIterator(object):
     ## Initialiser/constructor
     # @param self       The current object

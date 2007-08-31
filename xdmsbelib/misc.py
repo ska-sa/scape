@@ -7,6 +7,7 @@
 
 from __future__ import division
 import xdmsbe.xdmpyfits as pyfits
+from optparse import OptionParser
 import numpy as np
 import logging
 import logging.config
@@ -58,6 +59,79 @@ coherency2stokesMatrix = np.array([[1, 0, 0, 1],  \
 #--- FUNCTIONS -----------------------------------------------------------------------------------------
 #=======================================================================================================
 
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  get_exp_list
+#---------------------------------------------------------------------------------------------------------
+
+## Return parsing options
+# @param    expType    Experiment type
+def tsys_options(expType):
+
+    # parse command line options
+    expUsage = "usage: %prog [options] FITS_file"
+    parser = OptionParser(expUsage, description = 'Data reduction backend for ' + expType)
+    parser.add_option('-v', '--verbose', action='store_true', dest='verbose', 
+                      default=False, help="Display data reduction results on stdout")
+    parser.add_option('-p', '--showplots', action='store_true', dest='showPlots', 
+                      default=False, help="Display Tsys plot")
+    parser.add_option('-s', '--save', action='store_true', dest='saveResults', 
+                      default=False, help="Save all output to file(s)")
+    parser.add_option('-t', '--tar', action='store_true', dest='tarResults', 
+                      default=False, help="Tarball all output file(s)")
+    parser.add_option('-z', '--zip', action='store', type='string', dest='zipTar', default='none',
+                      help="Compress tarball, valid values: 'bz2', 'gz' 'none'. Default is 'none'")
+    parser.add_option('-a', '--alpha', action='store', type='float', dest='alpha', 
+                      default=0.05, help="Alpha value for statistical tests")
+    parser.add_option('-l', '--linearity', action = 'store_true', dest = 'disableLinearityTest', 
+                      default = True, help="DISABLE linearity test")
+    parser.add_option('-c', '--config', dest='logConfigFile', action='store', type='string', default=None, 
+                      metavar='LOGFILE', help='use LOGFILE for logging configuration')
+
+    (opts, args) = parser.parse_args()
+    
+    if len(args) != 1:
+        parser.print_help()
+        sys.exit(1)
+
+    # Configure logging
+    config_logging(opts.logConfigFile)
+    
+    try:
+        fitsFileName = args[0]
+    except IndexError:
+        message = "You must provide a FITS filename as argument."
+        logger.error(message)
+        raise IndexError, message
+
+    return opts, args, fitsFileName
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  get_exp_list
+#---------------------------------------------------------------------------------------------------------
+
+## Return list of experiments
+def get_exp_list():
+    return 'XDM experiment N (default=None)                             ' + \
+           '1  = Tsys Measurement at Zenith                             ' + \
+           '2  = System Temperature Stability Test                      ' + \
+           '3  = Tipping Curve                                          ' + \
+           '4  = Pointing Model                                         ' + \
+           '5  = Calibrator Source Scan                                 ' + \
+           '6  = Gain Curve                                             ' + \
+           '7  = Strong Source Scan                                     ' + \
+           '8  = Feed Focussing                                         ' + \
+           '9  = Rotation Axis Alignment [Not Implemented]              ' + \
+           '10 = Beam Pattern Mapping by Raster Scan                    ' + \
+           '11 = Dish Cone Effects                                      ' + \
+           '12 = Floodlight Calibration                                 ' + \
+           '13 = Polarisation Calibration [Not Implemented]             ' 
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  config_logging
+#---------------------------------------------------------------------------------------------------------
+
 ## Configure the logging support to either use the default (built-in) or configure using an external 
 # loggin config file
 #
@@ -74,7 +148,6 @@ def config_logging(logConfFile=None):
         logging.basicConfig(level=logging.INFO, 
                             stream=sys.stdout, 
                             format="%(asctime)s - %(name)s - %(filename)s:%(lineno)s - %(levelname)s - %(message)s")
-
     
 
 #---------------------------------------------------------------------------------------------------------

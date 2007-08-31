@@ -441,7 +441,8 @@ class DistributionStatsArray(object):
     # @param var   array of variance values
     # @param num   array of number of samples
     # @param timeStamp timestamp associated with data
-    # @param shape desired shape of statistics arrays   
+    # @param shape desired shape of statistics arrays
+    # pylint: disable-msg=R0913
     def __init__(self, mean=None, var=None, num=None, timeStamp=None, shape=None):
         
         if shape:
