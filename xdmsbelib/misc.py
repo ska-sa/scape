@@ -591,15 +591,32 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
     scaleYy = (desiredTotalPower * (stokesVector[0] - stokesVector[1])) / (4.0 * numVoltSamplesPerIntPeriod)
     e_u_pseudo_int[0, :] = scaleXx * np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples))
     e_u_pseudo_int[3, :] = scaleYy * np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples))
+#    e_u_pseudo_int[1, :] = np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples)) * 1e-10
+#    e_u_pseudo_int[2, :] = np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples)) * 1e-10
 
     sigBuf = np.dot(SS, e_u_pseudo_int)
     
 #    totalPower = np.mean(np.abs(sigBuf[0, :]) + np.abs(sigBuf[3, :]))
-     
 #    sigBuf *= (desiredTotalPower / totalPower)
     
-    if outputFormat == 'stokes':
-        sigBuf = np.dot(coherency2stokesMatrix, sigBuf)
+    sigBuf = np.dot(coherency2stokesMatrix, sigBuf)
+    
+    # Normalise
+    meanI = np.mean(np.abs(sigBuf[0, :]))
+    meanQ = np.mean(np.abs(sigBuf[1, :]))
+    meanU = np.mean(np.abs(sigBuf[2, :]))
+    meanV = np.mean(np.abs(sigBuf[3, :]))
+    if (meanI > 1e-3):
+        sigBuf[0, :] *= (desiredTotalPower * stokesVector[0]) / meanI
+    if (meanQ > 1e-3):
+        sigBuf[1, :] *= (desiredTotalPower * stokesVector[1]) / meanQ
+    if (meanU > 1e-3):
+        sigBuf[2, :] *= (desiredTotalPower * stokesVector[2]) / meanU
+    if (meanV > 1e-3):
+        sigBuf[3, :] *= (desiredTotalPower * stokesVector[3]) / meanV
+
+    if (outputFormat != 'stokes'):
+        sigBuf = np.dot(stokes2coherencyMatrix, sigBuf)
     
     return sigBuf
 
