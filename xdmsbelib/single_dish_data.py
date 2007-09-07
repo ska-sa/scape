@@ -98,6 +98,7 @@ class SingleDishData(object):
         ## @var _powerData
         # Power data array (internal variable).
         self._powerData = None
+
         ## @var powerData
         # Power data array (property).
         # Power data is set via property setter (set this last to ensure prequisite members are available)
@@ -123,6 +124,7 @@ class SingleDishData(object):
                 self.stokesData[k] = self._powerData[v]
             else:
                 self.coherencyData[k] = self._powerData[v]
+
     ## @var powerData
     # Power data array (property).
     powerData = property(get_power_data, set_power_data, doc='List of power data blocks.')
