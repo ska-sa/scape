@@ -55,9 +55,45 @@ coherency2stokesMatrix = np.array([[1, 0, 0, 1],  \
                                    [0, 1, 1, 0], \
                                    [0, -1j, +1j, 0]], 'complex128')
 
+
 #=======================================================================================================
 #--- FUNCTIONS -----------------------------------------------------------------------------------------
 #=======================================================================================================
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  get_exp_list
+#---------------------------------------------------------------------------------------------------------
+
+## Return reference position and offset values for scan-type experiments
+# @param    srcAzm                 source azimuth position [deg]
+# @param    srcEle                 source elevation position [deg]
+# @param    pointingError          antenna pointing error [azm, ele] [deg]
+# @param    horizontalScanStart    start of horizontal offset
+# @param    horizontalScanStop     stop of horizontal offset
+# @param    verticalScanStart      start of vertical offset
+# @param    verticalScanStop       stop of vertical offset
+# pylint: disable-msg=R0913,R0914
+#
+def get_scan_parameters(srcAzm, srcEle, pointingError, horizontalScanStart, horizontalScanStop, 
+                        verticalScanStart, verticalScanStop):
+
+    fptSrcAzm1 = srcAzm - pointingError[0] + (2 * horizontalScanStart) - horizontalScanStop
+    fptSrcEle1 = srcEle - pointingError[1] + (2 * verticalScanStart) - verticalScanStop
+    fptSrcAzm2 = srcAzm - pointingError[0] + (2 * horizontalScanStop) - horizontalScanStart
+    fptSrcEle2 = srcEle - pointingError[1] + (2 * verticalScanStop) - verticalScanStart
+    
+    scanSrcAzm1 = srcAzm + (1.5 * horizontalScanStart) - (0.5 * horizontalScanStop)
+    scanSrcEle1 = srcEle + (1.5 * verticalScanStart) - (0.5 * verticalScanStop)
+    scanSrcAzm2 = srcAzm + (1.5 * horizontalScanStop) - (0.5 * horizontalScanStart)
+    scanSrcEle2 = srcEle + (1.5 * verticalScanStop) - (0.5 * verticalScanStart)
+    hOffset1 = [-0.5 * (horizontalScanStop - horizontalScanStart), 0.5 * (horizontalScanStop - horizontalScanStart)]
+    vOffset1 = [-0.5 * (verticalScanStop - verticalScanStart), 0.5 * (verticalScanStop - verticalScanStart)]
+    hOffset2 = hOffset1
+    vOffset2 = vOffset1
+
+    return fptSrcAzm1, fptSrcEle1, fptSrcAzm2, fptSrcEle2, scanSrcAzm1, scanSrcEle1, scanSrcAzm2, scanSrcEle2, \
+           hOffset1, vOffset1, hOffset2, vOffset2
+
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  get_exp_list
