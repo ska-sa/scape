@@ -14,6 +14,7 @@ import logging.config
 import re
 import sys
 import ConfigParser
+import simcor
 
 logger = logging.getLogger("xdmsbe.xdmsbelib.misc")
 
@@ -628,7 +629,7 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
     
     power = float(desiredTotalPower)
     
-    RVec = np.dot(misc.stokes2coherencyMatrix, np.array(stokesVector)) # Coherency vector 
+    RVec = np.dot(stokes2coherencyMatrix, np.array(stokesVector)) # Coherency vector 
     Rxx = RVec[0] 
     Rxy = RVec[1]
     Ryx = RVec[2]
@@ -650,10 +651,10 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
     linR = np.array(S.ravel().real, dtype='double')
     linI = np.array(S.ravel().imag, dtype='double')
 
-    xx = np.zeros((numOutputSamples), dtype='complex128')
-    xy = np.zeros((numOutputSamples), dtype='complex128')
-    yx = np.zeros((numOutputSamples), dtype='complex128')
-    yy = np.zeros((numOutputSamples), dtype='complex128')
+    xx = np.zeros((numPowerSamples), dtype='complex128')
+    xy = np.zeros((numPowerSamples), dtype='complex128')
+    yx = np.zeros((numPowerSamples), dtype='complex128')
+    yy = np.zeros((numPowerSamples), dtype='complex128')
 
     xxR = np.array(xx.real, dtype='double')
     xxI = np.array(xx.imag, dtype='double')
@@ -664,7 +665,7 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
     yyR = np.array(yy.real, dtype='double')
     yyI = np.array(yy.imag, dtype='double')
 
-    success = simcor.simulate_correlator(numOutputSamples, numIntegratedVoltSamples, power, linR, linI, \
+    success = simcor.simulate_correlator(numPowerSamples, numVoltSamplesPerIntPeriod, power, linR, linI, \
                                          xxR, xxI, xyR, xyI, yxR, yxI, yyR, yyI)
     if success:
         xx.real = xxR
