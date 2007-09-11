@@ -567,7 +567,7 @@ def default_usage(parser):
 #---------------------------------------------------------------------------------------------------------
 
 ## Return a new array of zeros mean, complex Gaussian random variables of a given shape
-# specified by tuple shape and a given power level (per )
+# specified by tuple shape and a given power level (per dim)
 #
 # @param    dim           dimension of random variables
 # @param    numSamples    number of samples
@@ -578,19 +578,22 @@ def default_usage(parser):
 def randn_complex(dim, numSamples, complexType='complex128', power=1, whiten=True):
     shapeTuple = (dim, numSamples)
     sigBuf = np.ndarray(shapeTuple, dtype=complexType)
-    scale = np.sqrt(power / dim)
-    sigBuf.real = np.random.standard_normal(shapeTuple)
-    sigBuf.imag = np.random.standard_normal(shapeTuple)
-    P = np.zeros((dim, dim), dtype='complex128')    
+    powerPerDim = power / dim
+    scaleFact = np.sqrt(powerPerDim / 2)
+    for d in np.arange(dim):
+        (sigBuf[d, :]).real = np.random.normal(0.0, scale=scaleFact, size=(numSamples))
+        (sigBuf[d, :]).imag = np.random.normal(0.0, scale=scaleFact, size=(numSamples))
+    #P = np.zeros((dim, dim), dtype='complex128')    
     if whiten:
-        for k in np.arange(numSamples):
-            P = P + np.outer(sigBuf[:, k], sigBuf[:, k].conj())
-        P = (1 / (numSamples - 1)) * P
-        A = np.linalg.inv(np.linalg.cholesky(P)) # Whiten the data
-        sigBuf = np.dot(A, sigBuf)
-    sigBuf *= scale
+        pass
+        # for k in np.arange(numSamples):
+        #     P = P + np.outer(sigBuf[:, k], sigBuf[:, k].conj())
+        # P = (1 / (numSamples - 1)) * P
+        # A = np.linalg.inv(np.linalg.cholesky(P)) # Whiten the data
+        # sigBuf = np.dot(A, sigBuf)
+    #sigBuf *= scale
     return sigBuf
-    
+
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  gen_polarized_power
@@ -606,20 +609,81 @@ def randn_complex(dim, numSamples, complexType='complex128', power=1, whiten=Tru
 # @param    outputFormat                    'stokes' or 'coherency' vectors             ()
 # @return   sigBuf                          data sample buffer
 # pylint: disable-msg=W0102,R0914
-def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTotalPower=1, 
+
+def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTotalPower=1, \
                         stokesVector=[1, 0, 0, 0], outputFormat='stokes'):
     
     RVec = np.dot(stokes2coherencyMatrix, np.array(stokesVector)) # Coherency vector 
-    Rxx = RVec[0]
+    Rxx = RVec[0] + 1e-12
     Rxy = RVec[1]
-    Ryx = RVec[2]
+    Ryx = RVec[2] + 1e-12
+    Ryy = RVec[3]
+    P = np.array([[Rxx, Rxy], [Ryx, Ryy]],'complex128')  # Correlation matrix for given Stokes parameters
+        
+    # Have to check for matrices which are non-positive definite
+    if ((P[0, 1]==0) and (P[1, 0]==0)) and ((P[0, 0]==0) or (P[1, 1]==0)):
+        P = P/np.sum(P.ravel())
+        S = np.sqrt(P)
+    else:
+        P[0,0] += 1e-12
+        P[1,1] += 1e-12
+        # Make sure P have unity total gain
+        detP = P[0,0]*P[1,1].conj() - P[0,1]*P[1,0].conj()   # determinant
+        P = np.sqrt((1.0/detP)) * P;        
+        S = np.linalg.cholesky(P)           
+
+    corrOutBuf = np.zeros((4, numPowerSamples), dtype='complex128')
+    
+    for k in np.arange(numPowerSamples):
+        pass
+        
+    e_u_pseudo_int = np.zeros((4, numPowerSamples), dtype='complex128')
+    scaleXx = (desiredTotalPower * (stokesVector[0] + stokesVector[1])) / (4.0 * numVoltSamplesPerIntPeriod)
+    scaleYy = (desiredTotalPower * (stokesVector[0] - stokesVector[1])) / (4.0 * numVoltSamplesPerIntPeriod)
+    e_u_pseudo_int[0, :] = scaleXx * np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples))
+    e_u_pseudo_int[3, :] = scaleYy * np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples))
+#    e_u_pseudo_int[1, :] = np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples)) * 1e-10
+#    e_u_pseudo_int[2, :] = np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples)) * 1e-10
+    
+    sigBuf = np.dot(SS, e_u_pseudo_int)
+    
+    totalPower = np.mean(sigBuf[0, :]*sigBuf[0, :].conj() + sigBuf[1, :]*sigBuf[1, :].conj())
+    sigBuf *= np.sqrt(desiredTotalPower / totalPower)
+    
+    sigBuf = np.dot(coherency2stokesMatrix, sigBuf)
+    
+    # # Normalise
+    # meanStokes = np.mean(sigBuf,1)
+    # if (meanI > 1e-3):
+    #     sigBuf[0, :] *= desiredTotalPower / meanI
+    # if (meanQ > 1e-3):
+    #     sigBuf[1, :] *= desiredTotalPower / meanQ
+    # if (meanU > 1e-3):
+    #     sigBuf[2, :] *= desiredTotalPower / meanU
+    # if (meanV > 1e-3):
+    #     sigBuf[3, :] *= desiredTotalPower / meanV
+    
+    if (outputFormat != 'stokes'):
+        sigBuf = np.dot(stokes2coherencyMatrix, sigBuf)
+    
+    return sigBuf
+
+#---------------------------------------------------------------------------------------------
+
+def gen_polarized_power_old(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTotalPower=1, \
+    stokesVector=[1, 0, 0, 0], outputFormat='stokes'):
+    
+    RVec = np.dot(stokes2coherencyMatrix, np.array(stokesVector)) # Coherency vector 
+    Rxx = RVec[0] + 1e-12
+    Rxy = RVec[1]
+    Ryx = RVec[2] + 1e-12
     Ryy = RVec[3]
     P = np.array([[Rxx, Rxy], [Ryx, Ryy]],'complex128')  # Correlation matrix for given Stokes parameters
     # Have to check for matrices which are non-positive definite
     if ((P[0, 1]==0) and (P[1, 0]==0)) and ((P[0, 0]==0) or (P[1, 1]==0)):
         S = np.sqrt(P)
     else:
-        S = np.linalg.cholesky(P)    
+        S = np.linalg.cholesky(P)   
     SS = np.array(np.outer(S, np.transpose(np.conjugate(S))), dtype='complex128')     # Complex Tensor product of S
         
     e_u_pseudo_int = np.zeros((4, numPowerSamples), dtype='complex128')
@@ -629,32 +693,121 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
     e_u_pseudo_int[3, :] = scaleYy * np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples))
 #    e_u_pseudo_int[1, :] = np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples)) * 1e-10
 #    e_u_pseudo_int[2, :] = np.random.chisquare(2*numVoltSamplesPerIntPeriod, (numPowerSamples)) * 1e-10
-
+    
     sigBuf = np.dot(SS, e_u_pseudo_int)
     
-#    totalPower = np.mean(np.abs(sigBuf[0, :]) + np.abs(sigBuf[3, :]))
-#    sigBuf *= (desiredTotalPower / totalPower)
+    totalPower = np.mean(sigBuf[0, :]*sigBuf[0, :].conj() + sigBuf[1, :]*sigBuf[1, :].conj())
+    sigBuf *= np.sqrt(desiredTotalPower / totalPower)
     
     sigBuf = np.dot(coherency2stokesMatrix, sigBuf)
     
-    # Normalise
-    meanI = np.mean(np.abs(sigBuf[0, :]))
-    meanQ = np.mean(np.abs(sigBuf[1, :]))
-    meanU = np.mean(np.abs(sigBuf[2, :]))
-    meanV = np.mean(np.abs(sigBuf[3, :]))
-    if (meanI > 1e-3):
-        sigBuf[0, :] *= (desiredTotalPower * stokesVector[0]) / meanI
-    if (meanQ > 1e-3):
-        sigBuf[1, :] *= (desiredTotalPower * stokesVector[1]) / meanQ
-    if (meanU > 1e-3):
-        sigBuf[2, :] *= (desiredTotalPower * stokesVector[2]) / meanU
-    if (meanV > 1e-3):
-        sigBuf[3, :] *= (desiredTotalPower * stokesVector[3]) / meanV
-
+    # # Normalise
+    # meanStokes = np.mean(sigBuf,1)
+    # if (meanI > 1e-3):
+    #     sigBuf[0, :] *= desiredTotalPower / meanI
+    # if (meanQ > 1e-3):
+    #     sigBuf[1, :] *= desiredTotalPower / meanQ
+    # if (meanU > 1e-3):
+    #     sigBuf[2, :] *= desiredTotalPower / meanU
+    # if (meanV > 1e-3):
+    #     sigBuf[3, :] *= desiredTotalPower / meanV
+    
     if (outputFormat != 'stokes'):
         sigBuf = np.dot(stokes2coherencyMatrix, sigBuf)
     
     return sigBuf
+
+#---------------------------------------------------------------------------------------------
+def gen_polarized_power_temp(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTotalPower=1, \
+                             stokesVector=[1, 0, 0, 0], outputFormat='stokes'):
+    
+    RVec = np.dot(stokes2coherencyMatrix, np.array(stokesVector)) # Coherency vector 
+    Rxx = RVec[0]
+    Rxy = RVec[1]
+    Ryx = RVec[2]
+    Ryy = RVec[3]
+    P = np.array([[Rxx, Rxy], [Ryx, Ryy]],'complex128')  # Correlation matrix for given Stokes parameters
+    
+    # print "P = ", P
+    # print "detP = ", np.linalg.det(P)
+    
+    # Have to check for matrices which are non-positive definite
+    if ((P[0, 1]==0) and (P[1, 0]==0)) and ((P[0, 0]==0) or (P[1, 1]==0)):
+        P = P/np.sum(P.ravel())
+        S = np.sqrt(P)
+    else:
+        P[0,0] += 1e-12
+        P[1,1] += 1e-12
+        # Make sure P have unity total gain
+        detP = P[0,0]*P[1,1].conj() - P[0,1]*P[1,0].conj()   # determinant
+        P = np.sqrt((1.0/detP)) * P;        
+        S = np.linalg.cholesky(P)   
+    
+    # P = np.dot(S,(S.conj()).transpose())
+    # detP = np.linalg.det(P)
+    # 
+    # print "P = ", P
+    # print "detP = ", detP
+        
+    # powerX = desiredTotalPower * 0.5 * (stokesVector[0] + stokesVector[1])
+    # powerY = desiredTotalPower * 0.5 * (stokesVector[0] - stokesVector[1])
+    powerX = 1
+    powerY = 1
+    
+    sigmaXs = powerX*(1+np.sqrt(1-1.0/numVoltSamplesPerIntPeriod))
+    muX = np.sqrt(powerX)*(1-1.0/numVoltSamplesPerIntPeriod)**0.25
+    
+    sigmaYs = powerY*(1+np.sqrt(1-1.0/numVoltSamplesPerIntPeriod))
+    muY = np.sqrt(powerY)*(1-1.0/numVoltSamplesPerIntPeriod)**0.25
+    
+    inX = randn_complex(1, numPowerSamples, complexType='complex128', power=2*sigmaXs)
+    inY = randn_complex(1, numPowerSamples, complexType='complex128', power=2*sigmaYs)
+    
+    sigBuf = np.dot(S, np.concatenate([inX, inY], 0))
+        
+    totalPower = np.mean(sigBuf[0, :]*sigBuf[0, :].conj() + sigBuf[1, :]*sigBuf[1, :].conj())
+    sigBuf *= np.sqrt(desiredTotalPower / totalPower)
+    
+    #sigBufConj = sigBuf.conj()        
+        
+    outBuf = np.zeros((4,numPowerSamples), dtype='complex128')
+    
+    current = (4/numVoltSamplesPerIntPeriod)*(sigmaXs**2)
+    wanted = current + (8/numVoltSamplesPerIntPeriod) * sigmaXs*(muX**2)
+    outBuf[0,:] =  np.sqrt(wanted/current) * (sigBuf[0,:]*sigBuf[0,:].conj() - 2*sigmaXs) + 2*(sigmaXs + muX**2)
+    
+    current = (4/numVoltSamplesPerIntPeriod)*(sigmaXs*sigmaYs)
+    wanted = current + (8/numVoltSamplesPerIntPeriod) * np.sqrt(sigmaXs)*np.sqrt(sigmaYs)*(muX*muY)
+    outBuf[1,:] = np.sqrt(wanted/current) * (sigBuf[0,:]*sigBuf[1,:].conj() - 2*np.sqrt(sigmaXs)*np.sqrt(sigmaYs)) + \
+                  2*(np.sqrt(sigmaXs)*np.sqrt(sigmaYs) + muX*muY)
+                  
+    current = (4/numVoltSamplesPerIntPeriod)*(sigmaXs*sigmaYs)
+    wanted = current + (8/numVoltSamplesPerIntPeriod) * np.sqrt(sigmaXs)*np.sqrt(sigmaYs)*(muX*muY)
+    outBuf[2,:] = np.sqrt(wanted/current) * (sigBuf[1,:]*sigBuf[0,:].conj() - 2*np.sqrt(sigmaXs)*np.sqrt(sigmaYs)) + \
+                  2*(np.sqrt(sigmaXs)*np.sqrt(sigmaYs) + muX*muY)
+                  
+    current = (4/numVoltSamplesPerIntPeriod)*(sigmaYs**2)
+    wanted = current + (8/numVoltSamplesPerIntPeriod) * sigmaYs*(muY**2)
+    outBuf[3,:] =  np.sqrt(wanted/current) * (sigBuf[1,:]*sigBuf[1,:].conj() - 2*sigmaYs) + 2*(sigmaYs + muY**2)
+    
+    # # Normalise
+    # meanI = np.mean(np.abs(outBuf[0, :]))
+    # meanQ = np.mean(np.abs(outBuf[1, :]))
+    # meanU = np.mean(np.abs(outBuf[2, :]))
+    # meanV = np.mean(np.abs(outBuf[3, :]))
+    # if (meanI > 1e-3):
+    #     outBuf[0, :] *= (desiredTotalPower * stokesVector[0]) / meanI
+    # if (meanQ > 1e-3):
+    #     outBuf[1, :] *= (desiredTotalPower * stokesVector[1]) / meanQ
+    # if (meanU > 1e-3):
+    #     outBuf[2, :] *= (desiredTotalPower * stokesVector[2]) / meanU
+    # if (meanV > 1e-3):
+    #     outBuf[3, :] *= (desiredTotalPower * stokesVector[3]) / meanV
+    
+    if (outputFormat == 'stokes'):
+        outBuf = np.dot(coherency2stokesMatrix, outBuf)
+    
+    return outBuf
 
 
 #---------------------------------------------------------------------------------------------------------
