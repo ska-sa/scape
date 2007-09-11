@@ -16,23 +16,23 @@ import logging
 
 logger = logging.getLogger("xdmsbe.xdmsbelib.single_dish_data")
 
-#------------------------------------
+#----------------------------------------------------------------------------------------------------------------------
 #--- FUNCTIONS
-#------------------------------------
+#----------------------------------------------------------------------------------------------------------------------
 
 ## Dictionary that maps polarisation channel names to power data matrix indices.
 # This allows the use of symbolic names, which are clearer than numeric indices.
 # @param stokes Boolean indicating wether Stokes IQUV (True) or cross power / coherency (False) is required
 # @return Dictionary mapping names to indices
-def polarisation_name_to_idx(stokes):
+def power_index_dict(stokes):
     if stokes:
         return {'I': 0, 'Q': 1, 'U': 2, 'V': 3}
     else:
         return {'XX': 0, 'XY': 1, 'YX': 2, 'YY': 3}
 
-#---------------------------------------------------------------------------------------------
+#----------------------------------------------------------------------------------------------------------------------
 #--- CLASS :  SingleDishData
-#------------------------------------
+#----------------------------------------------------------------------------------------------------------------------
 
 ## A container for single-dish data consisting of polarised power measurements combined with pointing information.
 # The main data member of this class is the powerData list of 2-D arrays, which stores power (autocorrelation) 
@@ -119,11 +119,12 @@ class SingleDishData(object):
         # Setup polarisation lookup by name
         self.stokesData = {}
         self.coherencyData = {}
-        for k, v in polarisation_name_to_idx(self.stokesFlag).iteritems():
+        for k, v in power_index_dict(self.stokesFlag).iteritems():
             if self.stokesFlag:
                 self.stokesData[k] = self._powerData[v]
             else:
                 self.coherencyData[k] = self._powerData[v]
+        self.powerDataSigma = np.zeros(self._powerData.shape)
 
     ## @var powerData
     # Power data array (property).
@@ -158,11 +159,9 @@ class SingleDishData(object):
     # @return self The current object
     # pylint: disable-msg=W0212
     def __iadd__(self, other):
-        # Ensure coordinates are compatible
-        if (self._mountCoordSystem != other._mountCoordSystem) or \
-           (self._targetCoordSystem != other._targetCoordSystem) or \
-           (self._transformer != other._transformer):
-            raise ValueError, "Cannot concatenate data objects with incompatible coordinate systems."
+        # Ensure mount coordinates (az/el/rot) are compatible
+        if (self._mountCoordSystem != other._mountCoordSystem):
+            raise ValueError, "Cannot concatenate data objects with incompatible mount coordinate systems."
         # Ensure objects are in the same state
         if (self._powerConvertedToTemp != other._powerConvertedToTemp) or \
            (self._baselineSubtracted != other._baselineSubtracted):
@@ -182,8 +181,9 @@ class SingleDishData(object):
         self.azAng = np.concatenate((self.azAng, other.azAng))
         self.elAng = np.concatenate((self.elAng, other.elAng))
         self.rotAng = np.concatenate((self.rotAng, other.rotAng))
-        self.set_coordinate_systems(self._mountCoordSystem, self._targetCoordSystem)
         self.powerData = np.concatenate((self.powerData, other.powerData), axis=1)
+        # Convert all coordinate data to target coord system of first object
+        self.set_coordinate_systems(self._mountCoordSystem, self._targetCoordSystem)
         return self
     
     ## Convert the contained power buffer from Stokes vectors to coherency vectors.
@@ -244,7 +244,7 @@ class SingleDishData(object):
         # Obtain baseline
         baselineData = func(self.elAng)
         # Subtract baseline
-        self.coherencyData -= baselineData
+        self.powerData -= baselineData
         self._baselineSubtracted = True
         return self
     

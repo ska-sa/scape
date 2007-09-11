@@ -383,7 +383,7 @@ def interpolate_noise_diode_profile(knownFreqs, knownTemps, desiredFreqs):
 #---------------------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  calc_power_stats
 
-## Calculate power statistics for a particular block of data looping over bands and stokes.
+## Calculate statistics for a particular block of power data looping over bands and stokes.
 #  RFI channels are excluded.
 #
 # @param    bandNoRfiChannelList   list of non-rfi channels per band
@@ -466,8 +466,7 @@ class DistributionStatsArray(object):
         assert(len(dimSet) == 1)
         self.shape = list(dimSet)[0]
     
-    ## Add statistics for a given index of the array by computing directly from a sample
-    # array of data.
+    ## Add statistics for a given index of the array by computing directly from a sample array of data.
     # @param self  the current object
     # @param data  numpy.ndarray of sample values
     # @param timeStamps timestamps of data block samples
