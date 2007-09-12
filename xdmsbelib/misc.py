@@ -14,7 +14,7 @@ import logging.config
 import re
 import sys
 import ConfigParser
-import simcor
+import simcor as sc
 
 logger = logging.getLogger("xdmsbe.xdmsbelib.misc")
 
@@ -665,8 +665,8 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
     yyR = np.array(yy.real, dtype='double')
     yyI = np.array(yy.imag, dtype='double')
 
-    success = simcor.simulate_correlator(numPowerSamples, numVoltSamplesPerIntPeriod, float(desiredTotalPower), 
-                                         linR, linI, xxR, xxI, xyR, xyI, yxR, yxI, yyR, yyI)
+    success = sc.simcor(long(numPowerSamples), long(numVoltSamplesPerIntPeriod), \
+                        float(desiredTotalPower), linR, linI, xxR, xxI, xyR, xyI, yxR, yxI, yyR, yyI)
     if success:
         xx.real = xxR
         xx.imag = xxI
