@@ -1,4 +1,5 @@
 ## @file fitsreader.py
+# pylint: disable-msg=C0302
 #
 # Class for reading fits files and extracting data from them. It is implemented
 # on top of PyFITS.
@@ -700,7 +701,7 @@ class FitsReader(object):
     # @param perBand    True for power per band (minus RFI), False for power per channel
     # @param stokesType True for IQUV, False for cross power
     # @return SingleDishData object combining power and pointing info
-    # pylint: disable-msg=R0914
+    # pylint: disable-msg=R0912,R0914
     def _extract_single_dish_data(self, mask=None, perBand=True, stokesType=True):
         ## Integrate per-channel power data according to frequency bands, while excluding RFI-corrupted channels.
         # Each band contains the average power of its constituent channels. The average power is simpler to use

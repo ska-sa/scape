@@ -640,8 +640,8 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
     if ((P[0, 1]==0) and (P[1, 0]==0)) and ((P[0, 0]==0) or (P[1, 1]==0)):
         S = np.sqrt(P)
     else:
-        P[0,0] += 1e-12
-        P[1,1] += 1e-12
+        P[0, 0] += 1e-12
+        P[1, 1] += 1e-12
         # Make sure P have unity total gain
         S = np.linalg.cholesky(P)   
 
