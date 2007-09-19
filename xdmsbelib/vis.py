@@ -7,6 +7,7 @@
 
 from __future__ import division
 import numpy as np
+import numpy.linalg as linalg
 import logging
 import pylab
 import os
@@ -166,8 +167,8 @@ def draw_std_corridor(mu,
                         ax, 
                         muLabel = None, 
                         sigLabel = None, 
-                        muLineType = 'r-', 
-                        sigFilColor = 'r', 
+                        muLineType = 'b-', 
+                        sigFilColor = 'b', 
                         sigAlpha = '0.5', 
                         sigLineType = None):
     
@@ -181,7 +182,7 @@ def draw_std_corridor(mu,
                  
     sigCor = ax.fill(x, y, facecolor = sigFilColor, alpha = sigAlpha, label = sigLabel)
     
-    muPlot = ax.plot(xVals, mu, muLineType, label = muLabel)
+    muPlot = ax.plot(xVals, mu, muLineType, label = muLabel, lw = 2)
     
     if sigLineType:
         sigPosPlot = ax.plot(xVals, y1, sigLineType)
@@ -191,3 +192,42 @@ def draw_std_corridor(mu,
         return sigCor, muPlot
 
 
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  plot_gaussian_ellipse
+#---------------------------------------------------------------------------------------------------------
+
+## Plot ellipse(s) representing 2-D Gaussian function.
+#
+# @param    ax              Matplotlib axes object associated with a matplotlib Figure
+# @param    mean            2-dimensional mean vector
+# @param    cov             2x2 covariance matrix
+# @param    contour         Contour height of ellipse(s), as a (list of) factor(s) of the peak value [0.5]
+#                           For a factor sigma of the standard deviation, use e^(-0.5*sigma^2) here
+# @param    ellipseLineType Matplotlib linetype string for ellipse line ['b-']
+# @param    centerLineType  Matplotlib linetype string for center marker ['b+']
+# @param    lineWidth       Line widths for ellipse and center marker [1]
+# @return   ellipseHandle   Handle(s) to contour plot
+# @return   centerHandle    Handle to center of Gaussian
+
+def plot_gaussian_ellipse(ax, mean, cov, contour=0.5, ellipseLineType='b-', centerLineType='b+', lineWidth=1):
+    mean = np.asarray(mean)
+    cov = np.asarray(cov)
+    contour = np.atleast_1d(np.asarray(contour))
+    if (mean.shape != (2,)) or (cov.shape != (2, 2)):
+        message = 'Mean and covariance should be 2-dimensional, with shapes (2,) and (2,2) instead of' \
+                  + str(mean.shape) + ' and ' + str(cov.shape)
+        logger.error(message)
+        raise ValueError, message
+    # Create parametric circle
+    t = np.linspace(0, 2*np.pi, 200)
+    circle = np.vstack((np.cos(t), np.sin(t)))
+    # Determine and apply transformation to ellipse
+    eigVal, eigVec = linalg.eig(cov)
+    circleToEllipse = np.dot(eigVec, np.diag(np.sqrt(eigVal)))
+    baseEllipse = np.real(np.dot(circleToEllipse, circle))
+    ellipseHandle = []
+    for cnt in contour:
+        ellipse = np.sqrt(-2*np.log(cnt)) * baseEllipse + np.repeat(mean[:, np.newaxis], 200, axis=1)
+        ellipseHandle.append(ax.plot(ellipse[0], ellipse[1], ellipseLineType, lw=lineWidth))
+    centerHandle = ax.plot([mean[0]], [mean[1]], centerLineType, markersize=12, aa=False, mew=lineWidth)
+    return ellipseHandle, centerHandle
