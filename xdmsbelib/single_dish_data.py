@@ -13,6 +13,7 @@ from acsm.coordinate import Coordinate
 import acsm.transform
 import numpy as np
 import logging
+import copy
 
 logger = logging.getLogger("xdmsbe.xdmsbelib.single_dish_data")
 
@@ -87,8 +88,12 @@ class SingleDishData(object):
         ## @var targetCoords
         # Target coordinates
         self.targetCoords = None
-        self._mountCoordSystem = None
-        self._targetCoordSystem = None
+        ## @var mountCoordSystem
+        # Coordinate system for mount (azimuth/evelation/rotation angles)
+        self.mountCoordSystem = None
+        ## @var targetCoordSystem
+        # Coordinate system for target output (some projection, typically)
+        self.targetCoordSystem = None
         self._transformer = None
         self.set_coordinate_systems(mountCoordSystem, targetCoordSystem)
         
@@ -132,46 +137,54 @@ class SingleDishData(object):
     
     ## Set mount and target coordinate systems which was used for data capture.
     #
-    # @param    self          the current object
-    # @param    mountCoordSys Mount coordinate system object (see acsm module)
-    # @param    targetCoordSys Target coordinate system object (see acsm module)
-    def set_coordinate_systems(self, mountCoordSys, targetCoordSys):
+    # @param self              The current object
+    # @param mountCoordSystem  Mount coordinate system object (see acsm module)
+    # @param targetCoordSystem Target coordinate system object (see acsm module)
+    # @return self The updated object
+    def set_coordinate_systems(self, mountCoordSystem, targetCoordSystem):
         # Coordinate systems not complete - do nothing
-        if not (mountCoordSys and targetCoordSys):
+        if not (mountCoordSystem and targetCoordSystem):
             return self
-        self._mountCoordSystem = mountCoordSys
-        self._targetCoordSystem = targetCoordSys
-        self._transformer = acsm.transform.get_factory_instance().get_transformer(mountCoordSys, targetCoordSys)
+        self.mountCoordSystem = mountCoordSystem
+        self.targetCoordSystem = targetCoordSystem
+        self._transformer = acsm.transform.get_factory_instance().get_transformer(mountCoordSystem, targetCoordSystem)
         numTimeSamples = len(self.timeSamples)
-        self.targetCoords = np.zeros((numTimeSamples, targetCoordSys.get_dimensions()), dtype='double')
+        self.targetCoords = np.zeros((numTimeSamples, targetCoordSystem.get_dimensions()), dtype='double')
         
         for k in np.arange(numTimeSamples):
-            mountCoordinate = Coordinate(mountCoordSys, [self.azAng[k], self.elAng[k], self.rotAng[k]])
+            mountCoordinate = Coordinate(mountCoordSystem, [self.azAng[k], self.elAng[k], self.rotAng[k]])
             targetCoordinate = self._transformer.transform_coordinate(mountCoordinate, self.timeSamples[k])
             self.targetCoords[k, :] = targetCoordinate.get_vector()
         return self
     
-    ## Appends second data object to the first one.
+    ## Appends another data object to the current one.
     # This appends the data of the second object to the main object (including power data,
     # coordinates, timestamps, etc.). It also ensures the two objects are compatible.
     # @param self  The current object
-    # @param other The object to add to current object (will be mutated!)
-    # @return self The current object
+    # @param other The object to append to current object
+    # @return self The updated object
     # pylint: disable-msg=W0212
-    def __iadd__(self, other):
+    def append(self, other):
         # Ensure mount coordinates (az/el/rot) are compatible
-        if (self._mountCoordSystem != other._mountCoordSystem):
-            raise ValueError, "Cannot concatenate data objects with incompatible mount coordinate systems."
+        if (self.mountCoordSystem != other.mountCoordSystem):
+            message = "Cannot concatenate data objects with incompatible mount coordinate systems."
+            logger.error(message)
+            raise ValueError, message
         # Ensure objects are in the same state
         if (self._powerConvertedToTemp != other._powerConvertedToTemp) or \
            (self._baselineSubtracted != other._baselineSubtracted):
-            raise ValueError, "Data objects are not in the same state" + \
-                              " (power conversion or baseline subtraction flags differ)."
+            message = "Data objects are not in the same state (power conversion or baseline subtraction flags differ)."
+            logger.error(message)
+            raise ValueError, message
         # Ensure frequency bands are the same
         if ((self.bandFreqs != other.bandFreqs).any()):
-            raise ValueError, "Cannot concatenate data objects with different frequency bands."
+            message = "Cannot concatenate data objects with different frequency bands."
+            logger.error(message)
+            raise ValueError, message
         # Convert power data to appropriate format if it differs for the two objects
         if self.stokesFlag != other.stokesFlag:
+            # First make a copy to prevent unexpected mutation of "other" object
+            other = copy.deepcopy(other)
             if self.stokesFlag:
                 other.convert_to_stokes()
             else:
@@ -183,7 +196,7 @@ class SingleDishData(object):
         self.rotAng = np.concatenate((self.rotAng, other.rotAng))
         self.powerData = np.concatenate((self.powerData, other.powerData), axis=1)
         # Convert all coordinate data to target coord system of first object
-        self.set_coordinate_systems(self._mountCoordSystem, self._targetCoordSystem)
+        self.set_coordinate_systems(self.mountCoordSystem, self.targetCoordSystem)
         return self
     
     ## Convert the contained power buffer from Stokes vectors to coherency vectors.
@@ -228,12 +241,13 @@ class SingleDishData(object):
         return self
     
     ## Subtract a baseline function from the scan data.
-    # The main argument is a callable object with the signature 'temp = func(elAng)', which provides 
-    # an interpolated baseline function.
-    # @param self The current object
-    # @param func The baseline function (as a function of elevation angle)
-    # @return self The current object
-    def subtract_baseline(self, func):
+    # The main argument is a callable object with the signature 'temp = func(ang)', which provides 
+    # an interpolated baseline function based on either elevation or azimuth angle.
+    # @param self         The current object
+    # @param func         The baseline function (as a function of elevation or azimuth angle)
+    # @param useElevation True if elevation angle is to be used
+    # @return self        The current object
+    def subtract_baseline(self, func, useElevation):
         # Already done, so don't do it again
         if self._baselineSubtracted:
             return self
@@ -242,7 +256,10 @@ class SingleDishData(object):
             logger.error(message)
             raise ValueError, message
         # Obtain baseline
-        baselineData = func(self.elAng)
+        if useElevation:
+            baselineData = func(self.elAng)
+        else:
+            baselineData = func(self.azAng)
         # Subtract baseline
         self.powerData -= baselineData
         self._baselineSubtracted = True
