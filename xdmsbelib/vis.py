@@ -227,7 +227,7 @@ def plot_gaussian_ellipse(ax, mean, cov, contour=0.5, ellipseLineType='b-', cent
     baseEllipse = np.real(np.dot(circleToEllipse, circle))
     ellipseHandle = []
     for cnt in contour:
-        ellipse = np.sqrt(-2*np.log(cnt)) * baseEllipse + np.repeat(mean[:, np.newaxis], 200, axis=1)
+        ellipse = np.sqrt(-2*np.log(cnt)) * baseEllipse + mean[:, np.newaxis]
         ellipseHandle.append(ax.plot(ellipse[0], ellipse[1], ellipseLineType, lw=lineWidth))
     centerHandle = ax.plot([mean[0]], [mean[1]], centerLineType, markersize=12, aa=False, mew=lineWidth)
     return ellipseHandle, centerHandle

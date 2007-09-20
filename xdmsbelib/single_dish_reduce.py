@@ -120,7 +120,7 @@ def fit_beam_pattern(targetCoords, totalPower):
         weights = bandPower[insideBlob]
         centroid = np.dot(weights, blobPoints)/weights.sum()
         # Use the average distance from the blob points to the centroid to estimate standard deviation
-        diffVectors = blobPoints - np.repeat(centroid[np.newaxis, :], blobPoints.shape[0], axis=0)
+        diffVectors = blobPoints - centroid[np.newaxis, :]
         distToCentroid = np.sqrt((diffVectors * diffVectors).sum(axis=1))
         initStDev = 2 * distToCentroid.mean()
         interp = interpolator.GaussianFit(centroid, initStDev*np.ones(centroid.shape), peakVal)
