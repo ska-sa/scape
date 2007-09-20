@@ -36,14 +36,15 @@ def power_index_dict(stokes):
 #----------------------------------------------------------------------------------------------------------------------
 
 ## A container for single-dish data consisting of polarised power measurements combined with pointing information.
-# The main data member of this class is the powerData list of 2-D arrays, which stores power (autocorrelation) 
-# measurements as a function of polarization index, time and frequency band. Additional information contained in
-# the class is the pointing data (azimuth/elevation/rotator angles) and timestamps.
+# The main data member of this class is the 3-D powerData array, which stores power (autocorrelation) measurements as a
+# function of polarisation index, time and frequency band. Additional information contained in the class is the
+# pointing data (azimuth/elevation/rotator angles) and timestamps.
 class SingleDishData(object):
     ## Initialiser/constructor
     #
     # @param    self              The current object
-    # @param    powerData         List of arrays, containing 4 power data blocks of dimension: time x frequency bands
+    # @param    powerData         3-D array, of shape (4, number of time samples, number of frequency bands)
+    #                             This can be interpreted as 4 data blocks of dimension time x bands
     # @param    stokesFlag        True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
     # @param    timeSamples       Sequence of timestamps for each data block (in seconds since epoch)
     # @param    azAng             Azimuth angle sequence for each data block (in radians)
@@ -130,7 +131,6 @@ class SingleDishData(object):
             else:
                 self.coherencyData[k] = self._powerData[v]
         self.powerDataSigma = np.zeros(self._powerData.shape)
-
     ## @var powerData
     # Power data array (property).
     powerData = property(get_power_data, set_power_data, doc='List of power data blocks.')

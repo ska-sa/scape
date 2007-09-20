@@ -1,9 +1,10 @@
 ## xdmsbelib/stats.py
 #
-# statistics routines used by XDM software backend.
+# Statistics routines used by XDM software backend.
 #
 # copyright (c) 2007 SKA/KAT. All rights reserved.
-# @author Rudolph van der Merwe [rudolph@ska.ac.za] on 2007-03-13.
+# @author Rudolph van der Merwe <rudolph@ska.ac.za>
+# @date 2007-03-13
 
 # pylint: disable-msg=C0103
 
@@ -16,403 +17,16 @@ import logging
 
 logger = logging.getLogger("xdmsbe.xdmsbelib.stats")
 
-#=======================================================================================================
-#=== FUNCTIONS 
-#=======================================================================================================
 
-#-------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  check_model_fit_agn
-#-------------------------------------
-
-## Check whether a data set fits a specific model with additive Gaussian noise.
-#  A D'Agostino-Pearson "Goodness-of-Fit" test is used. 
-#
-# Check if the following generative assumption holds for a given data set.
-#
-#     y = f(x) + n
-#
-# Here f() is an arbitray function (specified as input parameter) and n is additive Gaussian (normal) noise
-# with zero mean and specified standard deviation.
-#
-# @param      xMu               input random variable dataset (mean)
-# @param      xSig              input random variable dataset (standard deviation)
-# @param      y                 output random variable dataset
-# @param      func              function f()  
-# @param      alpha             tail probability [0.05]
-# @param      expResStd         tuple(expected residual standard deviation, degrees-of-freedom of estimate)
-#                               If not specified, ignore this part of the test.
-# @return     fit               boolean indicating if model fit data or not
-# @return     pVal              p-value of fit
-# @return     k2                D'Agostino-Pearson K2 statistic
-# @return     chiSqT            Chi-Squared threshold value for given alpha
-# @return     resMuCorrect      Is the residual zero mean?
-# @return     resStdCorrect     If expResStd is specified, this return flag will indicate if the residual's std ise as 
-#                               expected
-#
-# @todo       Expected residual variance test should make use of correct statistical formulation. Currently it is too 
-#             simplistic.
-#             
-
-def check_model_fit_agn(xMu=None, xSig=None, y=None, func=None, alpha=0.05, expResStd=None):
-    
-    # pylint: disable-msg=R0913,R0914
-    
-    # If X has any probabilistic spread we need to use a sigma-point approach to propagate the distribution
-    if xSig:
-        yPred = sp_stats(func, xMu, xSig**2)
-    else:
-        yPred = func(xMu)
-        
-    # Calculate difference between predicted and observed data (residuals)
-    res = y - yPred
-        
-    # Now perform a D'Agostino-Pearson normality test on the residuals
-    k2, pVal = sp.stats.normaltest(res)
-    
-    # Calculate Chi-square test threshold for given alpha value. k2 is distributed as Chi-Squared with 2 degrees 
-    # of freedom
-    
-    chiSqThreshold = sp.stats.chi2.isf(alpha, 2)
-    
-    resGaussian = k2 < chiSqThreshold           # Is res Gaussian?
-    
-    # Statistics of residual: We expect residual to be zero mean with std equal to expResStd (if specified)
-    numSamples = len(res)
-    resMu = res.mean()
-    resStd = res.std()
-    
-    tVal = sp.stats.t.isf(alpha/2, numSamples-1)   # Student-T distribution critical value
-    intVal = tVal * resStd/np.sqrt(numSamples)
-    meanConfInterval = [resMu-intVal, resMu+intVal]
-    
-    resMuCorrect = (meanConfInterval[0] <= 0) and (meanConfInterval[1] >= 0)   # Is residual zero mean?  
-    
-    if not expResStd:
-        return resGaussian, pVal, k2, chiSqThreshold, resMuCorrect
-    else:
-        xDOF = numSamples -1
-        yDOF = expResStd[1]
-        fValXY = sp.stats.f.isf(alpha/2, xDOF, yDOF)
-        fValYX = sp.stats.f.isf(alpha/2, yDOF, xDOF)
-        resStdCorrect = ((resStd**2)/(expResStd[0]**2) <= fValXY) and ((expResStd[0]**2)/(resStd**2) <= fValYX)
-        return resGaussian, pVal, k2, chiSqThreshold, resMuCorrect, resStdCorrect    
+#=========================================================================================================
+#===                                       CLASSES                                                     ===
+#=========================================================================================================
 
 #---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  propagate_scalar_stats
-#--------------------------------------
-
-## Propagate statistics through a function to determine the resultant stats. Wrapper for
-# sp_stats function for the special case of scalar independent random variables.
-# @todo Write a new wrapper around sp_stats so that externally we can pass in the lists of
-#       means and covariances and get back the resultant means and covariances, ie hide the
-#       vectorizing from the user.
-# @param func the function that is going to be applied to the stats
-# @param muX input mean vector
-# @param sigmaX input standard deviation vector
-# @return muY output mean vector
-# @return sigmaY output standard deviation vector
-def propagate_scalar_stats(func, muX, sigmaX):
-    
-    # NOTE that this can only be used like this because we have scalar and independent
-    # random variables.
-    muY, covY = sp_stats(func, muX, np.diag(sigmaX**2))
-    
-    muY = func.devectorize_output(muY)
-    sigmaY = func.devectorize_output(np.sqrt(np.diag(covY)))
-        
-    return muY, sigmaY
-
-#---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  sp_stats
-#-------------------------
-
-## Sigma-Point Statistics
-#
-# @param    func        function handle
-# @param    muX         mean of input RV (random variable)
-# @param    covX        covariance of input RV
-# @param    h           CDT length [sqrt(3)]     
-#
-# @return   (muY, covY) mean and covariance of output RV
-#
-# Note:     Y = func(X)
-#
-# For more detail regarding the mathematics behind this algorithm, please see:
-#   
-# 
-# copyright    (c) 2004 Rudolph van der Merwe. All rights reserved.
-# @author       Rudolph van der Merwe [rudolphv@gmail.com] on 2004-03-01.
-# @todo Swap order of indices, ie use row vectors for means
-
-# pylint: disable-msg=R0914
-
-
-def sp_stats(func, muX, covX, h=np.sqrt(3)):
-    
-    muX = np.atleast_1d(muX)
-    covX = np.atleast_1d(covX)
-    
-    L = muX.size
-    N = 2*L + 1
-    
-    # Build sigma-point set
-    X = np.zeros((L, 2*L+1), dtype='double')
-    
-    X[:, 0] = np.ravel(muX)
-    
-    if L == 1:
-        S = np.atleast_2d(np.sqrt(covX))
-    else:
-        S = np.atleast_2d(np.linalg.cholesky(covX))
-
-    muXX = muX[:, np.newaxis]
-    X[:, 1:L+1] = muXX + h*S
-    X[:, L+1:] = muXX - h*S
-    
-    # Weights
-    hh = h**2
-    wm = np.zeros(N)       # mean weights
-    wm[0] = (hh - L)/hh
-    wm[1:] = 1/(2*hh)
-    wc1 = np.zeros(L)      # cov 1 weights
-    wc2 = np.zeros(L)      # cov 2 weights
-    wc1[:] = 1/(4*hh)
-    wc2[:] = (hh-1)/(4*(hh**2))
-    
-    # Propagate sigma points
-    Y = np.atleast_2d(func(X))
-    
-    muY = np.sum(wm[np.newaxis, :] * Y, 1)
-    
-    A = Y[:, 1:L+1] - Y[:, L+1:]
-    B = Y[:, 1:L+1] + Y[:, L+1:] - 2*(Y[:, 0])[:, np.newaxis]
-    
-    covY = np.dot(wc1[np.newaxis, :]*A, A.transpose()) + np.dot(wc2[np.newaxis, :]*B, B.transpose())
-    
-    return muY, covY
-
-
-#---------------------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  calc_conf_interval_diff2means
-#-----------------------------------------------
-
-## Calculate confidence interval for the difference of two means using a Student-t test.
-#  (See pg. 305 of Hogg & Tanis, "Probability and Statistical Inference")
-#
-# @note all parameters must have the same dimensions.
-#
-# @param    a1      sample stats (DistributionStatsArray) of first distribution
-# @param    a2      sample stats (DistributionStatsArray) of second distribution
-# @param    alpha   significance level between 0 and 1 (typically 0.05)
-#
-# @return   deltaMeanConfInterval   measured confidence intervals
-# @return   r                       number of degrees of freedom of the Student-t distribution
-#                                   used for hypothesis test
-
-def calc_conf_interval_diff2means(a1, a2, alpha):
-    
-    # Check that all inputs have same dimensions
-    dimSet = set([a1.shape, a2.shape])
-    assert(len(dimSet) == 1)
-    dimShape = misc.tuple_append(2, a1.shape)
-    
-    # First we estimate the r-value of the Student-t distrubution (the number of degrees
-    # of freedom)
-    r = np.floor((a2.var/a2.num + a1.var/a1.num)**2 / \
-                 ((1/(a2.num-1)) * (a2.var/a2.num)**2 + \
-                  (1/(a1.num-1)) * (a1.var/a1.num)**2))
-    # Now use this to calculate the confidence interval
-    t_alpha_over_2_r = np.abs(sp.stats.t.isf(1-alpha/2, r))
-    cDel = t_alpha_over_2_r * np.sqrt(a2.var/a2.num + a1.var/a1.num)
-    deltaMeanConfInterval = np.zeros(dimShape, 'double')
-    deltaMean = a1.mean - a2.mean
-    deltaMeanConfInterval[0] = deltaMean - cDel
-    deltaMeanConfInterval[1] = deltaMean + cDel
-    
-    return deltaMeanConfInterval, r
-
-
-
-#---------------------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  calc_conf_interval_diff_diff2means
-#----------------------------------------------------
-
-## Calculate linearity of bands
-# (See pg. 305 of Hogg & Tanis, "Probability and Statistical Inference") using a Student-t test.
-# This checks that the difference between the first two distributions is the same as the
-# difference between the second two distributions.
-#
-# @param  a1    sample stats (DistributionStatsArray) of first distribution or first group
-# @param  a2    sample stats (DistributionStatsArray) of first distribution or second group
-# @param  b1    sample stats (DistributionStatsArray) of second distribution or first group
-# @param  b2    sample stats (DistributionStatsArray) of second distribution or second group
-# @param  alpha Student-T test alpha value
-#
-# @return deltaMeanConfInterval     measured confidence intervals
-# @return r                         number of degrees of freedom of the Student-t distribution
-#                                   used for hypothesis test
-
-def calc_conf_interval_diff_diff2means(a1, a2, b1, b2, alpha):
-    
-    # Check that all inputs have same dimensions
-    dimSet = set([a1.shape, a2.shape, b1.shape, b2.shape])
-    assert(len(dimSet) == 1)
-    dimShape = misc.tuple_append(2, a1.shape)
-    
-    # Calculate confidence interval for deltaPhot - deltaPcold
-    # First we estimate the r-value of the Student-t distrubution (the number of degrees of freedom)
-    r = np.floor((a2.var/a2.num + a1.var/a1.num + b2.var/b2.num + b1.var/b1.num)**2 / \
-                 ( (1/(a2.num-1)) * (a2.var/a2.num)**2 + (1/(a1.num-1)) * (a1.var/a1.num)**2 + \
-                   (1/(b2.num-1)) * (b2.var/b2.num)**2 + (1/(b1.num-1)) * (a1.var/b1.num)**2 ) )
-    # Now use this to calculate the confidence interval
-    t_alpha_over_2_r = np.abs(sp.stats.t.isf(1-alpha/2, r))
-    cDel = t_alpha_over_2_r * np.sqrt(a2.var/a2.num + a1.var/a1.num + b2.var/b2.num + b1.var/b1.num)
-    
-    deltaDeltaMean = (b2.mean - b1.mean) - (a2.mean - a1.mean)
-    
-    deltaDeltaMeanConfInterval = np.zeros(dimShape, 'double')
-    deltaDeltaMeanConfInterval[0] = deltaDeltaMean - cDel
-    deltaDeltaMeanConfInterval[1] = deltaDeltaMean + cDel
-    
-    return deltaDeltaMeanConfInterval, r
-
-
-
-#---------------------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  check_equality_of_means
-#-----------------------------------------
-
-## Check if two means are equal by ensuring that the confidence interval straddles 0
-#
-# @param deltaDeltaMeanConfInterval output of calc_conf_interval_diff_diff2means
-#
-# @return boolean result for each interval in array
-
-def check_equality_of_means(deltaDeltaMeanConfInterval):
-    
-    return (deltaDeltaMeanConfInterval[0] <= 0.0) & (deltaDeltaMeanConfInterval[1] >= 0.0)
-
-
-#---------------------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  interpolate_tipping_curve
-#------------------------------------------------
-
-## Calculate interpolated tippinbg curve system temperatures at a list of desired elevation angles
-#  given known values.
-#
-# @param    knownElAngs      array of elevation angles (in rad) at which tipping curve is known
-# @param    knownFreqs       array of band frequencies at which tipping curve is known    
-# @param    knownTsys        2D array of known system temperatures, indexed by knownElAngs x knownFreqs
-# @param    desiredElAngs    array of desired elevation angles (in rad) for system temperatures
-# @param    desiredFreqs     array of desired frequencies for system temperatures
-#
-# @return   interpolatedTsys 2D array of interpolated system temperatures (interpolated tipping curve)
-
-def interpolate_tipping_curve(knownElAngs, knownFreqs, knownTsys, desiredElAngs, desiredFreqs):
-    
-    import scipy.sandbox.delaunay as delaunay
-    
-    freqScale = np.std(np.ravel(knownFreqs))
-    angleScale = np.std(np.ravel(knownElAngs)) 
-    
-    # Scale variables to comparable ranges
-    kElAngs = knownElAngs / angleScale
-    dElAngs = desiredElAngs / angleScale
-    kFreqs = knownFreqs / freqScale
-    dFreqs = desiredFreqs / freqScale
-    
-    # Get 2D interpolation grid
-    yi = np.tile(dFreqs[np.newaxis, :], (len(dElAngs), 1))
-    xi = np.tile(dElAngs[:, np.newaxis], (1, len(dFreqs)))    
-    
-    y = np.tile(kFreqs[np.newaxis, :], (len(kElAngs), 1))
-    x = np.tile(kElAngs[:, np.newaxis], (1, len(kFreqs)))
-        
-    # triangulate data
-    tri = delaunay.Triangulation(np.ravel(x), np.ravel(y))
-    
-    # interpolate data
-    interp = tri.nn_interpolator(np.ravel(knownTsys))
-    
-    interpolatedTsys = interp(xi, yi)
-    
-    # knownElAngs = np.atleast_1d(knownElAngs)
-    # knownTsys = np.atleast_1d(knownTsys)
-    # desiredElAngs = np.atleast_1d(desiredElAngs)
-    # assert(len(knownElAngs.shape) == 1)
-    # assert(knownElAngs.shape == knownTsys.shape)
-    # assert(knownElAngs.size > 5)
-    # polynomialDegree = 4    
-    # p1 = np.polyfit(knownElAngs, knownTsys, deg=polynomialDegree)
-    # return np.polyval(p1, desiredElAngs)
-    
-    return interpolatedTsys
-
-
-#---------------------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  interpolate_noise_diode_profile
-#------------------------------------------------
-
-## Calculate interpolated noise diode temperatures at a list of desired frequencies
-#  given known values.
-#
-# @param    knownFreqs      list of known frequencies
-# @param    knownTemps      list of known temperatures in same order as knownFreqs
-# @param    desiredFreqs    list of desired frequencies for temperatures
-#
-# @return   list of desired temperatures corresponding to desiredFreqs
-
-def interpolate_noise_diode_profile(knownFreqs, knownTemps, desiredFreqs):
-    knownFreqs = np.atleast_1d(knownFreqs)
-    knownTemps = np.atleast_1d(knownTemps)
-    desiredFreqs = np.atleast_1d(desiredFreqs)
-    assert(len(knownFreqs.shape) == 1)
-    assert(knownFreqs.shape == knownTemps.shape)
-    assert(knownFreqs.size > 0)
-    if knownFreqs.size < 4:
-        return np.repeat(knownTemps.mean(), desiredFreqs.size)
-    elif (knownFreqs.size == 4):
-        polynomialDegree = 0
-    else:
-        polynomialDegree = 1
-    p1 = np.polyfit(knownFreqs, knownTemps, deg=polynomialDegree)
-    return np.polyval(p1, desiredFreqs)
-
-
-
-#---------------------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  calc_power_stats
-
-## Calculate statistics for a particular block of power data looping over bands and stokes.
-#  RFI channels are excluded.
-#
-# @param    bandNoRfiChannelList   list of non-rfi channels per band
-# @param    numStokes              number of stokes dimensions
-# @param    dataObj                fitsreader.SelectedPower object containing list of power arrays[time][channel], 
-#                                  one per stokes dimension
-#
-# @return   DistributionStatsArray
-
-def calc_power_stats(bandNoRfiChannelList, numStokes, dataObj):
-    statsArray = DistributionStatsArray(shape=(numStokes, len(bandNoRfiChannelList)))
-    for b, bandChannels in enumerate(bandNoRfiChannelList):
-        for s in xrange(numStokes):
-            data = (dataObj.powerData[s])[:, bandChannels]
-            timeStamps = dataObj.timeSamples
-            statsArray.add_data(data, timeStamps, (s, b))
-    return statsArray
-
-
-
-#=====================================================================================================================
-#===  CLASSES  
-#=====================================================================================================================
-
-#-----------------------------------------------------------------------------------------------------------------
 #--- CLASS :  DistributionStatsArray
 #------------------------------------
 
-## Class used as a structure to represent an array of scalar random variable distribution 
+## Class used as a structure to represent an array of scalar random variable distribution
 # statistics
 
 class DistributionStatsArray(object):
@@ -484,7 +98,7 @@ class DistributionStatsArray(object):
         self.num[index] = data.size
         self.timeStamp = np.mean(timeStamps.ravel())
         return self
-        
+    
     ## Find instances of zeros variance and set it to some small finite value
     # @param self  the current object
     # @param minVar  minimum variance floor
@@ -492,26 +106,8 @@ class DistributionStatsArray(object):
         self.var[self.var == 0] = minVar
         return self
 
-#-----------------------------------------------------------------------------------------------------------------
-#--- CLASS :  MultiVariateGaussian
-#------------------------------------
 
-## Multi variate gaussian class
-# pylint: disable-msg=R0903
-class MultiVariateGaussian(object):
-    
-    ## Initialiser/Constructor
-    # @param self   the current object
-    # @param mu     mean vector
-    # @param cov    covariance matrix
-    def __init__(self, mu, cov):
-        self._mu = mu
-        self._cov = cov
-    
-
-
-
-#-----------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------
 #--- CLASS :  SpStatsFuncWrapper
 #---------------------------------
 
@@ -543,7 +139,7 @@ class SpStatsFuncWrapper(object):
         self._inputDim = SpStatsFuncWrapper._init_idx_dict(self._inputShapeDict, self._inputIdxDict)
         self._outputDim = SpStatsFuncWrapper._init_idx_dict(self._outputShapeDict, self._outputIdxDict)
     
-    ## Call overloading so that the class can be used directly as a function, 
+    ## Call overloading so that the class can be used directly as a function,
     # i.e. if foo = FuncWrapper(), then foo(x) will call this method.
     # @param    self        The object pointer
     # @param    X           Vectorized input argument
@@ -582,7 +178,7 @@ class SpStatsFuncWrapper(object):
         else:
             resultList = []
             for i in np.arange(self._numOutputs):
-                resultList.append(result['ov'+str(i)]) 
+                resultList.append(result['ov'+str(i)])
             return resultList
     
     ## Vectorize a dictionary of input arrays
@@ -626,6 +222,530 @@ class SpStatsFuncWrapper(object):
         for key, index in indexDict.items():
             result[index[0]: index[1]] = np.ravel(kwds[key])
         return result
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- CLASS :  MuSigmaArray
+#--------------------------
+
+## Container that bundles mean and standard deviation of N-dimensional data.
+# This is a subclass of numpy.ndarray, which adds a sigma data member.
+# The idea is that the main array is the mean, while sigma contains the standard deviation
+# of each corresponding element of the main array. Sigma should therefore have the same shape
+# as the main array (mean). This approach allows the object itself to be the mean (e.g. x),
+# while the standard deviation can be accessed as x.sigma. This makes the standard use of the
+# mean (required in most calculations) cleaner, while still allowing the mean and standard
+# deviation to travel together instead of as two arrays.
+#
+# Alternative solutions:
+# - A class with .mu and .sigma arrays (cumbersome when using mu)
+# - A dict with 'mu' and 'sigma' keys and array values (ditto)
+# - A tuple containing two arrays (mean still has to be extracted first)
+# - Extending the mu array to contain another dimension (can be misleading)
+# pylint: disable-msg=R0903
+class MuSigmaArray(np.ndarray):
+    ## Object creation.
+    # This casts the mu array to the current subclass.
+    # @param cls   The current class
+    # @param mu    The mean array (which becomes the main array of this object)
+    # @param sigma The standard deviation array (default=None)
+    # pylint: disable-msg=W0613
+    def __new__(cls, mu, sigma=None):
+        return np.asarray(mu).view(cls)
+    ## Initialiser.
+    # This checks sigma to ensure its dimensions are compatible with mu.
+    # @param self  The current object
+    # @param mu    The mean array (which becomes the main array of this object)
+    # @param sigma The standard deviation array (default=None)
+    # pylint: disable-msg=W0613
+    def __init__(self, mu, sigma=None):
+        ## @var _sigma
+        # Standard deviation of each element in main array (internal variable set via property).
+        self._sigma = None
+        ## @var sigma
+        # Standard deviation of each element in main array (property).
+        self.sigma = sigma
     
+    ## Official string representation
+    # @param self  The current object
+    def __repr__(self):
+        return self.__class__.__name__ + '(' + repr(self.view(np.ndarray)) + ',' + repr(self._sigma) + ')'
+    ## Informal string representation
+    # @param self  The current object
+    def __str__(self):
+        return 'mu    = ' + np.ndarray.__str__(self) + '\nsigma = ' + str(self._sigma)
+    
+    ## Class method which creates sigma property.
+    # This is a nice way to create Python properties. It prevents clutter of the class namespace with
+    # getter and setter methods, while being more readable than lambda notation. The function below is
+    # effectively hidden by giving it the same name as the eventual property.
+    # @return Dictionary containing property getter and setter methods, and doc string
+    # pylint: disable-msg=E0211,E0202,W0212,W0612
+    def sigma():
+        doc = 'Standard deviation of each element in main array.'
+        def fget(self):
+            return self._sigma
+        def fset(self, value):
+            if value != None:
+                value = np.asarray(value)
+                if value.shape != self.shape:
+                    raise TypeError, "X.sigma should have the same shape as X (i.e. " +  \
+                                     str(self.shape) + " instead of " + str(value.shape) + " )"
+            self._sigma = value
+        return locals()
+    ## @var sigma
+    # Standard deviation of each element in main array (property).
+    # pylint: disable-msg=W0142,W1001
+    sigma = property(**sigma())
 
 
+#=========================================================================================================
+#=== FUNCTIONS                                                                                         ===
+#=========================================================================================================
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  check_model_fit_agn
+#-------------------------------------
+
+## Check whether a data set fits a specific model with additive Gaussian noise.
+#  A D'Agostino-Pearson "Goodness-of-Fit" test is used.
+#
+# Check if the following generative assumption holds for a given data set.
+#
+#     y = f(x) + n
+#
+# Here f() is an arbitray function (specified as input parameter) and n is additive Gaussian (normal) noise
+# with zero mean and specified standard deviation.
+#
+# @param      xMu               input random variable dataset (mean)
+# @param      xSig              input random variable dataset (standard deviation)
+# @param      y                 output random variable dataset
+# @param      func              function f()
+# @param      alpha             tail probability [0.05]
+# @param      expResStd         tuple(expected residual standard deviation, degrees-of-freedom of estimate)
+#                               If not specified, ignore this part of the test.
+# @return     fit               boolean indicating if model fit data or not
+# @return     pVal              p-value of fit
+# @return     k2                D'Agostino-Pearson K2 statistic
+# @return     chiSqT            Chi-Squared threshold value for given alpha
+# @return     resMuCorrect      Is the residual zero mean?
+# @return     resStdCorrect     If expResStd is specified, this return flag will indicate if the residual's std ise as
+#                               expected
+#
+# @todo       Expected residual variance test should make use of correct statistical formulation. Currently it is too
+#             simplistic.
+#
+
+def check_model_fit_agn(xMu=None, xSig=None, y=None, func=None, alpha=0.05, expResStd=None):
+    
+    # pylint: disable-msg=R0913,R0914
+    
+    # If X has any probabilistic spread we need to use a sigma-point approach to propagate the distribution
+    if xSig:
+        yPred = sp_stats(func, xMu, xSig**2)
+    else:
+        yPred = func(xMu)
+    
+    # Calculate difference between predicted and observed data (residuals)
+    res = y - yPred
+    
+    # Now perform a D'Agostino-Pearson normality test on the residuals
+    k2, pVal = sp.stats.normaltest(res)
+    
+    # Calculate Chi-square test threshold for given alpha value. k2 is distributed as Chi-Squared with 2 degrees
+    # of freedom
+    
+    chiSqThreshold = sp.stats.chi2.isf(alpha, 2)
+    
+    resGaussian = k2 < chiSqThreshold           # Is res Gaussian?
+    
+    # Statistics of residual: We expect residual to be zero mean with std equal to expResStd (if specified)
+    numSamples = len(res)
+    resMu = res.mean()
+    resStd = res.std()
+    
+    tVal = sp.stats.t.isf(alpha/2, numSamples-1)   # Student-T distribution critical value
+    intVal = tVal * resStd/np.sqrt(numSamples)
+    meanConfInterval = [resMu-intVal, resMu+intVal]
+    
+    resMuCorrect = (meanConfInterval[0] <= 0) and (meanConfInterval[1] >= 0)   # Is residual zero mean?
+    
+    if not expResStd:
+        return resGaussian, pVal, k2, chiSqThreshold, resMuCorrect
+    else:
+        xDOF = numSamples -1
+        yDOF = expResStd[1]
+        fValXY = sp.stats.f.isf(alpha/2, xDOF, yDOF)
+        fValYX = sp.stats.f.isf(alpha/2, yDOF, xDOF)
+        resStdCorrect = ((resStd**2)/(expResStd[0]**2) <= fValXY) and ((expResStd[0]**2)/(resStd**2) <= fValYX)
+        return resGaussian, pVal, k2, chiSqThreshold, resMuCorrect, resStdCorrect
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  propagate_scalar_stats
+#--------------------------------------
+
+## Propagate statistics through a function to determine the resultant stats. Wrapper for
+# sp_stats function for the special case of scalar independent random variables.
+# @todo Write a new wrapper around sp_stats so that externally we can pass in the lists of
+#       means and covariances and get back the resultant means and covariances, ie hide the
+#       vectorizing from the user.
+# @param func the function that is going to be applied to the stats
+# @param muX input mean vector
+# @param sigmaX input standard deviation vector
+# @return muY output mean vector
+# @return sigmaY output standard deviation vector
+def propagate_scalar_stats(func, muX, sigmaX):
+    
+    # NOTE that this can only be used like this because we have scalar and independent
+    # random variables.
+    muY, covY = sp_stats(func, muX, np.diag(sigmaX**2))
+    
+    muY = func.devectorize_output(muY)
+    sigmaY = func.devectorize_output(np.sqrt(np.diag(covY)))
+    
+    return muY, sigmaY
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  sp_stats
+#-------------------------
+
+## Sigma-Point Statistics for general (correlated) RV.
+#
+# @param    func        function handle
+# @param    muX         mean of input RV (random variable)
+# @param    covX        covariance of input RV
+# @param    h           CDT length [sqrt(3)]
+#
+# @return   (muY, covY) mean and covariance of output RV
+#
+# Note:     Y = func(X)
+#
+# For more detail regarding the mathematics behind this algorithm, please see:
+#
+#
+# copyright    (c) 2004 Rudolph van der Merwe. All rights reserved.
+# @author       Rudolph van der Merwe [rudolphv@gmail.com] on 2004-03-01.
+# @todo Swap order of indices, ie use row vectors for means
+
+# pylint: disable-msg=R0914
+
+def sp_stats(func, muX, covX, h=np.sqrt(3)):
+    
+    muX = np.atleast_1d(muX)
+    covX = np.atleast_1d(covX)
+    
+    L = muX.size
+    N = 2*L + 1
+    
+    # Build sigma-point set
+    X = np.zeros((L, 2*L+1), dtype='double')
+    
+    X[:, 0] = np.ravel(muX)
+    
+    if L == 1:
+        S = np.atleast_2d(np.sqrt(covX))
+    else:
+        S = np.atleast_2d(np.linalg.cholesky(covX))
+    
+    muXX = muX[:, np.newaxis]
+    X[:, 1:L+1] = muXX + h*S
+    X[:, L+1:] = muXX - h*S
+    
+    # Weights
+    hh = h**2
+    wm = np.zeros(N)       # mean weights
+    wm[0] = (hh - L)/hh
+    wm[1:] = 1/(2*hh)
+    wc1 = np.zeros(L)      # cov 1 weights
+    wc2 = np.zeros(L)      # cov 2 weights
+    wc1[:] = 1/(4*hh)
+    wc2[:] = (hh-1)/(4*(hh**2))
+    
+    # Propagate sigma points
+    Y = np.atleast_2d(func(X))
+    
+    muY = np.sum(wm[np.newaxis, :] * Y, 1)
+    
+    A = Y[:, 1:L+1] - Y[:, L+1:]
+    B = Y[:, 1:L+1] + Y[:, L+1:] - 2*(Y[:, 0])[:, np.newaxis]
+    
+    covY = np.dot(wc1[np.newaxis, :]*A, A.transpose()) + np.dot(wc2[np.newaxis, :]*B, B.transpose())
+    
+    return muY, covY
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  sp_uncorrelated_stats
+#--------------------------------------
+
+## Sigma-Point Statistics for set of uncorrelated scalar random variables (RVs).
+# This function propagates the statistics of a set of uncorrelated scalar RVs through an arbitrary function
+# func, and returns the statistics of the corresponding output RVs. It is assumed that both the input and
+# output RVs are uncorrelated with each other, allowing the use of a single mean and standard deviation value
+# to characterise each RV. The function should have the signature Y = func(X), where X is an L-dimensional array
+# (shape = (L,)) and Y is an M-dimensional array (shape=(M,)).
+#
+# @param    func      Function handle
+# @param    muSigmaX  MuSigmaArray object containing mean and standard deviation vectors of input RVs (shape (L,))
+# @param    h         CDT length [sqrt(3)]
+# @return   muSigmaY  MuSigmaArray object containing mean and standard deviation vectors of output RVs (shape (M,))
+#
+# copyright (c) 2007 SKA/KAT. All rights reserved.
+# @author Ludwig Schwardt <ludwig@ska.ac.za>
+# @date 2007-09-19
+
+# pylint: disable-msg=R0914
+
+def sp_uncorrelated_stats(func, muSigmaX, h=np.sqrt(3)):
+    # Extract mean and standard deviation
+    if not isinstance(muSigmaX, MuSigmaArray):
+        message = 'sp_uncorrelated_stats expects MuSigmaArray object for muSigmaX.'
+        logger.error(message)
+        raise TypeError, message
+    muX = np.atleast_1d(muSigmaX.view(np.ndarray))
+    # No sigma info allows a quick shortcut - only the mean is propagated
+    if muSigmaX.sigma == None:
+        return MuSigmaArray(func(muX), None)
+    sigmaX = np.atleast_1d(muSigmaX.sigma)
+    
+    # Dimension of RV vector (number of scalar RVs)
+    L = muX.size
+    # Number of sigma points (which lie at +-sigma on each dimension, and one at the mean)
+    N = 2*L + 1
+    
+    # Build sigma-point set
+    X = np.zeros((N, L), dtype='double')
+    X[0] = muX
+    S = np.diag(sigmaX)
+    muXX = muX[np.newaxis, :]
+    X[1:L+1] = muXX + h*S
+    X[L+1:] = muXX - h*S
+    
+    # Weights
+    hh = h**2
+    wm = np.zeros(N)       # mean weights
+    wm[0] = (hh - L)/hh
+    wm[1:] = 1/(2*hh)
+    wc1 = np.zeros(L)      # sigma 1 weights
+    wc1[:] = 1/(4*hh)
+    wc2 = np.zeros(L)      # sigma 2 weights
+    wc2[:] = (hh-1)/(4*(hh**2))
+    
+    # Propagate sigma points (the real work)
+    Y = np.array([func(sigmaPoint) for sigmaPoint in X])
+    # Calculate stats of output RVs
+    muY = np.sum(wm[:, np.newaxis] * Y, axis=0)
+    A = Y[1:L+1] - Y[L+1:]
+    B = Y[1:L+1] + Y[L+1:] - 2*Y[0][np.newaxis, :]
+    sigmaY = np.sqrt(np.sum(wc1[:, np.newaxis]*A*A + wc2[:, np.newaxis]*B*B, axis=0))
+    
+    return MuSigmaArray(muY, sigmaY)
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  calc_conf_interval_diff2means
+#-----------------------------------------------
+
+## Calculate confidence interval for the difference of two means using a Student-t test.
+#  (See pg. 305 of Hogg & Tanis, "Probability and Statistical Inference")
+#
+# @note all parameters must have the same dimensions.
+#
+# @param    a1      sample stats (DistributionStatsArray) of first distribution
+# @param    a2      sample stats (DistributionStatsArray) of second distribution
+# @param    alpha   significance level between 0 and 1 (typically 0.05)
+#
+# @return   deltaMeanConfInterval   measured confidence intervals
+# @return   r                       number of degrees of freedom of the Student-t distribution
+#                                   used for hypothesis test
+
+def calc_conf_interval_diff2means(a1, a2, alpha):
+    
+    # Check that all inputs have same dimensions
+    dimSet = set([a1.shape, a2.shape])
+    assert(len(dimSet) == 1)
+    dimShape = misc.tuple_append(2, a1.shape)
+    
+    # First we estimate the r-value of the Student-t distrubution (the number of degrees
+    # of freedom)
+    r = np.floor((a2.var/a2.num + a1.var/a1.num)**2 / \
+                 ((1/(a2.num-1)) * (a2.var/a2.num)**2 + \
+                  (1/(a1.num-1)) * (a1.var/a1.num)**2))
+    # Now use this to calculate the confidence interval
+    t_alpha_over_2_r = np.abs(sp.stats.t.isf(1-alpha/2, r))
+    cDel = t_alpha_over_2_r * np.sqrt(a2.var/a2.num + a1.var/a1.num)
+    deltaMeanConfInterval = np.zeros(dimShape, 'double')
+    deltaMean = a1.mean - a2.mean
+    deltaMeanConfInterval[0] = deltaMean - cDel
+    deltaMeanConfInterval[1] = deltaMean + cDel
+    
+    return deltaMeanConfInterval, r
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  calc_conf_interval_diff_diff2means
+#----------------------------------------------------
+
+## Calculate linearity of bands
+# (See pg. 305 of Hogg & Tanis, "Probability and Statistical Inference") using a Student-t test.
+# This checks that the difference between the first two distributions is the same as the
+# difference between the second two distributions.
+#
+# @param  a1    sample stats (DistributionStatsArray) of first distribution or first group
+# @param  a2    sample stats (DistributionStatsArray) of first distribution or second group
+# @param  b1    sample stats (DistributionStatsArray) of second distribution or first group
+# @param  b2    sample stats (DistributionStatsArray) of second distribution or second group
+# @param  alpha Student-T test alpha value
+#
+# @return deltaMeanConfInterval     measured confidence intervals
+# @return r                         number of degrees of freedom of the Student-t distribution
+#                                   used for hypothesis test
+
+def calc_conf_interval_diff_diff2means(a1, a2, b1, b2, alpha):
+    
+    # Check that all inputs have same dimensions
+    dimSet = set([a1.shape, a2.shape, b1.shape, b2.shape])
+    assert(len(dimSet) == 1)
+    dimShape = misc.tuple_append(2, a1.shape)
+    
+    # Calculate confidence interval for deltaPhot - deltaPcold
+    # First we estimate the r-value of the Student-t distrubution (the number of degrees of freedom)
+    r = np.floor((a2.var/a2.num + a1.var/a1.num + b2.var/b2.num + b1.var/b1.num)**2 / \
+                 ( (1/(a2.num-1)) * (a2.var/a2.num)**2 + (1/(a1.num-1)) * (a1.var/a1.num)**2 + \
+                   (1/(b2.num-1)) * (b2.var/b2.num)**2 + (1/(b1.num-1)) * (a1.var/b1.num)**2 ) )
+    # Now use this to calculate the confidence interval
+    t_alpha_over_2_r = np.abs(sp.stats.t.isf(1-alpha/2, r))
+    cDel = t_alpha_over_2_r * np.sqrt(a2.var/a2.num + a1.var/a1.num + b2.var/b2.num + b1.var/b1.num)
+    
+    deltaDeltaMean = (b2.mean - b1.mean) - (a2.mean - a1.mean)
+    
+    deltaDeltaMeanConfInterval = np.zeros(dimShape, 'double')
+    deltaDeltaMeanConfInterval[0] = deltaDeltaMean - cDel
+    deltaDeltaMeanConfInterval[1] = deltaDeltaMean + cDel
+    
+    return deltaDeltaMeanConfInterval, r
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  check_equality_of_means
+#-----------------------------------------
+
+## Check if two means are equal by ensuring that the confidence interval straddles 0
+#
+# @param deltaDeltaMeanConfInterval output of calc_conf_interval_diff_diff2means
+#
+# @return boolean result for each interval in array
+
+def check_equality_of_means(deltaDeltaMeanConfInterval):
+    
+    return (deltaDeltaMeanConfInterval[0] <= 0.0) & (deltaDeltaMeanConfInterval[1] >= 0.0)
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  interpolate_tipping_curve
+#------------------------------------------------
+
+## Calculate interpolated tippinbg curve system temperatures at a list of desired elevation angles
+#  given known values.
+#
+# @param    knownElAngs      array of elevation angles (in rad) at which tipping curve is known
+# @param    knownFreqs       array of band frequencies at which tipping curve is known
+# @param    knownTsys        2D array of known system temperatures, indexed by knownElAngs x knownFreqs
+# @param    desiredElAngs    array of desired elevation angles (in rad) for system temperatures
+# @param    desiredFreqs     array of desired frequencies for system temperatures
+#
+# @return   interpolatedTsys 2D array of interpolated system temperatures (interpolated tipping curve)
+
+def interpolate_tipping_curve(knownElAngs, knownFreqs, knownTsys, desiredElAngs, desiredFreqs):
+    
+    import scipy.sandbox.delaunay as delaunay
+    
+    freqScale = np.std(np.ravel(knownFreqs))
+    angleScale = np.std(np.ravel(knownElAngs))
+    
+    # Scale variables to comparable ranges
+    kElAngs = knownElAngs / angleScale
+    dElAngs = desiredElAngs / angleScale
+    kFreqs = knownFreqs / freqScale
+    dFreqs = desiredFreqs / freqScale
+    
+    # Get 2D interpolation grid
+    yi = np.tile(dFreqs[np.newaxis, :], (len(dElAngs), 1))
+    xi = np.tile(dElAngs[:, np.newaxis], (1, len(dFreqs)))
+    
+    y = np.tile(kFreqs[np.newaxis, :], (len(kElAngs), 1))
+    x = np.tile(kElAngs[:, np.newaxis], (1, len(kFreqs)))
+    
+    # triangulate data
+    tri = delaunay.Triangulation(np.ravel(x), np.ravel(y))
+    
+    # interpolate data
+    interp = tri.nn_interpolator(np.ravel(knownTsys))
+    
+    interpolatedTsys = interp(xi, yi)
+    
+    # knownElAngs = np.atleast_1d(knownElAngs)
+    # knownTsys = np.atleast_1d(knownTsys)
+    # desiredElAngs = np.atleast_1d(desiredElAngs)
+    # assert(len(knownElAngs.shape) == 1)
+    # assert(knownElAngs.shape == knownTsys.shape)
+    # assert(knownElAngs.size > 5)
+    # polynomialDegree = 4
+    # p1 = np.polyfit(knownElAngs, knownTsys, deg=polynomialDegree)
+    # return np.polyval(p1, desiredElAngs)
+    
+    return interpolatedTsys
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  interpolate_noise_diode_profile
+#------------------------------------------------
+
+## Calculate interpolated noise diode temperatures at a list of desired frequencies
+#  given known values.
+#
+# @param    knownFreqs      list of known frequencies
+# @param    knownTemps      list of known temperatures in same order as knownFreqs
+# @param    desiredFreqs    list of desired frequencies for temperatures
+#
+# @return   list of desired temperatures corresponding to desiredFreqs
+
+def interpolate_noise_diode_profile(knownFreqs, knownTemps, desiredFreqs):
+    knownFreqs = np.atleast_1d(knownFreqs)
+    knownTemps = np.atleast_1d(knownTemps)
+    desiredFreqs = np.atleast_1d(desiredFreqs)
+    assert(len(knownFreqs.shape) == 1)
+    assert(knownFreqs.shape == knownTemps.shape)
+    assert(knownFreqs.size > 0)
+    if knownFreqs.size < 4:
+        return np.repeat(knownTemps.mean(), desiredFreqs.size)
+    elif (knownFreqs.size == 4):
+        polynomialDegree = 0
+    else:
+        polynomialDegree = 1
+    p1 = np.polyfit(knownFreqs, knownTemps, deg=polynomialDegree)
+    return np.polyval(p1, desiredFreqs)
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  calc_power_stats
+
+## Calculate statistics for a particular block of power data looping over bands and stokes.
+#  RFI channels are excluded.
+#
+# @param    bandNoRfiChannelList   list of non-rfi channels per band
+# @param    numStokes              number of stokes dimensions
+# @param    dataObj                SingleDishData object with power data per channel, i.e. BEFORE RFI removal
+#
+# @return   DistributionStatsArray object
+
+def calc_power_stats(bandNoRfiChannelList, numStokes, dataObj):
+    statsArray = DistributionStatsArray(shape=(numStokes, len(bandNoRfiChannelList)))
+    for b, bandChannels in enumerate(bandNoRfiChannelList):
+        for s in xrange(numStokes):
+            data = dataObj.powerData[s, :, bandChannels]
+            timeStamps = dataObj.timeSamples
+            statsArray.add_data(data, timeStamps, (s, b))
+    return statsArray
