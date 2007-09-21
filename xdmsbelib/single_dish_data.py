@@ -75,10 +75,6 @@ class SingleDishData(object):
         # List of band centre frequencies
         self.bandFreqs = bandFreqs
         
-        ## @var powerDataSigma
-        # Standard deviation of power measurements if known
-        self.powerDataSigma = None
-        
         ## @var stokesData
         # Look up Stokes visibility values by name
         self.stokesData = {}
@@ -130,7 +126,6 @@ class SingleDishData(object):
                 self.stokesData[k] = self._powerData[v]
             else:
                 self.coherencyData[k] = self._powerData[v]
-        self.powerDataSigma = np.zeros(self._powerData.shape)
     ## @var powerData
     # Power data array (property).
     powerData = property(get_power_data, set_power_data, doc='List of power data blocks.')
