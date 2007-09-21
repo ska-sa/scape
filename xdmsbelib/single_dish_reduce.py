@@ -10,6 +10,9 @@
 # pylint: disable-msg=C0103,R0902
 
 import xdmsbe.xdmsbelib.interpolator as interpolator
+import xdmsbe.xdmsbelib.misc as misc
+from acsm.coordinate import Coordinate
+import acsm.transform
 import numpy as np
 import logging
 import copy
@@ -81,25 +84,23 @@ def calibrate_scan(stdScan):
     antennaBeamwidth_deg = 1.0
     # Require variation on the order of an antenna beam width to fit higher-order polynomial
     if elAngMax - elAngMin > antennaBeamwidth_deg:
-        logger.info('Baseline fit to elevation angle (range = '+str(elAngMax - elAngMin)+' deg)')
+#        logger.info('Baseline fit to elevation angle (range = '+str(elAngMax - elAngMin)+' deg)')
         stdScan.baselineUsesElevation = True
         stdScan.baselineFunc = interpolator.Independent1DFit(interpolator.Polynomial1DFit(maxDegree=3), axis=1)
         stdScan.baselineFunc.fit(allBaselineData.elAng, allBaselineData.powerData)
     elif azAngMax - azAngMin > antennaBeamwidth_deg:
-        logger.info('Baseline fit to azimuth angle (range = '+str(azAngMax - azAngMin)+' deg)')
+#        logger.info('Baseline fit to azimuth angle (range = '+str(azAngMax - azAngMin)+' deg)')
         stdScan.baselineUsesElevation = False
         stdScan.baselineFunc = interpolator.Independent1DFit(interpolator.Polynomial1DFit(maxDegree=1), axis=1)
         stdScan.baselineFunc.fit(allBaselineData.azAng, allBaselineData.powerData)
     else:
-        logger.info('Baseline fit to elevation angle, but as a constant (too little variation in angles)')
+#        logger.info('Baseline fit to elevation angle, but as a constant (too little variation in angles)')
         stdScan.baselineUsesElevation = True
         stdScan.baselineFunc = interpolator.Independent1DFit(interpolator.Polynomial1DFit(maxDegree=0), axis=1)
         stdScan.baselineFunc.fit(allBaselineData.elAng, allBaselineData.powerData)
     # Calibrate the main segment of scan
     calibratedScan = copy.deepcopy(stdScan.mainData.convert_power_to_temp(stdScan.powerToTempFunc))
     return calibratedScan.subtract_baseline(stdScan.baselineFunc, stdScan.baselineUsesElevation)
-#    calibratedScan = copy.deepcopy(stdScan.mainData)
-#    return calibratedScan
     
 ## Fit a beam pattern to total power data in 2-D target coordinate space.
 # @param targetCoords 2-D coordinates in target space, as an (N,2)-shaped numpy array
@@ -151,3 +152,39 @@ def calibrate_and_fit_beam_pattern(stdScanList):
     totalPowerData = np.concatenate(totalPowerData)
     beamFuncList = fit_beam_pattern(targetCoords, totalPowerData)
     return stdScanList, calibScanList, targetCoords, totalPowerData, beamFuncList
+
+## Extract all information from an unresolved point source scan.
+# This reduces the power data obtained from multiple scans across a point source. In the process, the data is
+# calibrated to remove receiver gain drifts, baselines are removed, and a beam pattern is fitted to the combined
+# scans. For general (unnamed) sources, the estimated source position in mount coordinates is returned.
+# Additionally, for known calibrator sources, the antenna gain and effective area can be estimated from the
+# known source flux density.
+# @param stdScanList     List of StandardSourceScan objects, describing scans across the source
+# @param sourceName      Source name ['None']
+# @return A whole bunch of stuff
+# pylint: disable-msg=R0914
+def reduce_point_source_scan(stdScanList, sourceName='None'):
+    # Calibrate across all scans, and fit a beam pattern to estimate source position and strength
+    stdScanList, calibScanList, targetCoords, totalPower, beamFuncList = calibrate_and_fit_beam_pattern(stdScanList)
+    bandFreqs = calibScanList[0].bandFreqs
+    # The antenna effective area and friends can only be calculated for sources with known flux densities
+    sourcePowerFluxDensity = deltaT = pointSourceSensitivity = effArea = antGain = None
+    if sourceName != 'None':
+        # Get source flux density for each frequency band (based on Ott tables)
+        sourcePowerFluxDensity = np.array([misc.ottflux(sourceName, freq / 1e6) for freq in bandFreqs])
+        # Calculate antenna effective area and gain, per band
+        deltaT = np.array([beamFunc.height for beamFunc in beamFuncList])
+        pointSourceSensitivity = sourcePowerFluxDensity / deltaT
+        effArea, antGain = misc.calc_ant_eff_area_and_gain(pointSourceSensitivity, bandFreqs)
+    # For general point sources, it is still possible to estimate pointing error (use first main scan as reference)
+    targetSys = calibScanList[0].targetCoordSystem
+    mountSys = calibScanList[0].mountCoordSystem
+    targetToMount = acsm.transform.get_factory_instance().get_transformer(targetSys, mountSys)
+    # Average the beam centres across all bands to obtain source position estimate
+    beamCentre = np.array([beamFunc.mean for beamFunc in beamFuncList]).mean(axis=0)
+    targetCoordinate = Coordinate(targetSys, beamCentre.tolist() + [0.0])
+    # The time of the source peak is taken to be in the middle of the first main scan
+    mountCoordinate = targetToMount.transform_coordinate(targetCoordinate, calibScanList[0].timeSamples.mean())
+    estmSourceAzAng, estmSourceElAng = mountCoordinate.get_vector()[0:2] * 180.0 / np.pi
+    return sourcePowerFluxDensity, deltaT, pointSourceSensitivity, effArea, antGain, \
+           (estmSourceAzAng, estmSourceElAng), stdScanList, calibScanList, targetCoords, totalPower, beamFuncList
