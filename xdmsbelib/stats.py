@@ -266,19 +266,27 @@ class MuSigmaArray(np.ndarray):
         # Standard deviation of each element in main array (property).
         self.sigma = sigma
     
-    ## Official string representation
-    # @param self  The current object
-    def __repr__(self):
-        return self.__class__.__name__ + '(' + repr(self.view(np.ndarray)) + ',' + repr(self._sigma) + ')'
-    ## Informal string representation
-    # @param self  The current object
-    def __str__(self):
-        return 'mu    = ' + np.ndarray.__str__(self) + '\nsigma = ' + str(self._sigma)
-    
-    ## Class method which creates sigma property.
+    ## Class method which creates mean property.
     # This is a nice way to create Python properties. It prevents clutter of the class namespace with
     # getter and setter methods, while being more readable than lambda notation. The function below is
-    # effectively hidden by giving it the same name as the eventual property.
+    # effectively hidden by giving it the same name as the eventual property. Pylint gets queasy here,
+    # for obvious reasons.
+    # @return Dictionary containing property getter and setter methods, and doc string
+    # pylint: disable-msg=E0211,E0202,W0212,W0612
+    def mean():
+        doc = 'Mean array.'
+        def fget(self):
+            return self.view(np.ndarray)
+        def fset(self, value):
+            self = value
+        return locals()
+    ## @var mean
+    # Mean array. This is merely for convenience, to restrict the object to be an numpy.ndarray.
+    # Normal access to the object also provides the mean.
+    # pylint: disable-msg=W0142,W1001
+    mean = property(**mean())
+    
+    ## Class method which creates sigma property.
     # @return Dictionary containing property getter and setter methods, and doc string
     # pylint: disable-msg=E0211,E0202,W0212,W0612
     def sigma():
@@ -297,7 +305,27 @@ class MuSigmaArray(np.ndarray):
     # Standard deviation of each element in main array (property).
     # pylint: disable-msg=W0142,W1001
     sigma = property(**sigma())
-
+    
+    ## Official string representation
+    # @param self  The current object
+    def __repr__(self):
+        return self.__class__.__name__ + '(' + repr(self.mean) + ',' + repr(self.sigma) + ')'
+    ## Informal string representation
+    # @param self  The current object
+    def __str__(self):
+        return 'mu    = ' + str(self.mean) + '\nsigma = ' + str(self.sigma)
+    ## Index both arrays at the same time
+    def __getitem__(self, value):
+        if self.sigma == None:
+            return MuSigmaArray(self.mean[value], None)
+        else:
+            return MuSigmaArray(self.mean[value], self.sigma[value])
+    ## Index both arrays at the same time
+    def __getslice__(self, first, last):
+        if self.sigma == None:
+            return MuSigmaArray(self.mean[first:last], None)
+        else:
+            return MuSigmaArray(self.mean[first:last], self.sigma[first:last])
 
 #=========================================================================================================
 #=== FUNCTIONS                                                                                         ===
@@ -504,7 +532,7 @@ def sp_uncorrelated_stats(func, muSigmaX, h=np.sqrt(3)):
         message = 'sp_uncorrelated_stats expects MuSigmaArray object for muSigmaX.'
         logger.error(message)
         raise TypeError, message
-    muX = np.atleast_1d(muSigmaX.view(np.ndarray))
+    muX = np.atleast_1d(muSigmaX.mean)
     # No sigma info allows a quick shortcut - only the mean is propagated
     if muSigmaX.sigma == None:
         return MuSigmaArray(func(muX), None)
