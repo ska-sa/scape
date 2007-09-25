@@ -12,20 +12,17 @@ import misc
 import logging
 import numpy as np
 import xdmsbe.fitsgen.fits_generator as fgen
-import xdmsbe.xdmsbelib.stats as stats
 import xdmsbe.xdmsbelib.single_dish_data as sdd
 import cPickle
-from acsm.coordinate import Coordinate
-import acsm.transform
 import os
 
 logger = logging.getLogger("xdmsbe.xdmsbelib.fitsreader")
 
 # pylint: disable-msg=C0103,R0902
 
-#------------------------------------
+#---------------------------------------------------------------------------------------------------------
 #--- FUNCTIONS
-#------------------------------------
+#---------------------------------------------------------------------------------------------------------
 
 ## Copy a HDU from one FITS file to another (or to a FITS file chain)
 # @param sourceFile The source FITS file
@@ -80,382 +77,9 @@ def hdu_copy(sourceFile, destFile, inHduName, outHduName=None, chainFiles=False)
     hduListSource.close()
 
 
-## Get a dictionary of stokes channels to index mappings
-# @param stokes boolean indicating wether IQUV (True) or cross power (False) are required
-def get_power_idx_dict(stokes):
-    if stokes:
-        return {'I': 0, 'Q': 1, 'U': 2, 'V': 3}
-    else:
-        return {'XX': 0, 'XY': 1, 'YX': 2, 'YY': 3}
-
-
-#---------------------------------------------------------------------------------------------
-#--- CLASS :  SelectedPower
-#------------------------------------
-
-## This class is a container for a selected sequence of data along with its corresponding time and
-## pointing information.
-#
-
-class SelectedPower(object):
-    
-    ## Initialiser/constructor
-    #
-    # @param     self       the current object
-    # @param    timeSamples Sequence of timestamps for data block
-    # @param    azAng       azimuth angle sequence for data block (in radians)
-    # @param    elAng       elevation angle sequence for data block (in radians)
-    # @param    rotAng      rotator stage angle for data block (in radians)
-    # @param    powerData   The selected block of power data, of dimensions: stokes x time x channels
-    # @param    stokesFlag  True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
-    # @param    mountCoordSystem Mount coordinate system object (see acsm module)
-    # @param    targetCoordSystem Target coordinate system object (see acsm module)
-    # pylint: disable-msg=R0913
-    def __init__(self, timeSamples, azAng, elAng, rotAng, powerData, stokesFlag, mountCoordSystem=None, \
-                 targetCoordSystem=None):
-        ## @var powerData
-        # The selected block of power data
-        self.powerData = powerData
-        ## @var stokesFlag
-        # True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
-        self.stokesFlag = stokesFlag
-        ## @var timeSamples
-        # Sequence of timestamps for data block
-        self.timeSamples = timeSamples
-        ## @var azAng
-        # mount azimuth angle sequence for data block
-        self.azAng = azAng
-        ## @var elAng
-        # mount elevation angle sequence for data block
-        self.elAng = elAng
-        ## @var rotAng
-        # rotator stage angle for data block
-        self.rotAng = rotAng
-        
-        ## @var powerDataSigma
-        # standard deviation of power measurments if known
-        self.powerDataSigma = None
-        
-        ## @var FptProfile
-        # Power-to-temperature conversion factor profile for scan data (mean profile)
-        self.FptProfile = None
-        ## @var FptProfileSigma
-        # Power-to-temperature conversion factor profile for scan data (one-sigma profile - standard deviation)
-        self.FptProfileSigma = None
-        
-        self._numTimeSamples = len(self.timeSamples)
-        self._midPoint = int(self._numTimeSamples//2)
-        
-        self._targetCoordSystem = None
-        self._mountCoordSystem = None
-        
-        ## @var targetCoords
-        # Target coordinates
-        self.targetCoords = None
-        
-        if (mountCoordSystem and targetCoordSystem):
-            self.set_coordinate_systems(mountCoordSystem, targetCoordSystem)
-        
-        self._mountCoordSys = None
-        self._targetCoords = None
-        self._transformer = None
-        self._targetCoordSys = None
-        
-        self._FptPostMean = None
-        self._FptPostSigma = None
-        self._FptPostTime = None
-        self._FptPreMean = None
-        self._FptPreSigma = None
-        self._FptPreTime = None
-        self._Fpt_func = None
-        
-        self._tipCurveX = None
-        self._tipCurveY = None
-        self._powerConvertedToTemp = False
-        self._tipCurveSubtracted = False
-        self._channelsConvertedToBands = False
-    
-    ## Convert the contained power buffer from stokes to coherency vectors
-    # @param self the current object
-    # @return self the current object
-    def convert_to_coherency(self):
-        if self.stokesFlag:
-            self.stokesFlag = False
-            self.powerData = [0.5*(self.powerData[0]+self.powerData[1]), 0.5*(self.powerData[2]+1j*self.powerData[3]), \
-                              0.5*(self.powerData[2]-1j*self.powerData[3]), 0.5*(self.powerData[0]-self.powerData[1])]
-        return self
-    
-    ## Convert the contained power buffer from coherency to stokes vectors
-    # @param self the current object
-    # @return self the current object
-    def convert_to_stokes(self):
-        if not(self.stokesFlag):
-            self.stokesFlag = True
-            self.powerData = [self.powerData[0]+self.powerData[3], self.powerData[0]-self.powerData[3], \
-                              self.powerData[1]+self.powerData[2], 1j*(self.powerData[2]-self.powerData[1])]
-        return self
-    
-    ## Set the operating tipping curve for the given elevation angle range of the power measurements scan
-    #
-    # @param    self            The object
-    # @param    tipCurveX       The tipping curve (Tsys [K] as a function of elevation angle and band) for the X pol.
-    # @param    tipCurveY       The tipping curve (Tsys [K] as a function of elevation angle and band) for the Y pol.
-    def set_tipping_curve(self, tipCurveX, tipCurveY):
-        self._tipCurveX = tipCurveX
-        self._tipCurveY = tipCurveY
-        return self
-    
-    ## Subtract the tipping curve from the scan data
-    # @param self the current object
-    # @return self the current object
-    def subtract_tipping_curve(self):
-        # Already done, so don't do it again
-        if self._tipCurveSubtracted:
-            return self
-        if not self._powerConvertedToTemp:
-            message = "Cannot subtract tipping curve from uncoverted (raw) power measurments."
-            logger.error(message)
-            raise ValueError, message
-        if (self._tipCurveX == None) or (self._tipCurveY==None):
-            message = "Cannot subtract tipping curve. Tipping curve not set."
-            logger.error(message)
-            raise ValueError, message
-        if self.stokesFlag:
-            message = "Cannot subtract tipping curve if power is in Stokes vector format. " + \
-                      "First convert to coherency vector format."
-            logger.error(message)
-            raise ValueError, message
-        # Subtract tipping curve
-        self.powerData[0] -= self._tipCurveX
-        self.powerData[3] -= self._tipCurveY
-        self._tipCurveSubtracted = True
-        return self
-    
-    ## Set the power-to-temperature conversion factor (Fpt : gain term) for the given selected power object
-    # This function takes two inputs. The gain before the scan and/or the gain after the scan. If only one is
-    # specified, that is used as the operative gain for the whole scan. If both are specified, a linearly
-    # interpolated gain profile is used.
-    #
-    # @param    self            The current object
-    # @param    FptPreMean      The Fpt gain term (mean) before the scan
-    # @param    FptPreSigma     The Fpt gain term (standard deviation) before the scan
-    # @param    FptPreTime      Timestamp (seconds) of the Fpt data
-    # @param    FptPostMean     The Fpt gain term (mean) after the scan
-    # @param    FptPostSigma    The Fpt gain term (standard deviation) after the scan
-    # @param    FptPostTime     Timestamp (seconds) of the Fpt data
-    # @return   self            The current object
-    def set_Fpt(self, FptPreMean = None, FptPreSigma = None, FptPreTime = None, \
-                FptPostMean = None, FptPostSigma = None, FptPostTime = None):
-        self._FptPreMean = FptPreMean
-        self._FptPreSigma = FptPreSigma
-        self._FptPreTime = FptPreTime
-        self._FptPostMean = FptPostMean
-        self._FptPostSigma = FptPostSigma
-        self._FptPostTime = FptPostTime
-        return self
-    
-    ## Convert the selected power measurements into temperature using the contained power-temp gain profile
-    # @param self the current object
-    # pylint: disable-msg=R0914,R0915
-    def convert_power_to_temp(self):
-        
-        if not(self._powerConvertedToTemp):
-            
-            if (self._FptPreMean == None) and (self._FptPostMean == None):
-                message = 'Either have to specifiy a positive finite pre-Fpt or post-Fpt or both.'
-                logger.error(message)
-                raise ValueError, message
-            
-            def p2t_func(FptPre=None, FptPreTime=None, FptPost=None, FptPostTime=None, \
-                         timeSamples=None, powerData=None):
-                if FptPre == None:
-                    slope = 0.0
-                    offset = 1.0/FptPost
-                elif FptPost == None:
-                    slope = 0.0
-                    offset = 1.0/FptPre
-                else:
-                    slope = (1.0/FptPost - 1.0/FptPre) / (FptPostTime - FptPreTime)
-                    offset = 1.0/FptPre - slope * FptPreTime
-                powerDataTemp = np.zeros((4, len(timeSamples), offset.shape[1]), dtype='complex128')
-                FptProfile = np.zeros((4, len(timeSamples), offset.shape[1]), dtype='complex128')
-                for n, t in enumerate(timeSamples):
-                    IFpt = slope * t + offset
-                    Fpt = IFpt**(-1.0)
-                    FptProfile[0, n, :] = Fpt[0, :]
-                    FptProfile[1, n, :] = Fpt[1, :]
-                    FptProfile[2, n, :] = Fpt[2, :]
-                    FptProfile[3, n, :] = Fpt[3, :]
-                    powerDataTemp[0, n, :] = Fpt[0, :] * powerData[0][n, :]
-                    powerDataTemp[1, n, :] = Fpt[1, :] * powerData[1][n, :]
-                    powerDataTemp[2, n, :] = Fpt[2, :] * powerData[2][n, :]
-                    powerDataTemp[3, n, :] = Fpt[3, :] * powerData[3][n, :]
-                
-                return powerDataTemp, FptProfile
-            
-            
-            output1, output2 = p2t_func(self._FptPreMean, self._FptPreTime, self._FptPostMean, self._FptPostTime, \
-                                        self.timeSamples, self.powerData)
-            
-            if self._FptPreMean == None:
-                inputShapeDict = {"FptPost": self._FptPostMean.shape}
-                outputShapeList = [output1.shape, output2.shape]
-                output1 = None
-                output2 = None
-                constantDict = {"FptPostTime": self._FptPostTime, \
-                                "timeSamples": self.timeSamples, "powerData": self.powerData}
-                func = stats.SpStatsFuncWrapper(p2t_func, inputShapeDict, outputShapeList, constantDict)
-                muX = func.vectorize_input(FptPost=self._FptPostMean)
-                sigmaXdiag = func.vectorize_input(FptPost=self._FptPostSigma)
-            elif self._FptPostMean == None:
-                inputShapeDict = {"FptPre": self._FptPreMean.shape}
-                outputShapeList = [output1.shape, output2.shape]
-                output1 = None
-                output2 = None
-                constantDict = {"FptPreTime": self._FptPreTime, \
-                                "timeSamples": self.timeSamples, "powerData": self.powerData}
-                func = stats.SpStatsFuncWrapper(p2t_func, inputShapeDict, outputShapeList, constantDict)
-                muX = func.vectorize_input(FptPre=self._FptPreMean)
-                sigmaXdiag = func.vectorize_input(FptPre=self._FptPreSigma)
-            else:
-                inputShapeDict = {"FptPre": self._FptPreMean.shape, "FptPost": self._FptPostMean.shape}
-                outputShapeList = [output1.shape, output2.shape]
-                output1 = None
-                output2 = None
-                constantDict = {"FptPreTime": self._FptPreTime, "FptPostTime": self._FptPostTime, \
-                                "timeSamples": self.timeSamples, "powerData": self.powerData}
-                func = stats.SpStatsFuncWrapper(p2t_func, inputShapeDict, outputShapeList, constantDict)
-                muX = func.vectorize_input(FptPre=self._FptPreMean, FptPost=self._FptPostMean)
-                sigmaXdiag = func.vectorize_input(FptPre=self._FptPreSigma, FptPost=self._FptPostSigma)
-            
-            muY, sigmaY = stats.propagate_scalar_stats(func, muX, sigmaXdiag)
-            
-            powerDataTempMu = muY[0]
-            FptMu = muY[1]
-            powerDataTempSigma = sigmaY[0]
-            FptSigma = sigmaY[1]
-            
-            self.powerData = [powerDataTempMu[0, :, :], powerDataTempMu[1, :, :], \
-                              powerDataTempMu[2, :, :], powerDataTempMu[3, :, :]]
-            self.powerDataSigma = [powerDataTempSigma[0, :, :], powerDataTempSigma[1, :, :], \
-                                   powerDataTempSigma[2, :, :], powerDataTempSigma[3, :, :]]
-            
-            self.FptProfile = [FptMu[0, :, :], FptMu[1, :, :], \
-                              FptMu[2, :, :], FptMu[3, :, :]]
-            self.FptProfileSigma = [FptSigma[0, :, :], FptSigma[1, :, :], \
-                                   FptSigma[2, :, :], FptSigma[3, :, :]]
-            
-            self._powerConvertedToTemp = True
-        
-        return self
-    
-    
-    ## Return the nominal power-temperature-gain factor at a given point in time
-    # @param self    The current object
-    # @param timeVal The timevalue in seconds at which to evaluate the gain function
-    def get_Fpt(self, timeVal):
-        if self._Fpt_func:
-            return self._Fpt_func(timeVal) # pylint: disable-msg=E1102
-        else:
-            message = "Fpt calibration data not yet set."
-            logger.error(message)
-            raise ValueError, message
-    
-    ## Set mount and target coordinate systems which was used for data capture.
-    #
-    # @param    self          the current object
-    # @param    mountCoordSys Mount coordinate system object (see acsm module)
-    # @param    targetCoordSys Target coordinate system object (see acsm module)
-    def set_coordinate_systems(self, mountCoordSys, targetCoordSys):
-        self._mountCoordSys = mountCoordSys
-        self._targetCoordSys = targetCoordSys
-        self._transformer = acsm.transform.get_factory_instance().get_transformer(mountCoordSys, targetCoordSys)
-        
-        self.targetCoords = np.zeros((self._numTimeSamples, targetCoordSys.get_dimensions()), dtype='double')
-        
-        for k in np.arange(self._numTimeSamples):
-            mountCoordinate = Coordinate(mountCoordSys, [self.azAng[k], self.elAng[k], self.rotAng[k]])
-            targetCoordinate = self._transformer.transform_coordinate(mountCoordinate, self.timeSamples[k])
-            self.targetCoords[k, :] = targetCoordinate.get_vector()
-        
-        return self
-    
-    ## Returns the median (middle) time stamp for a given block of data
-    #
-    # @param    self        The current object
-    # @return   medianTime  The median (middle) time stamp [s]
-    def get_median_time(self):
-        return self.timeSamples[self._midpoint]
-    
-    ## Returns the median (middle) azimuth angle for a given block of data
-    #
-    # @param    self        The current object
-    # @return   medianAzAng The median (middle) azimuth angle [deg]
-    def get_median_azimuth(self):
-        return self.azAng[self._midpoint]
-    
-    ## Returns the median (middle) elevation angle for a given block of data
-    #
-    # @param    self        The current object
-    # @return   medianElAng The median (middle) azimuth angle [deg]
-    def get_median_elevation(self):
-        return self.elAng[self._midpoint]
-    
-    ## Returns the median (middle) target coordinates for a given block of data
-    #
-    # @param    self                    The current object
-    # @return   medianTargetCoordinate  The median (middle) azimuth angle [deg]
-    def get_median_target_coordinate(self):
-        if self._targetCoordSystem:
-            return self._targetCoords[self._midpoint, :]
-        else:
-            message = "Target coordinate system has not been set."
-            logger.error(message)
-            raise AttributeError
-    
-    ## Returns the median (middle) rotator stage angle for a given block of data
-    #
-    # @param    self            The current object
-    # @return   medianRotAng    The median (middle) rotator stage angle [deg]
-    def get_median_rotation(self):
-        return self.rotAng[self._midpoint]
-    
-    ## Returns the maximum power in the selected block of power measurments
-    #
-    # @param    self            The current object
-    # @return   maxVal          The maximum total power value (max Stokes I) Given as a function of bands.
-    # @return   timeVal         The corresponding time stamp of the maximum value
-    def get_max_total_power(self):
-        
-        if self.stokesFlag:
-            I = self.powerData[0]
-        else:
-            I = self.powerData[0] + self.powerData[3]
-        
-        totalPower = np.sum(I, 1)
-        maxTotalPower = np.max(totalPower)
-        maxIdx = np.where(totalPower == maxTotalPower)[0][0]
-        maxTotalPower = self.powerData[0][maxIdx, :]
-        timeVal = self.timeSamples[maxIdx]
-        
-        return maxTotalPower, timeVal
-    
-    ## Integrate selected power channels into bands excluding RFI corrupted channels
-    # @param  self          the current object
-    # @param  fitsReader    A FitsReader object containing the relevant channel-to-band mapping and
-    #         RFI channel information
-    # @return self          the updated current object
-    def power_channels_to_bands_ex_rfi(self, fitsReader):
-        if not(self._channelsConvertedToBands):
-            for k, powerBlock in enumerate(self.powerData):
-                _tempData = np.zeros((powerBlock.shape[0], len(fitsReader.bandNoRfiChannelList)), dtype='double')
-                for b, bandChannels in enumerate(fitsReader.bandNoRfiChannelList):
-                    _tempData[:, b] = np.mean(powerBlock[:, bandChannels], 1)
-                self.powerData[k] = _tempData
-                self._channelsConvertedToBands = True
-        return self
-
-
+#---------------------------------------------------------------------------------------------------------
+#--- CLASS :  FitsReader
+#------------------------
 
 ## Class for reading fits files and extracting XDM single-dish data from them.
 # It is implemented on top of PyFITS.
@@ -822,11 +446,6 @@ class FitsReader(object):
             self.dataIdSeqNumList = [dataIdSeqNum]
             self.dataIdSeqNumListDict[idName] = self.dataIdSeqNumList
     
-    
-    #-------------------------------------------------------------------------------------------------------------------
-    #--- Method :  extract_data
-    #-------------------------------------------------------------------------------------------------------------------
-    
     ## Extract relevant data blocks from FITS file.
     #
     #    This function returns a number of dictionaries containing different sets of data and meta-data
@@ -866,6 +485,9 @@ class FitsReader(object):
         return dataDict
 
 
+#---------------------------------------------------------------------------------------------------------
+#--- CLASS : SingleShotIterator
+#-------------------------------
 
 ## Class that provides a fitsreader iterator to a single fitsreader object.
 # This is needed for cases where we only need to process one file and don't need to iterate through a chain.
@@ -892,6 +514,10 @@ class SingleShotIterator(object):
         self._finished = True
         return self._fitsReader
 
+
+#---------------------------------------------------------------------------------------------------------
+#--- CLASS : FitsIterator
+#-------------------------
 
 ## Class for iterating over a sequence of FITS files.
 # Starts with the given filename and uses the 'NFName' tag in the primary header to determine the next filename.
@@ -941,6 +567,10 @@ class FitsIterator(object):
         return self._fitsReader
 
 
+#---------------------------------------------------------------------------------------------------------
+#--- CLASS : ExpFitsIterator
+#----------------------------
+
 ## Class for iterating over a sequence of FITS files in an individual experiment sequence.
 # It picks up the sequence number from the first file. Uses FitsIterator for internal
 # iterating but checks for continuity of experiment number.
@@ -981,6 +611,10 @@ class ExpFitsIterator(object):
         return fitsReader
 
 
+#---------------------------------------------------------------------------------------------------------
+#--- CLASS : ExperimentIterator
+#-------------------------------
+
 ## Iterate over all the experiments in a FITS file sequence.
 class ExperimentIterator(object):
     
@@ -1014,4 +648,3 @@ class ExperimentIterator(object):
             else:
                 raise StopIteration
         return self._fitsExpIter
-        
