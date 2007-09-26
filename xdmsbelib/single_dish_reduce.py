@@ -9,7 +9,10 @@
 
 # pylint: disable-msg=C0103,R0902
 
+import xdmsbe.xdmsbelib.fitsreader as fitsreader
 import xdmsbe.xdmsbelib.interpolator as interpolator
+from xdmsbe.xdmsbelib import tsys
+from xdmsbe.xdmsbelib import stats
 import xdmsbe.xdmsbelib.misc as misc
 from acsm.coordinate import Coordinate
 import acsm.transform
@@ -25,6 +28,7 @@ logger = logging.getLogger("xdmsbe.xdmsbelib.single_dish_reduce")
 
 ## Container for the components of a standard scan across a source.
 # This struct contains all the parts that make up a standard scan:
+# - information about the source (name and position)
 # - the main scan segment to be calibrated
 # - powerToTemp conversion info, as derived from gain cal data at the start and end of the scan
 # - the actual powerToTemp function used to calibrate power measurements for whole scan
@@ -32,6 +36,15 @@ logger = logging.getLogger("xdmsbe.xdmsbelib.single_dish_reduce")
 # - the baseline function that will be subtracted from main scan segment
 # pylint: disable-msg=R0903
 class StandardSourceScan(object):
+    ## @var sourceName
+    # Name of source in scan (useful for obtaining source flux density)
+    sourceName = None
+    ## @var sourceAzAng
+    # Source azimuth angle in degrees
+    sourceAzAng = None
+    ## @var sourceElAng
+    # Source elevation angle in degrees
+    sourceElAng = None
     ## @var mainData
     # SingleDishData object for main scan segment
     mainData = None
@@ -57,6 +70,163 @@ class StandardSourceScan(object):
 #----------------------------------------------------------------------------------------------------------------------
 #--- FUNCTIONS
 #----------------------------------------------------------------------------------------------------------------------
+
+## Loads a list of standard scans across various point sources from a chain of FITS files.
+# @param fitsFileName      Name of initial file in FITS chain
+# @param alpha             Alpha value for statistical tests used in gain calibration
+# @return stdScanList      List of StandardSourceScan objects, one per scan through a source
+# @return rawPowerScanList List of SingleDishData objects, containing copies of all raw data blocks
+# pylint: disable-msg=R0914,R0915
+def load_point_source_scan_list(fitsFileName, alpha):
+    fitsIter = fitsreader.FitsIterator(fitsFileName)
+    workDict = {}
+    stdScanList = []
+    rawPowerScanList = []
+    while True:
+        try:
+            stdScan = StandardSourceScan()
+            fitsReaderPreCal = fitsIter.next()
+            
+            print "==============================================================================================\n"
+            print "                             **** SCAN %d ****\n" % len(stdScanList)
+            
+            #..................................................................................................
+            # Extract the first gain calibration chunk
+            #..................................................................................................
+            expSeqNum = fitsReaderPreCal.expSeqNum
+            
+            preCalResDict = tsys.process(fitsreader.SingleShotIterator(fitsReaderPreCal), \
+                                         testLinearity = False, alpha = alpha)
+            
+            misc.set_or_check_param_continuity(workDict, 'numBands', preCalResDict['numBands'])
+            misc.set_or_check_param_continuity(workDict, 'bandFreqs', preCalResDict['bandFreqs'])
+            
+            #..................................................................................................
+            # Extract the initial part, which is assumed to be of a piece of empty sky preceding the source
+            #..................................................................................................
+            fitsReaderPreScan = fitsIter.next()
+            
+            if expSeqNum != fitsReaderPreScan.expSeqNum:
+                logger.error("Unexpected change in experiment sequence number!")
+            
+            # Extract data and masks
+            dataIdNameList = ['scan']
+            dataSelectionList = [('CalSourcePreScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
+            preScanDict = fitsReaderPreScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+            
+            preScanData = preScanDict.values()[0]
+            
+            misc.set_or_check_param_continuity(workDict, 'numBands', len(preScanData.bandFreqs))
+            misc.set_or_check_param_continuity(workDict, 'bandFreqs', preScanData.bandFreqs)
+            
+            #..................................................................................................
+            # This is the main part of the scan, which contains the calibrator source
+            #..................................................................................................
+            fitsReaderScan = fitsIter.next()
+            
+            if expSeqNum != fitsReaderScan.expSeqNum:
+                logger.error("Unexpected change in experiment sequence number!")
+            
+            # Extract data and masks
+            dataIdNameList = ['scan']
+            dataSelectionList = [('CalSourceScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
+            scanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList)
+            
+            mainScanName, mainScanData = scanDict.items()[0]
+            # Get the source name and position from the main scan
+            stdScan.sourceName = fitsReaderScan.select_masked_column('TARGET', 'Name', mask=None)[0]
+            stdScan.sourceAzAng = fitsReaderScan.select_masked_column('TARGET', 'Azimuth', mask=None)[0]
+            stdScan.sourceElAng = fitsReaderScan.select_masked_column('TARGET', 'Elevation', mask=None)[0]
+            
+            misc.set_or_check_param_continuity(workDict, 'numBands', len(mainScanData.bandFreqs))
+            misc.set_or_check_param_continuity(workDict, 'bandFreqs', mainScanData.bandFreqs)
+            
+            #..................................................................................................
+            # Extract the final part, which is assumed to be of a piece of empty sky following the source
+            #..................................................................................................
+            fitsReaderPostScan = fitsIter.next()
+            
+            if expSeqNum != fitsReaderPostScan.expSeqNum:
+                logger.error("Unexpected change in experiment sequence number!")
+            
+            # Extract data and masks
+            dataIdNameList = ['scan']
+            dataSelectionList = [('CalSourcePostScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
+            postScanDict = fitsReaderPostScan.extract_data(dataIdNameList, dataSelectionList)
+            
+            postScanData = postScanDict.values()[0]
+            
+            misc.set_or_check_param_continuity(workDict, 'numBands', len(postScanData.bandFreqs))
+            misc.set_or_check_param_continuity(workDict, 'bandFreqs', postScanData.bandFreqs)
+            
+            #..................................................................................................
+            # Now extract the second gain calibration chunk
+            #..................................................................................................
+            fitsReaderPostCal = fitsIter.next()
+            
+            if expSeqNum != fitsReaderPostCal.expSeqNum:
+                logger.error("Unexpected change in experiment sequence number!")
+            
+            postCalResDict = tsys.process(fitsreader.SingleShotIterator(fitsReaderPostCal), \
+                                          testLinearity = False, alpha = alpha)
+            
+            misc.set_or_check_param_continuity(workDict, 'numBands', postCalResDict['numBands'])
+            misc.set_or_check_param_continuity(workDict, 'bandFreqs', postCalResDict['bandFreqs'])
+            
+            #..................................................................................................
+            # Now package the data in objects
+            #..................................................................................................
+            logger.info("Found scan ID : %s" % (mainScanName))
+            logger.info("Start coordinate [az, el] = [%5.3f, %5.3f]" % (mainScanData.azAng[0], \
+                                                                        mainScanData.elAng[0]))
+            logger.info("Stop coordinate  [az, el] = [%5.3f, %5.3f]" % (mainScanData.azAng[-1], \
+                                                                        mainScanData.elAng[-1]))
+            
+            # Set up power-to-temperature conversion factors
+            # Check if variation in Fpt is significant - choose linear interp in that case, else constant interp
+            fptDiff = np.abs(preCalResDict['Fpt'] - postCalResDict['Fpt'])
+            fptTotSig = np.sqrt(preCalResDict['Fpt_sigma']**2 + postCalResDict['Fpt_sigma']**2)
+            msDiff = fptTotSig - fptDiff
+            isLinear = msDiff.mean(axis=1) > 0.0
+            preCalResDict['Fpt'] = preCalResDict['Fpt'][:, np.newaxis, :]
+            postCalResDict['Fpt'] = postCalResDict['Fpt'][:, np.newaxis, :]
+            preCalResDict['Fpt_sigma'] = preCalResDict['Fpt_sigma'][:, np.newaxis, :]
+            postCalResDict['Fpt_sigma'] = postCalResDict['Fpt_sigma'][:, np.newaxis, :]
+            if np.all(isLinear):
+                logger.info("Pre and Post gain cal within stable bounds. Using average gain.")
+                fptMean = 0.5*(preCalResDict['Fpt'] + postCalResDict['Fpt'])
+                fptSigma = np.sqrt(preCalResDict['Fpt_sigma']**2 + postCalResDict['Fpt_sigma']**2)
+                fptTime = 0.5*(preCalResDict['Fpt_time'] + postCalResDict['Fpt_time'])
+            else:
+                logger.info("Pre and Post gain cal outside stable bounds. Fitting linear gain profile.")
+                fptMean = np.concatenate((preCalResDict['Fpt'], postCalResDict['Fpt']), axis=1)
+                fptSigma = np.concatenate((preCalResDict['Fpt_sigma'], postCalResDict['Fpt_sigma']), axis=1)
+                fptTime = np.array((preCalResDict['Fpt_time'], postCalResDict['Fpt_time']))
+            
+            # Save raw power objects
+            rawList = []
+            for dataBlock in preCalResDict['data'].itervalues():
+                rawList.append(dataBlock)
+            rawList.append(copy.deepcopy(preScanData))
+            rawList.append(copy.deepcopy(mainScanData))
+            rawList.append(copy.deepcopy(postScanData))
+            for dataBlock in postCalResDict['data'].itervalues():
+                rawList.append(dataBlock)
+            rawPowerScanList.append(rawList)
+            
+            # Set up standard scan object (rest of members will be filled in during calibration)
+            stdScan.mainData = mainScanData
+            stdScan.baselineDataList = [preScanData, postScanData]
+            stdScan.powerToTempTimes = fptTime
+            stdScan.powerToTempFactors = stats.MuSigmaArray(fptMean, fptSigma)
+            
+            stdScanList.append(stdScan)
+        
+        except StopIteration:
+            break
+    
+    return stdScanList, rawPowerScanList
+
 
 ## Calibrate a single scan, by correcting gain drifts and subtracting a baseline.
 # @param stdScan StandardSourceScan object containing scan and all auxiliary scans and info for calibration
@@ -101,7 +271,8 @@ def calibrate_scan(stdScan):
     # Calibrate the main segment of scan
     calibratedScan = copy.deepcopy(stdScan.mainData.convert_power_to_temp(stdScan.powerToTempFunc))
     return calibratedScan.subtract_baseline(stdScan.baselineFunc, stdScan.baselineUsesElevation)
-    
+
+
 ## Fit a beam pattern to total power data in 2-D target coordinate space.
 # @param targetCoords 2-D coordinates in target space, as an (N,2)-shaped numpy array
 # @param totalPower   Total power values, as an (N,M)-shaped numpy array (M = number of bands)
@@ -132,6 +303,7 @@ def fit_beam_pattern(targetCoords, totalPower):
         interpList.append(interp)
     return interpList
 
+
 ## Fit a beam pattern to multiple scans of a single calibrator source, after first calibrating the scans.
 # @param stdScanList     List of StandardSourceScan objects
 # @return stdScanList    List of modified scan objects, after power-to-temp conversion but before baseline subtraction
@@ -153,20 +325,21 @@ def calibrate_and_fit_beam_pattern(stdScanList):
     beamFuncList = fit_beam_pattern(targetCoords, totalPowerData)
     return stdScanList, calibScanList, targetCoords, totalPowerData, beamFuncList
 
+
 ## Extract all information from an unresolved point source scan.
 # This reduces the power data obtained from multiple scans across a point source. In the process, the data is
 # calibrated to remove receiver gain drifts, baselines are removed, and a beam pattern is fitted to the combined
 # scans. For general (unnamed) sources, the estimated source position in mount coordinates is returned.
 # Additionally, for known calibrator sources, the antenna gain and effective area can be estimated from the
 # known source flux density.
-# @param stdScanList     List of StandardSourceScan objects, describing scans across the source
-# @param sourceName      Source name ['None']
+# @param stdScanList     List of StandardSourceScan objects, describing scans across a single point source
 # @return A whole bunch of stuff
 # pylint: disable-msg=R0914
-def reduce_point_source_scan(stdScanList, sourceName='None'):
+def reduce_point_source_scan(stdScanList):
     # Calibrate across all scans, and fit a beam pattern to estimate source position and strength
     stdScanList, calibScanList, targetCoords, totalPower, beamFuncList = calibrate_and_fit_beam_pattern(stdScanList)
     bandFreqs = calibScanList[0].bandFreqs
+    sourceName = stdScanList[0].sourceName
     # The antenna effective area and friends can only be calculated for sources with known flux densities
     sourcePowerFluxDensity = deltaT = pointSourceSensitivity = effArea = antGain = None
     if sourceName != 'None':
