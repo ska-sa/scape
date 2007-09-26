@@ -130,7 +130,7 @@ def load_point_source_scan_list(fitsFileName, alpha):
             # Extract data and masks
             dataIdNameList = ['scan']
             dataSelectionList = [('CalSourceScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
-            scanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList)
+            scanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
             
             mainScanName, mainScanData = scanDict.items()[0]
             # Get the source name and position from the main scan
@@ -152,7 +152,7 @@ def load_point_source_scan_list(fitsFileName, alpha):
             # Extract data and masks
             dataIdNameList = ['scan']
             dataSelectionList = [('CalSourcePostScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
-            postScanDict = fitsReaderPostScan.extract_data(dataIdNameList, dataSelectionList)
+            postScanDict = fitsReaderPostScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
             
             postScanData = postScanDict.values()[0]
             

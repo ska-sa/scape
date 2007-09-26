@@ -755,25 +755,3 @@ def interpolate_noise_diode_profile(knownFreqs, knownTemps, desiredFreqs):
         polynomialDegree = 1
     p1 = np.polyfit(knownFreqs, knownTemps, deg=polynomialDegree)
     return np.polyval(p1, desiredFreqs)
-
-
-#---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  calc_power_stats
-
-## Calculate statistics for a particular block of power data looping over bands and stokes.
-#  RFI channels are excluded.
-#
-# @param    bandNoRfiChannelList   list of non-rfi channels per band
-# @param    numStokes              number of stokes dimensions
-# @param    dataObj                SingleDishData object with power data per channel, i.e. BEFORE RFI removal
-#
-# @return   DistributionStatsArray object
-
-def calc_power_stats(bandNoRfiChannelList, numStokes, dataObj):
-    statsArray = DistributionStatsArray(shape=(numStokes, len(bandNoRfiChannelList)))
-    for b, bandChannels in enumerate(bandNoRfiChannelList):
-        for s in xrange(numStokes):
-            data = dataObj.powerData[s, :, bandChannels]
-            timeStamps = dataObj.timeSamples
-            statsArray.add_data(data, timeStamps, (s, b))
-    return statsArray
