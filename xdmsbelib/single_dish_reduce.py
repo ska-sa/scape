@@ -17,6 +17,7 @@ import xdmsbe.xdmsbelib.misc as misc
 from acsm.coordinate import Coordinate
 import acsm.transform
 import numpy as np
+import numpy.random as random
 import logging
 import copy
 
@@ -219,7 +220,6 @@ def load_point_source_scan_list(fitsFileName, alpha):
             stdScan.baselineDataList = [preScanData, postScanData]
             stdScan.powerToTempTimes = fptTime
             stdScan.powerToTempFactors = stats.MuSigmaArray(fptMean, fptSigma)
-            
             stdScanList.append(stdScan)
         
         except StopIteration:
@@ -229,16 +229,18 @@ def load_point_source_scan_list(fitsFileName, alpha):
 
 
 ## Calibrate a single scan, by correcting gain drifts and subtracting a baseline.
-# @param stdScan StandardSourceScan object containing scan and all auxiliary scans and info for calibration
+# @param stdScan   StandardSourceScan object containing scan and all auxiliary scans and info for calibration
+# @param randomise True if fits should be randomised, as part of a larger Monte Carlo run
 # @return SingleDishData object containing calibrated scan
-def calibrate_scan(stdScan):
+def calibrate_scan(stdScan, randomise):
+    # Set up power-to-temp conversion factors (optionally randomising it)
+    p2tFactors = stdScan.powerToTempFactors
+    if randomise:
+        p2tFactors = p2tFactors.mean + p2tFactors.sigma * random.standard_normal(p2tFactors.shape)
     # Power-to-temp conversion factor is inverse of gain, which is assumed to change linearly over time
     stdScan.powerToTempFunc = interpolator.Independent1DFit(interpolator.ReciprocalFit( \
                               interpolator.Polynomial1DFit(maxDegree=1)), axis=1)
-    stdScan.powerToTempFunc.fit(stdScan.powerToTempTimes, stdScan.powerToTempFactors)
-#    print stdScan.powerToTempTimes, stdScan.powerToTempFactors
-#    for inter in stdScan.powerToTempFunc._interps.ravel():
-#        print inter._interp._mean, inter._interp.poly
+    stdScan.powerToTempFunc.fit(stdScan.powerToTempTimes, p2tFactors)
     # Convert baseline data to temperature, and concatenate them into a single structure
     for ind, baselineData in enumerate(stdScan.baselineDataList):
         baselineData.convert_power_to_temp(stdScan.powerToTempFunc)
@@ -256,18 +258,27 @@ def calibrate_scan(stdScan):
     if elAngMax - elAngMin > antennaBeamwidth_deg:
 #        logger.info('Baseline fit to elevation angle (range = '+str(elAngMax - elAngMin)+' deg)')
         stdScan.baselineUsesElevation = True
-        stdScan.baselineFunc = interpolator.Independent1DFit(interpolator.Polynomial1DFit(maxDegree=3), axis=1)
-        stdScan.baselineFunc.fit(allBaselineData.elAng, allBaselineData.powerData)
+        interp = interpolator.Independent1DFit(interpolator.Polynomial1DFit(maxDegree=3), axis=1)
+        interp.fit(allBaselineData.elAng, allBaselineData.powerData)
+        if randomise:
+            interp = interpolator.randomise(interp, allBaselineData.elAng, allBaselineData.powerData, 'shuffle')
+        stdScan.baselineFunc = interp
     elif azAngMax - azAngMin > antennaBeamwidth_deg:
 #        logger.info('Baseline fit to azimuth angle (range = '+str(azAngMax - azAngMin)+' deg)')
         stdScan.baselineUsesElevation = False
-        stdScan.baselineFunc = interpolator.Independent1DFit(interpolator.Polynomial1DFit(maxDegree=1), axis=1)
-        stdScan.baselineFunc.fit(allBaselineData.azAng, allBaselineData.powerData)
+        interp = interpolator.Independent1DFit(interpolator.Polynomial1DFit(maxDegree=1), axis=1)
+        interp.fit(allBaselineData.azAng, allBaselineData.powerData)
+        if randomise:
+            interp = interpolator.randomise(interp, allBaselineData.azAng, allBaselineData.powerData, 'shuffle')
+        stdScan.baselineFunc = interp
     else:
 #        logger.info('Baseline fit to elevation angle, but as a constant (too little variation in angles)')
         stdScan.baselineUsesElevation = True
-        stdScan.baselineFunc = interpolator.Independent1DFit(interpolator.Polynomial1DFit(maxDegree=0), axis=1)
-        stdScan.baselineFunc.fit(allBaselineData.elAng, allBaselineData.powerData)
+        interp = interpolator.Independent1DFit(interpolator.Polynomial1DFit(maxDegree=0), axis=1)
+        interp.fit(allBaselineData.elAng, allBaselineData.powerData)
+        if randomise:
+            interp = interpolator.randomise(interp, allBaselineData.elAng, allBaselineData.powerData, 'shuffle')
+        stdScan.baselineFunc = interp
     # Calibrate the main segment of scan
     calibratedScan = copy.deepcopy(stdScan.mainData.convert_power_to_temp(stdScan.powerToTempFunc))
     return calibratedScan.subtract_baseline(stdScan.baselineFunc, stdScan.baselineUsesElevation)
@@ -276,8 +287,9 @@ def calibrate_scan(stdScan):
 ## Fit a beam pattern to total power data in 2-D target coordinate space.
 # @param targetCoords 2-D coordinates in target space, as an (N,2)-shaped numpy array
 # @param totalPower   Total power values, as an (N,M)-shaped numpy array (M = number of bands)
-# @return Gaussian interpolator function fitted to power data
-def fit_beam_pattern(targetCoords, totalPower):
+# @param randomise    True if fits should be randomised, as part of a larger Monte Carlo run
+# @return List of Gaussian interpolator functions fitted to power data, one per band
+def fit_beam_pattern(targetCoords, totalPower, randomise):
     interpList = []
     for band in range(totalPower.shape[1]):
         bandPower = totalPower[:, band]
@@ -298,6 +310,8 @@ def fit_beam_pattern(targetCoords, totalPower):
         interp = interpolator.GaussianFit(centroid, initStDev*np.ones(centroid.shape), peakVal)
         # Fit Gaussian beam only to points within blob, where approximation is more valid (more accurate)
         interp.fit(blobPoints, weights)
+        if randomise:
+            interp = interpolator.randomise(interp, blobPoints, weights, 'shuffle')
         # Or fit Gaussian beam to all points in scan (this can provide a better fit with very noisy data)
         # interp.fit(targetCoords, bandPower)
         interpList.append(interp)
@@ -306,24 +320,23 @@ def fit_beam_pattern(targetCoords, totalPower):
 
 ## Fit a beam pattern to multiple scans of a single calibrator source, after first calibrating the scans.
 # @param stdScanList     List of StandardSourceScan objects
-# @return stdScanList    List of modified scan objects, after power-to-temp conversion but before baseline subtraction
-# @return calibScanList  List of data objects containing the fully calibrated main segments of each scan
-# @return targetCoords   2-D coordinates in target space of all calibrated main scans, as an (N,2)-shaped numpy array
-# @return totalPowerData Total power values of all calibrated main scans, as an (N,M)-shaped numpy array
+# @param randomise       True if fits should be randomised, as part of a larger Monte Carlo run
 # @return beamFuncList   List of Gaussian beam functions, one per band
-def calibrate_and_fit_beam_pattern(stdScanList):
+# @return calibScanList  List of data objects containing the fully calibrated main segments of each scan
+# @return stdScanList    List of modified scan objects, after power-to-temp conversion but before baseline subtraction
+def calibrate_and_fit_beam_pattern(stdScanList, randomise):
     calibScanList = []
     targetCoords = []
     totalPowerData = []
     for stdScan in stdScanList:
-        calibratedScan = calibrate_scan(stdScan)
+        calibratedScan = calibrate_scan(stdScan, randomise)
         targetCoords.append(calibratedScan.targetCoords)
         totalPowerData.append(calibratedScan.total_power())
         calibScanList.append(calibratedScan)
     targetCoords = np.concatenate(targetCoords)[:, 0:2]
     totalPowerData = np.concatenate(totalPowerData)
-    beamFuncList = fit_beam_pattern(targetCoords, totalPowerData)
-    return stdScanList, calibScanList, targetCoords, totalPowerData, beamFuncList
+    beamFuncList = fit_beam_pattern(targetCoords, totalPowerData, randomise)
+    return beamFuncList, calibScanList, stdScanList
 
 
 ## Extract all information from an unresolved point source scan.
@@ -332,12 +345,16 @@ def calibrate_and_fit_beam_pattern(stdScanList):
 # scans. For general (unnamed) sources, the estimated source position in mount coordinates is returned.
 # Additionally, for known calibrator sources, the antenna gain and effective area can be estimated from the
 # known source flux density.
-# @param stdScanList     List of StandardSourceScan objects, describing scans across a single point source
-# @return A whole bunch of stuff
+# @param stdScanList    List of StandardSourceScan objects, describing scans across a single point source
+# @param randomise      True if fits should be randomised, as part of a larger Monte Carlo run [False]
+# @return resultList    List of results, including antenna effective area and gain, and estimated source coordinates
+# @return beamFuncList  List of Gaussian beam functions, one per band
+# @return calibScanList List of data objects containing the fully calibrated main segments of each scan
+# @return stdScanList   List of modified scan objects, after power-to-temp conversion but before baseline subtraction
 # pylint: disable-msg=R0914
-def reduce_point_source_scan(stdScanList):
+def reduce_point_source_scan(stdScanList, randomise=False):
     # Calibrate across all scans, and fit a beam pattern to estimate source position and strength
-    stdScanList, calibScanList, targetCoords, totalPower, beamFuncList = calibrate_and_fit_beam_pattern(stdScanList)
+    beamFuncList, calibScanList, stdScanList = calibrate_and_fit_beam_pattern(stdScanList, randomise)
     bandFreqs = calibScanList[0].bandFreqs
     sourceName = stdScanList[0].sourceName
     # The antenna effective area and friends can only be calculated for sources with known flux densities
@@ -358,6 +375,93 @@ def reduce_point_source_scan(stdScanList):
     targetCoordinate = Coordinate(targetSys, beamCentre.tolist() + [0.0])
     # The time of the source peak is taken to be in the middle of the first main scan
     mountCoordinate = targetToMount.transform_coordinate(targetCoordinate, calibScanList[0].timeSamples.mean())
-    estmSourceAzAng, estmSourceElAng = mountCoordinate.get_vector()[0:2] * 180.0 / np.pi
-    return sourcePowerFluxDensity, deltaT, pointSourceSensitivity, effArea, antGain, \
-           (estmSourceAzAng, estmSourceElAng), stdScanList, calibScanList, targetCoords, totalPower, beamFuncList
+    estmSourceAngs = mountCoordinate.get_vector()[0:2] * 180.0 / np.pi
+    resultList = sourcePowerFluxDensity, deltaT, pointSourceSensitivity, effArea, antGain, estmSourceAngs
+    return resultList, beamFuncList, calibScanList, stdScanList
+
+
+## Extract point source information, with quantified statistical uncertainty.
+# This reduces the power data obtained from multiple scans across a point source. In the process, the data is
+# calibrated to remove receiver gain drifts, baselines are removed, and a beam pattern is fitted to the combined
+# scans. For general (unnamed) sources, the estimated source position in mount coordinates is returned.
+# Additionally, for known calibrator sources, the antenna gain and effective area can be estimated from the
+# known source flux density. All final results are provided with standard deviations, which are estimated from
+# the data set itself via resampling or sigma-point techniques.
+# @param stdScanList    List of StandardSourceScan objects, describing scans across a single point source
+# @param method         Technique used to obtain statistics ('resample' (recommended default) or 'sigma-point')
+# @param numSamples     Number of samples in resampling process (more is better but slower) [10]
+# @return resultList    List of results, including antenna effective area and gain, and estimated source coordinates
+# @return beamFuncList  List of Gaussian beam functions, one per band
+# @return calibScanList List of data objects containing the fully calibrated main segments of each scan
+# @return tempScanList  List of modified scan objects, after power-to-temp conversion but before baseline subtraction
+# pylint: disable-msg=W0612
+def reduce_point_source_scan_with_stats(stdScanList, method='resample', numSamples=10):
+    # Do the reduction without any variations first, to obtain scan lists and other constant outputs
+    res, beamFuncList, calibScanList, tempScanList = reduce_point_source_scan(copy.deepcopy(stdScanList), False)
+    sourcePowerFluxDensity, dT, pss, effA, antG, estmA = res
+    
+    # Resampling technique for estimating standard deviations
+    if method == 'resample':
+        deltaTList = [dT]
+        pssList = [pss]
+        effAreaList = [effA]
+        antGainList = [antG]
+        azAngList = [estmA[0]]
+        elAngList = [estmA[1]]
+        # Re-run the reduction routine, which randomises itself internally each time
+        for n in xrange(numSamples-1):
+            results = reduce_point_source_scan(copy.deepcopy(stdScanList), randomise=True)
+            pfd, dT, pss, effA, antG, estmA = results[0]
+            deltaTList.append(dT)
+            pssList.append(pss)
+            effAreaList.append(effA)
+            antGainList.append(antG)
+            azAngList.append(estmA[0])
+            elAngList.append(estmA[1])
+        # Obtain statistics and save in combined data structure
+        deltaT = stats.MuSigmaArray(np.array(deltaTList).mean(axis=0), np.array(deltaTList).std(axis=0))
+        pointSourceSensitivity = stats.MuSigmaArray(np.array(pssList).mean(axis=0), np.array(pssList).std(axis=0))
+        effArea = stats.MuSigmaArray(np.array(effAreaList).mean(axis=0), np.array(effAreaList).std(axis=0))
+        antGain = stats.MuSigmaArray(np.array(antGainList).mean(axis=0), np.array(antGainList).std(axis=0))
+        estmAzAng = stats.MuSigmaArray(np.array(azAngList).mean(axis=0), np.array(azAngList).std(axis=0))
+        estmElAng = stats.MuSigmaArray(np.array(elAngList).mean(axis=0), np.array(elAngList).std(axis=0))
+    
+    # Sigma-point technique for estimating standard deviations
+    elif method == 'sigma-point':
+        # Currently only Fpt factors are sigma'ed, as the full data set will be too computationally intensive
+        fptMean = np.array([stdScan.powerToTempFactors.mean for stdScan in stdScanList])
+        fptSigma = np.array([stdScan.powerToTempFactors.sigma for stdScan in stdScanList])
+        fptMuSigma = stats.MuSigmaArray(fptMean.ravel(), fptSigma.ravel())
+        
+        ## Wraps reduction code for sigma stats calculation.
+        # @param fptFactors Vector of input power-to-temp factors
+        # @param scanList   Main list of scan objects, installed via default value (don't assign it something else!)
+        # @return Vector of output values
+        # pylint: disable-msg=W0102
+        def wrapper_func(fptFactors, scanList=stdScanList):
+            # Don't trash the original scan list, as this will be re-used by several runs of this function
+            scanListCopy = copy.deepcopy(scanList)
+            # Reshape and install Fpt values into scan list
+            fptShape = [len(scanListCopy)] + list(scanListCopy[0].powerToTempFactors.shape)
+            for index, fptFactor in enumerate(fptFactors.reshape(fptShape)):
+                scanListCopy[index].powerToTempFactors = fptFactor
+            # Run reduction code with updated scan list, and ravel the results that require sigmas
+            results = reduce_point_source_scan(scanListCopy, False)
+            return np.concatenate(results[0][1:6])
+        
+        # Do sigma-point evaluation, and extract relevant outputs
+        resMuSigma = stats.sp_uncorrelated_stats(wrapper_func, fptMuSigma)
+        
+        numBands = len(stdScanList[0].mainData.bandFreqs)
+        deltaT = resMuSigma[0:numBands]
+        pointSourceSensitivity = resMuSigma[numBands:2*numBands]
+        effArea = resMuSigma[2*numBands:3*numBands]
+        antGain = resMuSigma[3*numBands:4*numBands]
+        estmAzAng = resMuSigma[4*numBands]
+        estmElAng = resMuSigma[4*numBands+1]
+    
+    else:
+        raise ValueError, "Unknown stats method '" + method + "'."
+    
+    resultList = sourcePowerFluxDensity, deltaT, pointSourceSensitivity, effArea, antGain, (estmAzAng, estmElAng)
+    return resultList, beamFuncList, calibScanList, tempScanList
