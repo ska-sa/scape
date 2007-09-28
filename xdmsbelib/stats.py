@@ -13,6 +13,7 @@ import numpy as np
 import scipy as sp
 sp.pkgload('stats')
 import misc
+import copy
 import logging
 
 logger = logging.getLogger("xdmsbe.xdmsbelib.stats")
@@ -326,6 +327,12 @@ class MuSigmaArray(np.ndarray):
             return MuSigmaArray(self.mean[first:last], None)
         else:
             return MuSigmaArray(self.mean[first:last], self.sigma[first:last])
+    ## Shallow copy operation
+    def __copy__(self):
+        return MuSigmaArray(self.mean, self.sigma)
+    ## Deep copy operation
+    def __deepcopy__(self, memo):
+        return MuSigmaArray(copy.deepcopy(self.mean, memo), copy.deepcopy(self.sigma, memo))
 
 #=========================================================================================================
 #=== FUNCTIONS                                                                                         ===
