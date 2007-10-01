@@ -333,6 +333,42 @@ class MuSigmaArray(np.ndarray):
     ## Deep copy operation
     def __deepcopy__(self, memo):
         return MuSigmaArray(copy.deepcopy(self.mean, memo), copy.deepcopy(self.sigma, memo))
+    
+## Concatenate MuSigmaArrays.
+# @param msaList List of MuSigmaArrays to concatenate
+# @return MuSigmaArray that is concatenation of list
+def ms_concatenate(msaList):
+    meanList = [msa.mean for msa in msaList]
+    sigmaList = [msa.sigma for msa in msaList]
+    # If any sigma is None, discard the rest
+    if None in sigmaList:
+        return MuSigmaArray(np.concatenate(meanList), None)
+    else:
+        return MuSigmaArray(np.concatenate(meanList), np.concatenate(sigmaList))
+
+## Stack MuSigmaArrays horizontally.
+# @param msaList List of MuSigmaArrays to stack
+# @return MuSigmaArray that is horizontal stack of list
+def ms_hstack(msaList):
+    meanList = [msa.mean for msa in msaList]
+    sigmaList = [msa.sigma for msa in msaList]
+    # If any sigma is None, discard the rest
+    if None in sigmaList:
+        return MuSigmaArray(np.hstack(meanList), None)
+    else:
+        return MuSigmaArray(np.hstack(meanList), np.hstack(sigmaList))
+
+## Stack MuSigmaArrays vertically.
+# @param msaList List of MuSigmaArrays to stack
+# @return MuSigmaArray that is vertical stack of list
+def ms_vstack(msaList):
+    meanList = [msa.mean for msa in msaList]
+    sigmaList = [msa.sigma for msa in msaList]
+    # If any sigma is None, discard the rest
+    if None in sigmaList:
+        return MuSigmaArray(np.vstack(meanList), None)
+    else:
+        return MuSigmaArray(np.vstack(meanList), np.vstack(sigmaList))
 
 #=========================================================================================================
 #=== FUNCTIONS                                                                                         ===
