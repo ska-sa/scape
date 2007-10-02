@@ -30,6 +30,7 @@ logger = logging.getLogger("xdmsbe.xdmsbelib.single_dish_reduce")
 ## Container for the components of a standard scan across a source.
 # This struct contains all the parts that make up a standard scan:
 # - information about the source (name and position)
+# - information about the antenna (beamwidth)
 # - the main scan segment to be calibrated
 # - powerToTemp conversion info, as derived from gain cal data at the start and end of the scan
 # - the actual powerToTemp function used to calibrate power measurements for whole scan
@@ -46,6 +47,9 @@ class StandardSourceScan(object):
     ## @var sourceElAng
     # Source elevation angle in degrees
     sourceElAng = None
+    ## @var beamWidth
+    # Antenna half-power beamwidth in degrees
+    beamWidth = None
     ## @var mainData
     # SingleDishData object for main scan segment
     mainData = None
@@ -112,7 +116,7 @@ def load_point_source_scan_list(fitsFileName, alpha):
             
             # Extract data and masks
             dataIdNameList = ['scan']
-            dataSelectionList = [('CalSourcePreScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
+            dataSelectionList = [('PreBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
             preScanDict = fitsReaderPreScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
             
             preScanData = preScanDict.values()[0]
@@ -130,14 +134,15 @@ def load_point_source_scan_list(fitsFileName, alpha):
             
             # Extract data and masks
             dataIdNameList = ['scan']
-            dataSelectionList = [('CalSourceScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
+            dataSelectionList = [('MainScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
             scanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
             
             mainScanName, mainScanData = scanDict.items()[0]
-            # Get the source name and position from the main scan
+            # Get the source name and position from the main scan, as well as the antenna beamwidth
             stdScan.sourceName = fitsReaderScan.select_masked_column('TARGET', 'Name', mask=None)[0]
             stdScan.sourceAzAng = fitsReaderScan.select_masked_column('TARGET', 'Azimuth', mask=None)[0]
             stdScan.sourceElAng = fitsReaderScan.select_masked_column('TARGET', 'Elevation', mask=None)[0]
+            stdScan.beamWidth = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth', mask=None)[0]
             
             misc.set_or_check_param_continuity(workDict, 'numBands', len(mainScanData.bandFreqs))
             misc.set_or_check_param_continuity(workDict, 'bandFreqs', mainScanData.bandFreqs)
@@ -152,7 +157,7 @@ def load_point_source_scan_list(fitsFileName, alpha):
             
             # Extract data and masks
             dataIdNameList = ['scan']
-            dataSelectionList = [('CalSourcePostScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
+            dataSelectionList = [('PostBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
             postScanDict = fitsReaderPostScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
             
             postScanData = postScanDict.values()[0]
@@ -285,20 +290,19 @@ def calibrate_scan(stdScan, randomise):
 
 
 ## Fit a beam pattern to total power data in 2-D target coordinate space.
+# This is the original version, which works OK for strong sources, but struggles on weaker ones.
 # @param targetCoords 2-D coordinates in target space, as an (N,2)-shaped numpy array
 # @param totalPower   Total power values, as an (N,M)-shaped numpy array (M = number of bands)
 # @param randomise    True if fits should be randomised, as part of a larger Monte Carlo run
 # @return List of Gaussian interpolator functions fitted to power data, one per band
-def fit_beam_pattern(targetCoords, totalPower, randomise):
+def fit_beam_pattern_old(targetCoords, totalPower, randomise):
     interpList = []
     for band in range(totalPower.shape[1]):
         bandPower = totalPower[:, band]
         # Find main blob, defined as all points with a power value above some factor of the peak power
-        # Maybe this should be the points within the half-power beamwidth of the peak?
         # A factor of roughly 0.25 seems to provide the best combined accuracy for the peak height and location
         peakVal = bandPower.max()
-        blobThreshold = 0.25 * peakVal
-        insideBlob = bandPower > blobThreshold
+        insideBlob = bandPower > 0.25 * peakVal
         blobPoints = targetCoords[insideBlob, :]
         # Find the centroid of the main blob
         weights = bandPower[insideBlob]
@@ -308,12 +312,39 @@ def fit_beam_pattern(targetCoords, totalPower, randomise):
         distToCentroid = np.sqrt((diffVectors * diffVectors).sum(axis=1))
         initStDev = 2 * distToCentroid.mean()
         interp = interpolator.GaussianFit(centroid, initStDev*np.ones(centroid.shape), peakVal)
-        # Fit Gaussian beam only to points within blob, where approximation is more valid (more accurate)
+        # Fit Gaussian beam only to points within blob, where approximation is more valid (more accurate?)
         interp.fit(blobPoints, weights)
-        if randomise:
-            interp = interpolator.randomise(interp, blobPoints, weights, 'shuffle')
         # Or fit Gaussian beam to all points in scan (this can provide a better fit with very noisy data)
         # interp.fit(targetCoords, bandPower)
+        if randomise:
+            interp = interpolator.randomise(interp, blobPoints, weights, 'shuffle')
+            # interp = interpolator.randomise(interp, targetCoords, bandPower, 'shuffle')
+        interpList.append(interp)
+    return interpList
+
+
+## Fit a beam pattern to total power data in 2-D target coordinate space.
+# @param targetCoords 2-D coordinates in target space, as an (N,2)-shaped numpy array
+# @param totalPower   Total power values, as an (N,M)-shaped numpy array (M = number of bands)
+# @param beamWidth    Antenna half-power beamwidth (in target coordinate scale)
+# @param randomise    True if fits should be randomised, as part of a larger Monte Carlo run
+# @return List of Gaussian interpolator functions fitted to power data, one per band
+def fit_beam_pattern(targetCoords, totalPower, beamWidth, randomise):
+    interpList = []
+    for band in range(totalPower.shape[1]):
+        bandPower = totalPower[:, band]
+        # Find peak power position and value
+        peakInd = bandPower.argmax()
+        peakVal = bandPower[peakInd]
+        peakPos = targetCoords[peakInd, :]
+        # Use peak location as initial estimate of mean, and peak value as initial height
+        # A Gaussian function reaches half its peak value at 1.183*sigma => should equal beamWidth/2 for starters
+        interp = interpolator.GaussianFit(peakPos, 0.423*beamWidth*np.ones(peakPos.shape), peakVal)
+        # Fit Gaussian beam to all points in scan, which is not only better for weak sources, but also
+        # provides more accurate estimates of peak than only fitting to points close to the peak
+        interp.fit(targetCoords, bandPower)
+        if randomise:
+            interp = interpolator.randomise(interp, targetCoords, bandPower, 'shuffle')
         interpList.append(interp)
     return interpList
 
@@ -335,7 +366,8 @@ def calibrate_and_fit_beam_pattern(stdScanList, randomise):
         calibScanList.append(calibratedScan)
     targetCoords = np.concatenate(targetCoords)[:, 0:2]
     totalPowerData = np.concatenate(totalPowerData)
-    beamFuncList = fit_beam_pattern(targetCoords, totalPowerData, randomise)
+#    beamFuncList = fit_beam_pattern_old(targetCoords, totalPowerData, randomise)
+    beamFuncList = fit_beam_pattern(targetCoords, totalPowerData, stdScanList[0].beamWidth*np.pi/180.0, randomise)
     return beamFuncList, calibScanList, stdScanList
 
 
