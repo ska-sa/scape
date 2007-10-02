@@ -184,7 +184,7 @@ def plot_calib_scans(figColorList, calibScanList, beamFuncList, expName):
 # @param refSource      Index of source in list considered to be reference for coordinate system [0]
 # @param plotPower      True if calibrated power values should be plotted as pcolor backdrop to beam patterns [True]
 # @return axesColorList List of matplotlib Axes objects, one per plot
-# pylint: disable-msg=R0914
+# pylint: disable-msg=R0912,R0913,R0914,R0915
 def plot_beam_patterns(figColorList, calibListList, beamListList, expName, refSource=0, plotPower=True):
     # Set up axes
     axesColorList = []

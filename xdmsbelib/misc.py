@@ -123,31 +123,31 @@ def reduction_script_options(expType, disabledOpts=''):
     expUsage = "usage: %prog [options] FITS_file"
     parser = OptionParser(expUsage, description = "Data reduction backend for '" + expType + "' experiment")
     if 'a' not in disabledOpts:
-        parser.add_option('-a', '--alpha', action='store', type='float', dest='alpha',
+        parser.add_option('-a', '--alpha', action='store', type='float', dest='alpha', \
                           default=0.05, help="Alpha value for statistical tests")
     if 'c' not in disabledOpts:
-        parser.add_option('-c', '--config', dest='logConfigFile', action='store', type='string', default=None,
+        parser.add_option('-c', '--config', dest='logConfigFile', action='store', type='string', default=None, \
                           metavar='LOGFILE', help='use LOGFILE for logging configuration')
     if 'l' not in disabledOpts:
-      parser.add_option('-l', '--linearity', action = 'store_true', dest = 'disableLinearityTest',
-                        default = True, help="DISABLE linearity test")
+        parser.add_option('-l', '--linearity', action = 'store_true', dest = 'disableLinearityTest', \
+                          default = True, help="DISABLE linearity test")
     if 'p' not in disabledOpts:
-        parser.add_option('-p', '--showplots', action='store_true', dest='showPlots',
+        parser.add_option('-p', '--showplots', action='store_true', dest='showPlots', \
                           default=False, help="Display plots")
     if 's' not in disabledOpts:
-        parser.add_option('-s', '--save', action='store_true', dest='saveResults',
+        parser.add_option('-s', '--save', action='store_true', dest='saveResults', \
                           default=False, help="Save all output to file(s)")
     if 't' not in disabledOpts:
-        parser.add_option('-t', '--tar', action='store_true', dest='tarResults',
+        parser.add_option('-t', '--tar', action='store_true', dest='tarResults', \
                           default=False, help="Tarball all output file(s)")
     if 'v' not in disabledOpts:
-      parser.add_option('-v', '--verbose', action='store_true', dest='verbose',
-                        default=False, help="Display data reduction results on stdout")
+        parser.add_option('-v', '--verbose', action='store_true', dest='verbose', \
+                          default=False, help="Display data reduction results on stdout")
     if 'z' not in disabledOpts:
-        parser.add_option('-z', '--zip', action='store', type='string', dest='zipTar', default='none',
+        parser.add_option('-z', '--zip', action='store', type='string', dest='zipTar', default='none', \
                           help="Compress tarball, valid values: 'bz2', 'gz' 'none'. Default is 'none'")
     
-    (opts, args) = parser.parse_args()
+    opts, args = parser.parse_args()
     
     if len(args) != 1:
         parser.print_help()
