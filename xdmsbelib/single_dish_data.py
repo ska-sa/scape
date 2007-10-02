@@ -83,7 +83,7 @@ class SingleDishData(object):
         self.coherencyData = {}
         
         ## @var targetCoords
-        # Target coordinates
+        # Target coordinates, as an NxD array (N = number of samples, D = target coordinate dimension)
         self.targetCoords = None
         ## @var mountCoordSystem
         # Coordinate system for mount (azimuth/evelation/rotation angles)
