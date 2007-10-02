@@ -62,7 +62,7 @@ coherency2stokesMatrix = np.array([[1, 0, 0, 1],  \
 #=======================================================================================================
 
 #---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  get_exp_list
+#--- FUNCTION :  get_scan_parameters
 #---------------------------------------------------------------------------------------------------------
 
 ## Return reference position and offset values for scan-type experiments
@@ -77,25 +77,25 @@ coherency2stokesMatrix = np.array([[1, 0, 0, 1],  \
 # @param    verticalScanStop       stop of vertical offset
 # pylint: disable-msg=R0913,R0914
 #
-def get_scan_parameters(fptExtension, scanExtension, srcAzm, srcEle, pointingError, 
+def get_scan_parameters(fptExtension, scanExtension, srcAzm, srcEle, pointingError,
                         horizontalScanStart, horizontalScanStop, verticalScanStart, verticalScanStop):
-
+    
     offsetVec1 = [horizontalScanStart, verticalScanStart]
     offsetVec1Mag = np.sqrt(offsetVec1[0]**2.0 + offsetVec1[1]**2.0)
     offsetVec1Angle = np.arctan2(offsetVec1[1], offsetVec1[0])
-    offsetVec1Fpt = [np.cos(offsetVec1Angle) * (offsetVec1Mag + fptExtension), 
+    offsetVec1Fpt = [np.cos(offsetVec1Angle) * (offsetVec1Mag + fptExtension),
                      np.sin(offsetVec1Angle) * (offsetVec1Mag + fptExtension)]
-    offsetVec1Scan = [np.cos(offsetVec1Angle) * (offsetVec1Mag + scanExtension), 
+    offsetVec1Scan = [np.cos(offsetVec1Angle) * (offsetVec1Mag + scanExtension),
                       np.sin(offsetVec1Angle) * (offsetVec1Mag + scanExtension)]
-
+    
     offsetVec2 = [horizontalScanStop, verticalScanStop]
     offsetVec2Mag = np.sqrt(offsetVec2[0]**2.0 + offsetVec2[1]**2.0)
     offsetVec2Angle = np.arctan2(offsetVec2[1], offsetVec2[0])
-    offsetVec2Fpt = [np.cos(offsetVec2Angle) * (offsetVec2Mag + fptExtension), 
+    offsetVec2Fpt = [np.cos(offsetVec2Angle) * (offsetVec2Mag + fptExtension),
                      np.sin(offsetVec2Angle) * (offsetVec2Mag + fptExtension)]
-    offsetVec2Scan = [np.cos(offsetVec2Angle) * (offsetVec2Mag + scanExtension), 
+    offsetVec2Scan = [np.cos(offsetVec2Angle) * (offsetVec2Mag + scanExtension),
                       np.sin(offsetVec2Angle) * (offsetVec2Mag + scanExtension)]
-
+    
     fptSrcAzm1 = srcAzm - pointingError[0] + offsetVec1Fpt[0]
     fptSrcEle1 = srcEle - pointingError[1] + offsetVec1Fpt[1]
     fptSrcAzm2 = srcAzm - pointingError[0] + offsetVec2Fpt[0]
@@ -105,44 +105,54 @@ def get_scan_parameters(fptExtension, scanExtension, srcAzm, srcEle, pointingErr
     vOffset1 = np.array([offsetVec1Scan[1], verticalScanStart])
     hOffset2 = np.array([horizontalScanStop, offsetVec2Scan[0]])
     vOffset2 = np.array([verticalScanStop, offsetVec2Scan[1]])
-
+    
     return fptSrcAzm1, fptSrcEle1, fptSrcAzm2, fptSrcEle2, hOffset1, vOffset1, hOffset2, vOffset2
 
 
 #---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  get_exp_list
+#--- FUNCTION :  reduction_script_options
 #---------------------------------------------------------------------------------------------------------
 
-## Return parsing options
-# @param    expType    Experiment type
-def tsys_options(expType):
-
+## Option parser for all reduction scripts.
+# This parses the standard options for each reduction script, and returns the main argument (the FITS filename).
+# @param    expType      Experiment type
+# @param    disabledOpts String indicating which options are disabled for this experiment ['', meaning none]
+def reduction_script_options(expType, disabledOpts=''):
+    
     # parse command line options
     expUsage = "usage: %prog [options] FITS_file"
-    parser = OptionParser(expUsage, description = 'Data reduction backend for ' + expType)
-    parser.add_option('-v', '--verbose', action='store_true', dest='verbose', 
-                      default=False, help="Display data reduction results on stdout")
-    parser.add_option('-p', '--showplots', action='store_true', dest='showPlots', 
-                      default=False, help="Display Tsys plot")
-    parser.add_option('-s', '--save', action='store_true', dest='saveResults', 
-                      default=False, help="Save all output to file(s)")
-    parser.add_option('-t', '--tar', action='store_true', dest='tarResults', 
-                      default=False, help="Tarball all output file(s)")
-    parser.add_option('-z', '--zip', action='store', type='string', dest='zipTar', default='none',
-                      help="Compress tarball, valid values: 'bz2', 'gz' 'none'. Default is 'none'")
-    parser.add_option('-a', '--alpha', action='store', type='float', dest='alpha', 
-                      default=0.05, help="Alpha value for statistical tests")
-    parser.add_option('-l', '--linearity', action = 'store_true', dest = 'disableLinearityTest', 
-                      default = True, help="DISABLE linearity test")
-    parser.add_option('-c', '--config', dest='logConfigFile', action='store', type='string', default=None, 
-                      metavar='LOGFILE', help='use LOGFILE for logging configuration')
-
+    parser = OptionParser(expUsage, description = "Data reduction backend for '" + expType + "' experiment")
+    if 'a' not in disabledOpts:
+        parser.add_option('-a', '--alpha', action='store', type='float', dest='alpha',
+                          default=0.05, help="Alpha value for statistical tests")
+    if 'c' not in disabledOpts:
+        parser.add_option('-c', '--config', dest='logConfigFile', action='store', type='string', default=None,
+                          metavar='LOGFILE', help='use LOGFILE for logging configuration')
+    if 'l' not in disabledOpts:
+      parser.add_option('-l', '--linearity', action = 'store_true', dest = 'disableLinearityTest',
+                        default = True, help="DISABLE linearity test")
+    if 'p' not in disabledOpts:
+        parser.add_option('-p', '--showplots', action='store_true', dest='showPlots',
+                          default=False, help="Display plots")
+    if 's' not in disabledOpts:
+        parser.add_option('-s', '--save', action='store_true', dest='saveResults',
+                          default=False, help="Save all output to file(s)")
+    if 't' not in disabledOpts:
+        parser.add_option('-t', '--tar', action='store_true', dest='tarResults',
+                          default=False, help="Tarball all output file(s)")
+    if 'v' not in disabledOpts:
+      parser.add_option('-v', '--verbose', action='store_true', dest='verbose',
+                        default=False, help="Display data reduction results on stdout")
+    if 'z' not in disabledOpts:
+        parser.add_option('-z', '--zip', action='store', type='string', dest='zipTar', default='none',
+                          help="Compress tarball, valid values: 'bz2', 'gz' 'none'. Default is 'none'")
+    
     (opts, args) = parser.parse_args()
     
     if len(args) != 1:
         parser.print_help()
         sys.exit(1)
-
+    
     # Configure logging
     config_logging(opts.logConfigFile)
     
@@ -152,7 +162,7 @@ def tsys_options(expType):
         message = "You must provide a FITS filename as argument."
         logger.error(message)
         raise IndexError, message
-
+    
     return opts, args, fitsFileName
 
 
@@ -184,7 +194,7 @@ def get_exp_list():
 #--- FUNCTION :  config_logging
 #---------------------------------------------------------------------------------------------------------
 
-## Configure the logging support to either use the default (built-in) or configure using an external 
+## Configure the logging support to either use the default (built-in) or configure using an external
 # loggin config file
 #
 # @param logConfFile Logging configuration file [None]. If not specified, the default is used.
@@ -197,10 +207,10 @@ def config_logging(logConfFile=None):
             config_logging()
             logger.error(message)
     else:
-        logging.basicConfig(level=logging.INFO, 
-                            stream=sys.stdout, 
+        logging.basicConfig(level=logging.INFO,
+                            stream=sys.stdout,
                             format="%(asctime)s - %(name)s - %(filename)s:%(lineno)s - %(levelname)s - %(message)s")
-    
+
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  fmt_seq_num
@@ -215,7 +225,7 @@ def config_logging(logConfFile=None):
 # @return    seqStr    sequence string
 #
 def fmt_seq_num(seqNum, digits):
-
+    
     assert seqNum < 10**digits
     seqStr = str(seqNum)
     seqStr = seqStr.rjust(digits, '0')
@@ -230,7 +240,7 @@ def fmt_seq_num(seqNum, digits):
 # @param    calname    name of calibrator source
 # @param    freq       frequency of calibrator source in MHz
 #
-# References: [1] M. Ott et al, "An updated list of radio flux density calibrators", 
+# References: [1] M. Ott et al, "An updated list of radio flux density calibrators",
 #                 Astronomy and Astrophysics, vol. 284, pp. 331-339, 1994.
 #             [2] M. Gaylard, Excel spreadsheet, calibration_Ott94_Baars77.xls
 #
@@ -240,62 +250,62 @@ def ottflux(calname, freq):
     calsources = {np.str.lower('3C48'):                        [ 1408.0, 23780.0, 2.465, -0.004, -0.1251],
                   np.str.lower('0134+329'):                    [ 1408.0, 23780.0, 2.465, -0.004, -0.1251],
                   np.str.lower('0134+329 3C48'):               [ 1408.0, 23780.0, 2.465, -0.004, -0.1251],
-
+                  
                   np.str.lower('3C123'):                       [ 1408.0, 23780.0, 2.525,  0.246, -0.1638],
                   np.str.lower('0433+296'):                    [ 1408.0, 23780.0, 2.525,  0.246, -0.1638],
                   np.str.lower('0433+296 3C123'):              [ 1408.0, 23780.0, 2.525,  0.246, -0.1638],
-
+                  
                   np.str.lower('3C147'):                       [ 1408.0, 23780.0, 2.806, -0.140, -0.1031],
                   np.str.lower('0538+498'):                    [ 1408.0, 23780.0, 2.806, -0.140, -0.1031],
                   np.str.lower('0538+498 3C147'):              [ 1408.0, 23780.0, 2.806, -0.140, -0.1031],
-                
+                  
                   np.str.lower('3C161'):                       [ 1408.0, 10550.0, 1.250,  0.726, -0.2286],
                   np.str.lower('0624-058'):                    [ 1408.0, 10550.0, 1.250,  0.726, -0.2286],
                   np.str.lower('0624-058 3C161'):              [ 1408.0, 10550.0, 1.250,  0.726, -0.2286],
-                
+                  
                   np.str.lower('Hydra A'):                     [ 1408.0, 10550.0, 4.729, -1.025,  0.0130],
                   np.str.lower('3C218'):                       [ 1408.0, 10550.0, 4.729, -1.025,  0.0130],
                   np.str.lower('0915-119'):                    [ 1408.0, 10550.0, 4.729, -1.025,  0.0130],
                   np.str.lower('0915-119 3C218'):              [ 1408.0, 10550.0, 4.729, -1.025,  0.0130],
                   np.str.lower('0915-119 3C218 Hydra A'):      [ 1408.0, 10550.0, 4.729, -1.025,  0.0130],
-                
+                  
                   np.str.lower('3C227'):                       [ 1408.0,  4750.0, 6.757, -2.801,  0.2969],
                   np.str.lower('0945+077'):                    [ 1408.0,  4750.0, 6.757, -2.801,  0.2969],
                   np.str.lower('0945+077 3C227'):              [ 1408.0,  4750.0, 6.757, -2.801,  0.2969],
-                
+                  
                   np.str.lower('3C249.1'):                     [ 1408.0,  4750.0, 2.537, -0.565, -0.0404],
                   np.str.lower('1100+772'):                    [ 1408.0,  4750.0, 2.537, -0.565, -0.0404],
                   np.str.lower('1100+772 3C249.1'):            [ 1408.0,  4750.0, 2.537, -0.565, -0.0404],
-                
+                  
                   np.str.lower('VirA'):                        [ 1408.0, 10550.0, 4.484, -0.603, -0.0280],
                   np.str.lower('Virgo A'):                     [ 1408.0, 10550.0, 4.484, -0.603, -0.0280],
                   np.str.lower('3C274'):                       [ 1408.0, 10550.0, 4.484, -0.603, -0.0280],
                   np.str.lower('1228+127'):                    [ 1408.0, 10550.0, 4.484, -0.603, -0.0280],
                   np.str.lower('1228+127 3C274'):              [ 1408.0, 10550.0, 4.484, -0.603, -0.0280],
                   np.str.lower('1228+127 3C274 Virgo A'):      [ 1408.0, 10550.0, 4.484, -0.603, -0.0280],
-                
+                  
                   np.str.lower('3C286'):                       [ 1408.0, 43200.0, 0.956,  0.584, -0.1644],
                   np.str.lower('1328+307'):                    [ 1408.0, 43200.0, 0.956,  0.584, -0.1644],
                   np.str.lower('1328+307 3C286'):              [ 1408.0, 43200.0, 0.956,  0.584, -0.1644],
-                
+                  
                   np.str.lower('3C295'):                       [ 1408.0, 32000.0, 1.490,  0.756, -0.2545],
                   np.str.lower('1409+524'):                    [ 1408.0, 32000.0, 1.490,  0.756, -0.2545],
                   np.str.lower('1409+524 3C295'):              [ 1408.0, 32000.0, 1.490,  0.756, -0.2545],
-                
+                  
                   np.str.lower('3C309.1'):                     [ 1408.0, 32000.0, 2.617, -0.437, -0.0373],
                   np.str.lower('1458+718'):                    [ 1408.0, 32000.0, 2.617, -0.437, -0.0373],
                   np.str.lower('1458+718 3C309.1'):            [ 1408.0, 32000.0, 2.617, -0.437, -0.0373],
-                
+                  
                   np.str.lower('Hercules A'):                  [ 1408.0, 10550.0, 3.852, -0.361, -0.1053],
                   np.str.lower('3C348'):                       [ 1408.0, 10550.0, 3.852, -0.361, -0.1053],
                   np.str.lower('1648+051'):                    [ 1408.0, 10550.0, 3.852, -0.361, -0.1053],
                   np.str.lower('1648+051 3C348'):              [ 1408.0, 10550.0, 3.852, -0.361, -0.1053],
                   np.str.lower('1648+051 3C348 Hercules A'):   [ 1408.0, 10550.0, 3.852, -0.361, -0.1053],
-                
+                  
                   np.str.lower('3C353'):                       [ 1408.0, 10550.0, 3.148, -0.157, -0.0911],
                   np.str.lower('1717-009'):                    [ 1408.0, 10550.0, 3.148, -0.157, -0.0911],
                   np.str.lower('1717-009 3C353'):              [ 1408.0, 10550.0, 3.148, -0.157, -0.0911],
-                
+                  
                   np.str.lower('CygA'):                        [ 4750.0, 10550.0, 8.360, -1.565,  0.0000],
                   np.str.lower('Cygnus A'):                    [ 4750.0, 10550.0, 8.360, -1.565,  0.0000],
                   np.str.lower('3C405'):                       [ 4750.0, 10550.0, 8.360, -1.565,  0.0000],
@@ -303,12 +313,12 @@ def ottflux(calname, freq):
                   np.str.lower('1957+406 3C405'):              [ 4750.0, 10550.0, 8.360, -1.565,  0.0000],
                   np.str.lower('1957+406 CygA'):               [ 4750.0, 10550.0, 8.360, -1.565,  0.0000],
                   np.str.lower('1957+406 3C405 Cygnus A'):     [ 4750.0, 10550.0, 8.360, -1.565,  0.0000],
-                
+                  
                   np.str.lower('NGC7027'):                     [10550.0, 43200.0, 1.322, -0.134,  0.0000],
                   np.str.lower('2105+420'):                    [10550.0, 43200.0, 1.322, -0.134,  0.0000],
                   np.str.lower('2105+420 NGC7027'):            [10550.0, 43200.0, 1.322, -0.134,  0.0000]
                  }
-
+    
     calnameLowcase = np.str.lower(calname)
     
     if (calnameLowcase == 'none'):
@@ -325,7 +335,7 @@ def ottflux(calname, freq):
     # Calculate flux density
     fluxDensity = pow(10.0, calsources[calnameLowcase][2] + calsources[calnameLowcase][3] * np.log10(freq) + \
                   calsources[calnameLowcase][4] * (np.log10(freq) ** 2.0))
-
+    
     return fluxDensity
 
 
@@ -349,8 +359,8 @@ def get_power(numChannels, numIntegrationBins, temperature, channelBandwidth, rx
     pSigma = pMean * (np.sqrt(2.0) / np.sqrt(numIntegrationBins))
     vMean  = np.sqrt(pMean)
     vSigma = (0.5 / np.sqrt(pMean)) * pSigma
-    power = np.random.normal(vMean.repeat(numChannels).reshape(numSamples, numChannels), 
-                             vSigma.repeat(numChannels).reshape(numSamples, numChannels), 
+    power = np.random.normal(vMean.repeat(numChannels).reshape(numSamples, numChannels),
+                             vSigma.repeat(numChannels).reshape(numSamples, numChannels),
                              (numSamples, numChannels)) ** 2.0
 
 #    power = vMean**2 * np.ones((numSamples, numChannels), dtype = 'float')
@@ -358,7 +368,7 @@ def get_power(numChannels, numIntegrationBins, temperature, channelBandwidth, rx
 #    print vMean, vMean2
 #    print vSigma, np.sqrt(vCov)
 #    print
-
+    
     return power
 
 
@@ -389,14 +399,14 @@ def load_fits(fileName, hduNames=None):
         # Build list of missing HDU names
         hduNamesPresent = set([x.name for x in hdulist])
         hduNamesMissing = set.difference(hduNames, hduNamesPresent)
-
+        
         # Report missing HDU's
         if len(hduNamesMissing):
             hdulist.close()
             message = "Missing HDUs : %s" % str(hduNamesMissing)[5:-2]
             logger.error(message)
             raise ValueError, message
-
+    
     return hdulist
 
 
@@ -417,30 +427,30 @@ def load_fits(fileName, hduNames=None):
 #
 
 def extract_svg_from_fits(fileName = False, hduList = False, svgFileName = False, svgHduName = "SVG"):
-
+    
     if fileName:
         hduList = load_fits(fileName)
-
+    
     if hduList:
-
+        
         try:
             svgHDU = hduList[svgHduName]
         except KeyError:
             logger.error("FITS file does not contain SVG HDU.")
-
+        
         svgData = svgHDU.data
-
+        
         if svgFileName:
             try:
                 svgData.tofile(svgFileName)
             except IOError:
                 logger.error("I/O Error writing SVG file")
-
+        
         try:
             svgCharData = list(svgData.field('CHAR'))
         except KeyError:
             logger.error("SVG table did not contain a column named CHAR as expected")
-
+    
     return svgCharData
 
 
@@ -474,11 +484,11 @@ def hdr_keyval_copy(hdrS, hdrD, keyList):
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  set_or_check
-#-----------------------------
+#---------------------------------------------------------------------------------------------------------
 
 ## Set a dictionary key to val if it is not yet set, otherwise check for equality with val.
 #
-# @param     dic    input dictionary 
+# @param     dic    input dictionary
 # @param     key    dictionary key to set/check
 # @param     val    value to set/check dic[key] against
 #
@@ -490,7 +500,7 @@ def set_or_check(dic, key, val):
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  set_or_check_param_continuity
-#----------------------------------------
+#---------------------------------------------------------------------------------------------------------
 
 ## Set parameter if it doesn't exist in dictionary; otherwise, check if it equals given value.
 # If the parameter paramName does not yet exist in workDict, it is added to the dictionary with
@@ -507,6 +517,10 @@ def set_or_check_param_continuity(workDict, paramName, paramValue):
         logger.error(message)
         raise ValueError, message
 
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  tuple_append
+#---------------------------------------------------------------------------------------------------------
 
 ## Extend a shape tuple by appending x to it
 # @param tuple1 first tuple
@@ -529,7 +543,7 @@ def tuple_append(tuple1, tuple2):
 #---------------------------------------------------------------------------------------------------------
 
 ## Concantenate a list of dictionaries into a single dictionary. We assume there is no duplicate keys
-# 
+#
 # @param    dictList    List of dictionaries
 # @return   dictOut     new concatenated dictionary
 
@@ -540,15 +554,15 @@ def dict_concatenate(dictList):
     return dictOut
 
 
-#---------------------------------------------------------------------------------------------
-#--- FUNCTION : dict_regex_select 
-#--------------------------------
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION : dict_regex_select
+#---------------------------------------------------------------------------------------------------------
 
-##  Select a subset of a dictionary's (key, value) pairs based on a regular expression based key. 
+##  Select a subset of a dictionary's (key, value) pairs based on a regular expression based key.
 #
 # @param     inDict          The dictionary object
 # @param     regexStr      The regular expression to serve as key
-# @return    outDict       Subset dictionary based on selection   
+# @return    outDict       Subset dictionary based on selection
 def dict_regex_select(inDict, regexStr):
     outDict = {}
     for (key, val) in inDict.items():
@@ -556,27 +570,6 @@ def dict_regex_select(inDict, regexStr):
             outDict[key] = val
     return outDict
 
-
-
-#---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  default_usage
-#---------------------------------------------------------------------------------------------------------
-
-## Common experiment usage parameters for option parser
-#
-# @param    parser    parser object of type OptionParser
-def default_usage(parser):
-    parser.add_option('-v', '--verbose', action='store_true', dest='verbose', 
-                      default=False, help="Display data reduction results on stdout")
-    parser.add_option('-p', '--showplots', action='store_true', dest='showPlots', 
-                      default=False, help="Display Tsys plot")
-    parser.add_option('-s', '--save', action='store_true', dest='saveResults', 
-                      default=False, help="Save all output to file(s)")
-    parser.add_option('-t', '--tar', action='store_true', dest='tarResults', 
-                      default=False, help="Tarball all output file(s)")
-    parser.add_option('-z', '--zip', action='store', type='string', dest='zipTar', 
-                      default='none', 
-                      help="Compress tarball, valid values: 'bz2', 'gz' 'none'. Default is 'none'")
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  randn_complex
@@ -599,7 +592,7 @@ def randn_complex(dim, numSamples, complexType='complex128', power=1, whiten=Tru
     for d in np.arange(dim):
         (sigBuf[d, :]).real = np.random.normal(0.0, scale=scaleFact, size=(numSamples))
         (sigBuf[d, :]).imag = np.random.normal(0.0, scale=scaleFact, size=(numSamples))
-    #P = np.zeros((dim, dim), dtype='complex128')    
+    #P = np.zeros((dim, dim), dtype='complex128')
     if whiten:
         pass
         # for k in np.arange(numSamples):
@@ -615,7 +608,7 @@ def randn_complex(dim, numSamples, complexType='complex128', power=1, whiten=Tru
 #--- FUNCTION :  gen_polarized_power
 #---------------------------------------------------------------------------------------------------------
 
-## Generate power measurements that have a specified polarisation characteristic. The power measurements 
+## Generate power measurements that have a specified polarisation characteristic. The power measurements
 # are simulated as they would be generated by an integrative correlator.
 #
 # @param    numPowerSamples                 dimension of random variables
@@ -629,13 +622,13 @@ def randn_complex(dim, numSamples, complexType='complex128', power=1, whiten=Tru
 def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTotalPower=1.0, \
                         stokesVector=[1, 0, 0, 0], outputFormat='stokes'):
     
-    RVec = np.dot(stokes2coherencyMatrix, np.array(stokesVector)) # Coherency vector 
-    Rxx = RVec[0] 
+    RVec = np.dot(stokes2coherencyMatrix, np.array(stokesVector)) # Coherency vector
+    Rxx = RVec[0]
     Rxy = RVec[1]
     Ryx = RVec[2]
     Ryy = RVec[3]
     P = np.array([[Rxx, Rxy], [Ryx, Ryy]],'complex128')  # Correlation matrix for given Stokes parameters
-
+    
     # Have to check for matrices which are non-positive definite
     if ((P[0, 1]==0) and (P[1, 0]==0)) and ((P[0, 0]==0) or (P[1, 1]==0)):
         S = np.sqrt(P)
@@ -643,19 +636,19 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
         P[0, 0] += 1e-12
         P[1, 1] += 1e-12
         # Make sure P have unity total gain
-        S = np.linalg.cholesky(P)   
-
+        S = np.linalg.cholesky(P)
+    
     normFact = np.sqrt(2.0 / np.sum(np.ravel(S * S.conj())))
     S = normFact * S
-
+    
     linR = np.array(S.ravel().real, dtype='double')
     linI = np.array(S.ravel().imag, dtype='double')
-
+    
     xx = np.zeros((numPowerSamples), dtype='complex128')
     xy = np.zeros((numPowerSamples), dtype='complex128')
     yx = np.zeros((numPowerSamples), dtype='complex128')
     yy = np.zeros((numPowerSamples), dtype='complex128')
-
+    
     xxR = np.array(xx.real, dtype='double')
     xxI = np.array(xx.imag, dtype='double')
     xyR = np.array(xy.real, dtype='double')
@@ -664,7 +657,7 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
     yxI = np.array(yx.imag, dtype='double')
     yyR = np.array(yy.real, dtype='double')
     yyI = np.array(yy.imag, dtype='double')
-
+    
     success = sc.simcor(long(numPowerSamples), long(numVoltSamplesPerIntPeriod), \
                         float(desiredTotalPower), linR, linI, xxR, xxI, xyR, xyI, yxR, yxI, yyR, yyI)
     if success:
@@ -676,23 +669,23 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
         yx.imag = yxI
         yy.real = yyR
         yy.imag = yyI
-        sigBuf = np.concatenate([xx[np.newaxis, :], xy[np.newaxis, :], yx[np.newaxis, :], yy[np.newaxis, :]], 0)    
+        sigBuf = np.concatenate([xx[np.newaxis, :], xy[np.newaxis, :], yx[np.newaxis, :], yy[np.newaxis, :]], 0)
     else:
         logger.error("Correlator simulator did not run successfully!")
     
     if (outputFormat.lower() == 'stokes'):
         sigBuf = np.dot(coherency2stokesMatrix, sigBuf)
-
+    
     return sigBuf
 
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  calc_ant_eff_area_and_gain
-#----------------------------------------------------
+#---------------------------------------------------------------------------------------------------------
 
 ## Calculate the effective area and gain of an antenna
 #
-# @param    pointSourceSens     antenna point source sensitivity as a function of frequency (one per band) [Jy/K] 
+# @param    pointSourceSens     antenna point source sensitivity as a function of frequency (one per band) [Jy/K]
 # @param    freq                center frequency of bands
 # @return   effArea             effective area per frequency band [m^2]
 # @return   antGain             antenna gain per frequency band [dB]
@@ -701,7 +694,3 @@ def calc_ant_eff_area_and_gain(pointSourceSens, freq):
     waveLength = lightSpeed / freq
     antGain = (4.0 * np.pi * effArea) / (waveLength**2)
     return effArea, 10.0 * np.log10(antGain)
-
-
-
-
