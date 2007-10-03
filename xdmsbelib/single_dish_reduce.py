@@ -87,6 +87,7 @@ def load_point_source_scan_list(fitsFileName, alpha):
     workDict = {}
     stdScanList = []
     rawPowerScanList = []
+    print "                 **** Loading scan data from FITS files ****\n"
     while True:
         try:
             stdScan = StandardSourceScan()
@@ -183,10 +184,12 @@ def load_point_source_scan_list(fitsFileName, alpha):
             # Now package the data in objects
             #..................................................................................................
             logger.info("Found scan ID : %s" % (mainScanName))
-            logger.info("Start coordinate [az, el] = [%5.3f, %5.3f]" % (mainScanData.azAng[0], \
-                                                                        mainScanData.elAng[0]))
-            logger.info("Stop coordinate  [az, el] = [%5.3f, %5.3f]" % (mainScanData.azAng[-1], \
-                                                                        mainScanData.elAng[-1]))
+            logger.info("Source name and coordinates [az, el] = %s, [%5.3f, %5.3f]" \
+                        % (stdScan.sourceName, stdScan.sourceAzAng_deg, stdScan.sourceElAng_deg))
+            logger.info("Scan start coordinate [az, el] = [%5.3f, %5.3f]" \
+                        % (mainScanData.azAng[0] * 180.0 / np.pi, mainScanData.elAng[0] * 180.0 / np.pi))
+            logger.info("Scan stop coordinate  [az, el] = [%5.3f, %5.3f]" \
+                        % (mainScanData.azAng[-1] * 180.0 / np.pi, mainScanData.elAng[-1] * 180.0 / np.pi))
             
             # Set up power-to-temperature conversion factors
             # Check if variation in Fpt is significant - choose linear interp in that case, else constant interp

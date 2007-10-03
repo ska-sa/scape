@@ -287,8 +287,8 @@ def plot_beam_patterns(figColorList, calibListList, beamListList, expName, refSo
             for ellipse in gaussEllipses:
                 ellipse[0].set_xdata(ellipse[0].get_xdata() * 180.0 / np.pi)
                 ellipse[0].set_ydata(ellipse[0].get_ydata() * 180.0 / np.pi)
-            gaussCenter[0].set_xdata(gaussCenter[0].get_xdata() * 180.0 / np.pi)
-            gaussCenter[0].set_ydata(gaussCenter[0].get_ydata() * 180.0 / np.pi)
+            gaussCenter[0].set_xdata(gaussCenter[0].get_xdata()[0] * 180.0 / np.pi)
+            gaussCenter[0].set_ydata(gaussCenter[0].get_ydata()[0] * 180.0 / np.pi)
     
     # Axis settings and labels
     for band in range(numBands):
