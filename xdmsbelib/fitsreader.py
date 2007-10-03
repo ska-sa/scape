@@ -168,7 +168,7 @@ class FitsReader(object):
         
         self._startTime = np.double(self._primHdr['TEPOCH'])
         self._startTimeOffset = np.double(self._primHdr['TSTART'])
-        self._samplePeriod = np.double(self._primHdr['PERIOD'])
+        self._samplePeriod = 1.0 / np.double(self._primHdr['DUMPRATE'])
         self._numSamples = int(self._primHdr['SAMPLES'])
         
         self._mountCoordSys = self.get_pickle_from_table('Objects', 'Mount')
