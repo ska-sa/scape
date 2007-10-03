@@ -113,7 +113,7 @@ def plot_baseline_fit(figColor, stdScanList, expName):
             axis.plot(timeLine, baseline, lw=2, color='r')
         if scanInd == numScans-1:
             axis.set_xlabel('Time [s], since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
-        axis.set_ylabel('Power [K]')
+        axis.set_ylabel('Power (K)')
         if scanInd == 0:
             axis.set_title(expName + ' : baseline fits on XX (all bands)')
         minY.append(axis.get_ylim()[0])
@@ -163,7 +163,7 @@ def plot_calib_scans(figColorList, calibScanList, beamFuncList, expName):
             axis.plot(timeLine, beamFuncList[band](val.targetCoords[:, 0:2]), color='r', lw=2)
             if scanInd == numScans-1:
                 axis.set_xlabel('Time [s], since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
-            axis.set_ylabel('Power [K]')
+            axis.set_ylabel('Power (K)')
             if scanInd == 0:
                 axis.set_title(expName + ' : calibrated total power in band %d : %3.3f GHz' % (band, plotFreqs[band]))
             minY.append(axis.get_ylim()[0])
@@ -252,9 +252,10 @@ def plot_beam_patterns(figColorList, calibListList, beamListList, expName, refSo
                 beamRoughFit = interp.Delaunay2DFit(defaultVal=power.min())
                 beamRoughFit.fit(jitteredCoords.transpose(), power)
                 uniformGridRoughPower = beamRoughFit(uniformGridCoords).reshape(targetY.size, targetX.size)
-                axis.pcolor(pcolorTargetX, pcolorTargetY, uniformGridRoughPower, shading='flat', cmap=cm.gray_r)
+                axis.pcolor(pcolorTargetX * 180.0 / np.pi, pcolorTargetY * 180.0 / np.pi, uniformGridRoughPower, \
+                            shading='flat', cmap=cm.gray_r)
             # Show the locations of the scan samples themselves
-            axis.plot(targetCoords[:, 0], targetCoords[:, 1], '.b', zorder=1)
+            axis.plot(targetCoords[:, 0] * 180.0 / np.pi, targetCoords[:, 1] * 180.0 / np.pi, '.b', zorder=1)
             # Plot the fitted Gaussian beam function as contours
             gaussEllipses, gaussCenter = vis.plot_gaussian_ellipse(axis, beamFuncList[band].mean, \
                                                                    np.diag(beamFuncList[band].var), \
@@ -282,14 +283,21 @@ def plot_beam_patterns(figColorList, calibListList, beamListList, expName, refSo
                 newCenter = toCoordinate.get_vector()
                 gaussCenter[0].set_xdata([newCenter[0]])
                 gaussCenter[0].set_ydata([newCenter[1]])
+            # Change from radians to degrees for prettier picture
+            for ellipse in gaussEllipses:
+                ellipse[0].set_xdata(ellipse[0].get_xdata() * 180.0 / np.pi)
+                ellipse[0].set_ydata(ellipse[0].get_ydata() * 180.0 / np.pi)
+            gaussCenter[0].set_xdata(gaussCenter[0].get_xdata() * 180.0 / np.pi)
+            gaussCenter[0].set_ydata(gaussCenter[0].get_ydata() * 180.0 / np.pi)
     
     # Axis settings and labels
     for band in range(numBands):
-        axis.set_xlim(targetMinX, targetMaxX)
-        axis.set_ylim(targetMinY, targetMaxY)
+        axis = axesColorList[band]
+        axis.set_xlim(targetMinX * 180.0 / np.pi, targetMaxX * 180.0 / np.pi)
+        axis.set_ylim(targetMinY * 180.0 / np.pi, targetMaxY * 180.0 / np.pi)
         axis.set_aspect('equal')
-        axis.set_xlabel('Target coord 1')
-        axis.set_ylabel('Target coord 2')
+        axis.set_xlabel('Target coord 1 (deg)')
+        axis.set_ylabel('Target coord 2 (deg)')
         axis.set_title(expName + ' : Beam fitted in band %d : %3.3f GHz' % (band, plotFreqs[band]))
     
     return axesColorList
@@ -354,7 +362,7 @@ def plot_gain_curve(figColorList, resultList, expName):
     # Set up axes
     axesColorList = []
     bandFreqs, sourceAngs, pssBlock, effAreaBlock, antGainBlock = resultList
-    sourceElAng = sourceAngs[:, 1]
+    sourceElAng_deg = sourceAngs[:, 1]
     plotFreqs = bandFreqs / 1e9   # Hz to GHz
     numBands = len(plotFreqs)
     # One figure per frequency band
@@ -370,9 +378,9 @@ def plot_gain_curve(figColorList, resultList, expName):
         pointSourceSensitivity = pssBlock[:, band]
         try:
             vis.draw_std_corridor(pointSourceSensitivity.mean, pointSourceSensitivity.sigma, \
-                                  sourceElAng, axis, muLineType='b-o')
+                                  sourceElAng_deg, axis, muLineType='b-o')
         except AttributeError:
-            axis.plot(sourceElAng, pointSourceSensitivity, '-ob')
+            axis.plot(sourceElAng_deg, pointSourceSensitivity, '-ob')
         axis.set_ylim(min(0.95*pointSourceSensitivity.min(), axis.get_ylim()[0]),
                       max(1.05*pointSourceSensitivity.max(), axis.get_ylim()[1]))
         axis.grid()
@@ -384,9 +392,9 @@ def plot_gain_curve(figColorList, resultList, expName):
         axis = axesColorList[axesInd]
         effArea = effAreaBlock[:, band]
         try:
-            vis.draw_std_corridor(effArea.mean, effArea.sigma, sourceElAng, axis, muLineType='b-o')
+            vis.draw_std_corridor(effArea.mean, effArea.sigma, sourceElAng_deg, axis, muLineType='b-o')
         except AttributeError:
-            axis.plot(sourceElAng, effArea, '-ob')
+            axis.plot(sourceElAng_deg, effArea, '-ob')
         axis.set_ylim(min(0.95*effArea.min(), axis.get_ylim()[0]), max(1.05*effArea.max(), axis.get_ylim()[1]))
         axis.grid()
         axis.set_xticklabels([])
@@ -397,9 +405,9 @@ def plot_gain_curve(figColorList, resultList, expName):
         axis = axesColorList[axesInd]
         antGain = antGainBlock[:, band]
         try:
-            vis.draw_std_corridor(antGain.mean, antGain.sigma, sourceElAng, axis, muLineType='b-o')
+            vis.draw_std_corridor(antGain.mean, antGain.sigma, sourceElAng_deg, axis, muLineType='b-o')
         except AttributeError:
-            axis.plot(sourceElAng, antGain, '-ob')
+            axis.plot(sourceElAng_deg, antGain, '-ob')
         axis.set_ylim(min(0.98*antGain.min(), axis.get_ylim()[0]), max(1.02*antGain.max(), axis.get_ylim()[1]))
         axis.grid()
         axis.set_xlabel('Elevation angle (degrees)')

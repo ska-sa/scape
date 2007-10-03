@@ -41,15 +41,15 @@ class StandardSourceScan(object):
     ## @var sourceName
     # Name of source in scan (useful for obtaining source flux density)
     sourceName = None
-    ## @var sourceAzAng
+    ## @var sourceAzAng_deg
     # Source azimuth angle in degrees
-    sourceAzAng = None
-    ## @var sourceElAng
+    sourceAzAng_deg = None
+    ## @var sourceElAng_deg
     # Source elevation angle in degrees
-    sourceElAng = None
-    ## @var beamWidth
+    sourceElAng_deg = None
+    ## @var antennaBeamwidth_deg
     # Antenna half-power beamwidth in degrees
-    beamWidth = None
+    antennaBeamwidth_deg = None
     ## @var mainData
     # SingleDishData object for main scan segment
     mainData = None
@@ -140,9 +140,9 @@ def load_point_source_scan_list(fitsFileName, alpha):
             mainScanName, mainScanData = scanDict.items()[0]
             # Get the source name and position from the main scan, as well as the antenna beamwidth
             stdScan.sourceName = fitsReaderScan.select_masked_column('TARGET', 'Name', mask=None)[0]
-            stdScan.sourceAzAng = fitsReaderScan.select_masked_column('TARGET', 'Azimuth', mask=None)[0]
-            stdScan.sourceElAng = fitsReaderScan.select_masked_column('TARGET', 'Elevation', mask=None)[0]
-            stdScan.beamWidth = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth', mask=None)[0]
+            stdScan.sourceAzAng_deg = fitsReaderScan.select_masked_column('TARGET', 'Azimuth', mask=None)[0]
+            stdScan.sourceElAng_deg = fitsReaderScan.select_masked_column('TARGET', 'Elevation', mask=None)[0]
+            stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth', mask=None)[0]
             
             misc.set_or_check_param_continuity(workDict, 'numBands', len(mainScanData.bandFreqs))
             misc.set_or_check_param_continuity(workDict, 'bandFreqs', mainScanData.bandFreqs)
@@ -254,13 +254,12 @@ def calibrate_scan(stdScan, randomise):
         else:
             allBaselineData.append(baselineData)
     # Fit baseline on a coordinate with sufficient variation (elevation angle preferred)
-    elAngMin = allBaselineData.elAng.min() * 180.0 / np.pi
-    elAngMax = allBaselineData.elAng.max() * 180.0 / np.pi
-    azAngMin = allBaselineData.azAng.min() * 180.0 / np.pi
-    azAngMax = allBaselineData.azAng.max() * 180.0 / np.pi
-    antennaBeamwidth_deg = 1.0
+    elAngMin = allBaselineData.elAng.min()
+    elAngMax = allBaselineData.elAng.max()
+    azAngMin = allBaselineData.azAng.min()
+    azAngMax = allBaselineData.azAng.max()
     # Require variation on the order of an antenna beam width to fit higher-order polynomial
-    if elAngMax - elAngMin > antennaBeamwidth_deg:
+    if elAngMax - elAngMin > stdScan.antennaBeamwidth_deg * np.pi / 180.0:
 #        logger.info('Baseline fit to elevation angle (range = '+str(elAngMax - elAngMin)+' deg)')
         stdScan.baselineUsesElevation = True
         interp = interpolator.Independent1DFit(interpolator.Polynomial1DFit(maxDegree=3), axis=1)
@@ -268,7 +267,7 @@ def calibrate_scan(stdScan, randomise):
         if randomise:
             interp = interpolator.randomise(interp, allBaselineData.elAng, allBaselineData.powerData, 'shuffle')
         stdScan.baselineFunc = interp
-    elif azAngMax - azAngMin > antennaBeamwidth_deg:
+    elif azAngMax - azAngMin > stdScan.antennaBeamwidth_deg * np.pi / 180.0:
 #        logger.info('Baseline fit to azimuth angle (range = '+str(azAngMax - azAngMin)+' deg)')
         stdScan.baselineUsesElevation = False
         interp = interpolator.Independent1DFit(interpolator.Polynomial1DFit(maxDegree=1), axis=1)
@@ -379,7 +378,8 @@ def calibrate_and_fit_beam_pattern(stdScanList, randomise):
     targetCoords = np.concatenate(targetCoords)[:, 0:2]
     totalPowerData = np.concatenate(totalPowerData)
 #    beamFuncList = fit_beam_pattern_old(targetCoords, totalPowerData, randomise)
-    beamFuncList = fit_beam_pattern(targetCoords, totalPowerData, stdScanList[0].beamWidth*np.pi/180.0, randomise)
+    targetBeamwidth = stdScanList[0].antennaBeamwidth_deg * np.pi / 180.0
+    beamFuncList = fit_beam_pattern(targetCoords, totalPowerData, targetBeamwidth, randomise)
     return beamFuncList, calibScanList, stdScanList
 
 
