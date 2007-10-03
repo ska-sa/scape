@@ -315,7 +315,8 @@ def plot_antenna_gain(figColor, resultList, expName):
                               plotFreqs, axis, muLineType='b-o')
     except AttributeError:
         axis.plot(plotFreqs, pointSourceSensitivity, '-ob')
-    axis.set_ylim(0.95*pointSourceSensitivity.min(), 1.05*pointSourceSensitivity.max())
+    axis.set_ylim(min(0.95*pointSourceSensitivity.min(), axis.get_ylim()[0]),
+                  max(1.05*pointSourceSensitivity.max(), axis.get_ylim()[1]))
     axis.grid()
     axis.set_xticklabels([])
     axis.set_ylabel('Sensitivity (Jy/K)')
@@ -325,7 +326,7 @@ def plot_antenna_gain(figColor, resultList, expName):
         vis.draw_std_corridor(effArea.mean, effArea.sigma, plotFreqs, axis, muLineType='b-o')
     except AttributeError:
         axis.plot(plotFreqs, effArea, '-ob')
-    axis.set_ylim(0.95*effArea.min(), 1.05*effArea.max())
+    axis.set_ylim(min(0.95*effArea.min(), axis.get_ylim()[0]), max(1.05*effArea.max(), axis.get_ylim()[1]))
     axis.grid()
     axis.set_xticklabels([])
     axis.set_ylabel('Area (m^2)')
@@ -335,7 +336,7 @@ def plot_antenna_gain(figColor, resultList, expName):
         vis.draw_std_corridor(antGain.mean, antGain.sigma, plotFreqs, axis, muLineType='b-o')
     except AttributeError:
         axis.plot(plotFreqs, antGain, '-ob')
-    axis.set_ylim(0.98*antGain.min(), 1.02*antGain.max())
+    axis.set_ylim(min(0.98*antGain.min(), axis.get_ylim()[0]), max(1.02*antGain.max(), axis.get_ylim()[1]))
     axis.grid()
     axis.set_xlabel('Frequency (GHz)')
     axis.set_ylabel('Gain (dB)')
@@ -372,7 +373,8 @@ def plot_gain_curve(figColorList, resultList, expName):
                                   sourceElAng, axis, muLineType='b-o')
         except AttributeError:
             axis.plot(sourceElAng, pointSourceSensitivity, '-ob')
-        axis.set_ylim(0.95*pointSourceSensitivity.min(), 1.05*pointSourceSensitivity.max())
+        axis.set_ylim(min(0.95*pointSourceSensitivity.min(), axis.get_ylim()[0]),
+                      max(1.05*pointSourceSensitivity.max(), axis.get_ylim()[1]))
         axis.grid()
         axis.set_xticklabels([])
         axis.set_ylabel('Sensitivity (Jy/K)')
@@ -385,7 +387,7 @@ def plot_gain_curve(figColorList, resultList, expName):
             vis.draw_std_corridor(effArea.mean, effArea.sigma, sourceElAng, axis, muLineType='b-o')
         except AttributeError:
             axis.plot(sourceElAng, effArea, '-ob')
-        axis.set_ylim(0.95*effArea.min(), 1.05*effArea.max())
+        axis.set_ylim(min(0.95*effArea.min(), axis.get_ylim()[0]), max(1.05*effArea.max(), axis.get_ylim()[1]))
         axis.grid()
         axis.set_xticklabels([])
         axis.set_ylabel('Area (m^2)')
@@ -398,7 +400,7 @@ def plot_gain_curve(figColorList, resultList, expName):
             vis.draw_std_corridor(antGain.mean, antGain.sigma, sourceElAng, axis, muLineType='b-o')
         except AttributeError:
             axis.plot(sourceElAng, antGain, '-ob')
-        axis.set_ylim(0.98*antGain.min(), 1.02*antGain.max())
+        axis.set_ylim(min(0.98*antGain.min(), axis.get_ylim()[0]), max(1.02*antGain.max(), axis.get_ylim()[1]))
         axis.grid()
         axis.set_xlabel('Elevation angle (degrees)')
         axis.set_ylabel('Gain (dB)')

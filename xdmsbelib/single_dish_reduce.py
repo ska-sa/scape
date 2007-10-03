@@ -290,7 +290,8 @@ def calibrate_scan(stdScan, randomise):
 
 
 ## Fit a beam pattern to total power data in 2-D target coordinate space.
-# This is the original version, which works OK for strong sources, but struggles on weaker ones.
+# This is the original version, which works OK for strong sources, but struggles on weaker ones (unless
+# all points in the scan are used in the fit).
 # @param targetCoords 2-D coordinates in target space, as an (N,2)-shaped numpy array
 # @param totalPower   Total power values, as an (N,M)-shaped numpy array (M = number of bands)
 # @param randomise    True if fits should be randomised, as part of a larger Monte Carlo run
@@ -324,11 +325,22 @@ def fit_beam_pattern_old(targetCoords, totalPower, randomise):
 
 
 ## Fit a beam pattern to total power data in 2-D target coordinate space.
+# This fits a Gaussian shape to power data, with the peak location as initial mean, and a factor of the beamwidth 
+# as initial standard deviation. It uses all power values in the fitting process, instead of only the points within
+# the half-power beamwidth of the peak, as suggested in [1]. This seems to be more robust for weak sources, but
+# with more samples close to the peak, things might change again.
+#
+# [1] "Reduction and Analysis Techniques", Ronald J. Maddalena, in Single-Dish Radio Astronomy: Techniques and 
+#     Applications, ASP Conference Series, Vol. 278, 2002
+#
 # @param targetCoords 2-D coordinates in target space, as an (N,2)-shaped numpy array
 # @param totalPower   Total power values, as an (N,M)-shaped numpy array (M = number of bands)
 # @param beamWidth    Antenna half-power beamwidth (in target coordinate scale)
 # @param randomise    True if fits should be randomised, as part of a larger Monte Carlo run
 # @return List of Gaussian interpolator functions fitted to power data, one per band
+# @todo Fit other shapes, such as Airy
+# @todo Fix width of Gaussian during fitting process to known beamwidth
+# @todo Only fit Gaussian to points within half-power beamwidth of peak (not robust enough, need more samples)
 def fit_beam_pattern(targetCoords, totalPower, beamWidth, randomise):
     interpList = []
     for band in range(totalPower.shape[1]):
