@@ -185,9 +185,9 @@ def draw_std_corridor(axis, xVals, mu, sigma, muLabel = None, sigmaLabel = None,
         xSegment = xVals[startIndex:endIndex]
         muSegment = mu[startIndex:endIndex]
         sigmaSegment = sigma[startIndex:endIndex]
-        assert not any(np.isnan(xSegment)), "x values in plot segment of draw_std_corridor contain NaNs."
-        assert not any(np.isnan(muSegment)), "mu values in plot segment of draw_std_corridor contain NaNs."
-        assert not any(np.isnan(sigmaSegment)), "sigma values in plot segment of draw_std_corridor contain NaNs."
+        assert not np.any(np.isnan(xSegment)), "x values in plot segment should not contain NaNs."
+        assert not np.any(np.isnan(muSegment)), "mu values in plot segment should not contain NaNs."
+        assert not np.any(np.isnan(sigmaSegment)), "sigma values in plot segment should not contain NaNs."
         # reverse xVals and y2 so the polygon fills in order
         x = np.concatenate( (xSegment, xSegment[::-1]) )
         y1 = muSegment + sigmaSegment

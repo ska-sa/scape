@@ -172,7 +172,7 @@ class SingleDishData(object):
             logger.error(message)
             raise ValueError, message
         # Ensure frequency bands are the same
-        if ((self.bandFreqs != other.bandFreqs).any()):
+        if np.any(self.bandFreqs != other.bandFreqs):
             message = "Cannot concatenate data objects with different frequency bands."
             logger.error(message)
             raise ValueError, message
