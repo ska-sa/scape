@@ -249,6 +249,8 @@ def fmt_seq_num(seqNum, digits):
 # @param    calName    Name of calibrator source
 # @param    freq       Frequency of calibrator source, in MHz
 # @return   Power flux density of source at specified frequency, in Jansky
+# @todo Using NaNs to convey info to the user under normal circumstances is probably suspect. 
+#       Convert to exceptions where possible.
 def ottflux(calName, freq):
 
 #                      Name                                 Fmin     Fmax      a       b       c

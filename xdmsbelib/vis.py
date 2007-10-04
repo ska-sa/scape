@@ -172,7 +172,7 @@ def draw_std_corridor(axis, xVals, mu, sigma, muLabel = None, sigmaLabel = None,
     # Find all NaNs in input data, whether in mu, sigma or xVals
     nanCheck = np.isnan(mu) + np.isnan(sigma) + np.isnan(xVals)
     # Each NaN, as well as the last element, is considered to be the end of a plot segment
-    segmentEndList = filter(lambda ind: nanCheck[ind], range(len(nanCheck))) + [len(nanCheck)]
+    segmentEndList = [ind for ind in range(len(nanCheck)) if nanCheck[ind]] + [len(nanCheck)]
     sigmaCorHandles = []
     startIndex = 0
     # Iterate through list of segment endpoints
