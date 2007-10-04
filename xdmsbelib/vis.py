@@ -20,19 +20,19 @@ logger = logging.getLogger("xdmsbe.xdmsbelib.vis")
 #--- FUNCTION :  disp_interactive_figure
 #---------------------------------------------------------------------------------------------------------
 
-## Display a list of matplotlib figures in interactive Tk windows. This function uses the 
+## Display a list of matplotlib figures in interactive Tk windows. This function uses the
 # TkAgg backend of matplotlib to render the figures.
 #
-# Note: This function is blocking. At the end of this function the Tk.mainloop() eventhandler 
-#       is entered to service the GUI requirements of the windows. 
+# Note: This function is blocking. At the end of this function the Tk.mainloop() eventhandler
+#       is entered to service the GUI requirements of the windows.
 #
 # @param     figureList   list of matplotlib figure objects created with matplotlib.figure.Figure()
-# @param     title        Title to be displayed in each window. The figure number is appended to this title. 
+# @param     title        Title to be displayed in each window. The figure number is appended to this title.
 #
 
 def disp_interactive_figure(figureList, title = ''):
     
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg    
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
     import Tkinter as Tk
     
     windowList = []
@@ -48,11 +48,11 @@ def disp_interactive_figure(figureList, title = ''):
         
         if title:
             windowList[n].wm_title(title + ' : Fig ' + str(n+1))
-    
+        
         # Generate a tk.DrawingArea
         canvas = FigureCanvasTkAgg(fig, master = windowList[n])
         canvas.get_tk_widget().pack(side = Tk.TOP, fill = Tk.BOTH, expand = 1)
-    
+        
         toolbar = NavigationToolbar2TkAgg(canvas, windowList[n])
         toolbar.update()
         # pylint: disable-msg=W0212
@@ -62,7 +62,7 @@ def disp_interactive_figure(figureList, title = ''):
         button.pack(side = Tk.RIGHT)
         
         #canvas.show()
-                        
+    
     Tk.mainloop()
 
 
@@ -80,11 +80,11 @@ def disp_interactive_figure(figureList, title = ''):
 
 def figure_to_imagefile(fig, filename, dpi = 80):
     
-    from matplotlib.backends.backend_agg import FigureCanvasAgg    
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
     
     canvas = FigureCanvasAgg(fig)
-    canvas.print_figure(filename, dpi)    
-    
+    canvas.print_figure(filename, dpi)
+
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  figure_to_imagedata
@@ -99,16 +99,16 @@ def figure_to_imagefile(fig, filename, dpi = 80):
 
 def figure_to_imagedata(fig, fileType = 'png', dpi = 80):
     
-    from tempfile import mktemp    
+    from tempfile import mktemp
     
     filename = mktemp('.' + fileType)
     figure_to_imagefile(fig, filename, dpi)
-    imageData = pylab.imread(filename)    
+    imageData = pylab.imread(filename)
     os.remove(filename)
     
     return imageData
 
-    
+
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  figure_to_svg
 #---------------------------------------------------------------------------------------------------------
@@ -121,75 +121,90 @@ def figure_to_imagedata(fig, fileType = 'png', dpi = 80):
 
 def figure_to_svg(fig, dpi=100):
     
-    from tempfile import mktemp    
+    from tempfile import mktemp
     from matplotlib.backends.backend_svg import FigureCanvasSVG
     
     filename = mktemp('.svg')
-            
+    
     canvas = FigureCanvasSVG(fig)
-    canvas.print_figure(filename, dpi)  
+    canvas.print_figure(filename, dpi)
     
     svgFile = open(filename)
     svgData = svgFile.readlines()
-    svgFile.close()    
+    svgFile.close()
     os.remove(filename)
     
     return svgData
-    
+
 
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  draw_std_corridor
 #---------------------------------------------------------------------------------------------------------
 
-## Draw mean and standard deviation corridor to a matplotlib axes 
+## Draw mean and standard deviation corridor to a matplotlib axes.
+# If the data contains NaNs, the plot is broken up into segments for each valid data range.
 #
-# @param    mu              array of mean values
-# @param    sig             array of standard-deviation values (sigma)
-# @param    xVals           xaxis values
-# @param    ax              matplotlib axes object associated with a matplotlib Figure
-# @param    muLabel         label string for mean plot [None]
-# @param    sigLabel        label string for std corridor [None]
-# @param    muLineType      matplotlib linetype string for mean line ['r-']
-# @param    sigFilColor     matplotlib color string used to fill std-corridor ['r']
-# @param    sigAlpha        Transparency (alpha) value for std-corridor [0.5]
-# @param    sigLineType     matplotlib linetype string for outline (boundary) of std-corridor [None]
-# @return   sigCor          handle to std-corridor object
-# @return   muPlot          handle to mean plot
-# @return   sigPosPlot      handle to positive sigma-line (if sigLineType != None)
-# @return   sigNegPlot      handle to negative sigma-line (if sigLineType != None)
-          
+# @param    axis            Matplotlib axes object associated with a matplotlib Figure, that will receive plot
+# @param    xVals           Array of values on x-axis
+# @param    mu              Array of mean values
+# @param    sigma           Array of standard deviation values (sigma)
+# @param    muLabel         Label string for mean plot [None]
+# @param    sigmaLabel      Label string for std corridor [None]
+# @param    muLineType      Matplotlib linetype string for mean line ['r-']
+# @param    sigmaFillColor  Matplotlib color string used to fill std-corridor ['r']
+# @param    sigmaAlpha      Transparency (alpha) value for std-corridor [0.5]
+# @param    sigmaLineType   Matplotlib linetype string for outline (boundary) of std-corridor [None]
+# @return   muHandle        Handle to mean plot
+# @return   sigmaCorHandles List of handles to std-corridor objects (one per segment)
+# @return   sigmaPosHandle  Handle to positive sigma-line (if sigmaLineType != None)
+# @return   sigmaNegHandle  Handle to negative sigma-line (if sigmaLineType != None)
+
 # pylint: disable-msg=R0913,R0914
 
-def draw_std_corridor(mu,
-                        sig, 
-                        xVals, 
-                        ax, 
-                        muLabel = None, 
-                        sigLabel = None, 
-                        muLineType = 'b-', 
-                        sigFilColor = 'b', 
-                        sigAlpha = '0.5', 
-                        sigLineType = None):
+def draw_std_corridor(axis, xVals, mu, sigma, muLabel = None, sigmaLabel = None, muLineType = 'b-', \
+                      sigmaFillColor = 'b', sigmaAlpha = '0.5', sigmaLineType = None):
     
-
-    # reverse xVals and y2 so the polygon fills in order
+    mu = np.asarray(mu)
+    sigma = np.asarray(sigma)
+    xVals = np.asarray(xVals)
     
-    x = np.concatenate( (xVals, xVals[::-1]) )
-    y1 = mu + sig
-    y2 = mu - sig
-    y = np.concatenate( (y1, y2[::-1]) )
-                 
-    sigCor = ax.fill(x, y, facecolor = sigFilColor, alpha = sigAlpha, label = sigLabel)
+    # Find all NaNs in input data, whether in mu, sigma or xVals
+    nanCheck = np.isnan(mu) + np.isnan(sigma) + np.isnan(xVals)
+    # Each NaN, as well as the last element, is considered to be the end of a plot segment
+    segmentEndList = filter(lambda ind: nanCheck[ind], range(len(nanCheck))) + [len(nanCheck)]
+    sigmaCorHandles = []
+    startIndex = 0
+    # Iterate through list of segment endpoints
+    for endIndex in segmentEndList:
+        # In the case of contiguous NaNs, skip to the next (hopefully non-NaN) position
+        if endIndex == startIndex:
+            startIndex += 1
+            continue
+        # Extract plot segment (hopefully containing no NaNs)
+        xSegment = xVals[startIndex:endIndex]
+        muSegment = mu[startIndex:endIndex]
+        sigmaSegment = sigma[startIndex:endIndex]
+        assert not any(np.isnan(xSegment)), "x values in plot segment of draw_std_corridor contain NaNs."
+        assert not any(np.isnan(muSegment)), "mu values in plot segment of draw_std_corridor contain NaNs."
+        assert not any(np.isnan(sigmaSegment)), "sigma values in plot segment of draw_std_corridor contain NaNs."
+        # reverse xVals and y2 so the polygon fills in order
+        x = np.concatenate( (xSegment, xSegment[::-1]) )
+        y1 = muSegment + sigmaSegment
+        y2 = muSegment - sigmaSegment
+        y = np.concatenate( (y1, y2[::-1]) )
+        # Plot filled polygon for segment
+        sigmaCorHandles.append(axis.fill(x, y, facecolor = sigmaFillColor, alpha = sigmaAlpha, label = sigmaLabel))
+        startIndex = endIndex + 1
     
-    muPlot = ax.plot(xVals, mu, muLineType, label = muLabel, lw = 2)
+    muHandle = axis.plot(xVals, mu, muLineType, label = muLabel, lw = 2)
     
-    if sigLineType:
-        sigPosPlot = ax.plot(xVals, y1, sigLineType)
-        sigNegPlot = ax.plot(xVals, y2, sigLineType)
-        return sigCor, muPlot, sigPosPlot, sigNegPlot
+    if sigmaLineType:
+        sigmaPosHandle = axis.plot(xVals, y1, sigmaLineType)
+        sigmaNegHandle = axis.plot(xVals, y2, sigmaLineType)
+        return muHandle, sigmaCorHandles, sigmaPosHandle, sigmaNegHandle
     else:
-        return sigCor, muPlot
+        return muHandle, sigmaCorHandles
 
 
 #---------------------------------------------------------------------------------------------------------
@@ -198,7 +213,7 @@ def draw_std_corridor(mu,
 
 ## Plot ellipse(s) representing 2-D Gaussian function.
 #
-# @param    ax              Matplotlib axes object associated with a matplotlib Figure
+# @param    axis            Matplotlib axes object associated with a matplotlib Figure
 # @param    mean            2-dimensional mean vector
 # @param    cov             2x2 covariance matrix
 # @param    contour         Contour height of ellipse(s), as a (list of) factor(s) of the peak value [0.5]
@@ -209,7 +224,8 @@ def draw_std_corridor(mu,
 # @return   ellipseHandle   Handle(s) to contour plot
 # @return   centerHandle    Handle to center of Gaussian
 
-def plot_gaussian_ellipse(ax, mean, cov, contour=0.5, ellipseLineType='b-', centerLineType='b+', lineWidth=1):
+def plot_gaussian_ellipse(axis, mean, cov, contour=0.5, ellipseLineType='b-', centerLineType='b+', lineWidth=1):
+    
     mean = np.asarray(mean)
     cov = np.asarray(cov)
     contour = np.atleast_1d(np.asarray(contour))
@@ -228,6 +244,6 @@ def plot_gaussian_ellipse(ax, mean, cov, contour=0.5, ellipseLineType='b-', cent
     ellipseHandle = []
     for cnt in contour:
         ellipse = np.sqrt(-2*np.log(cnt)) * baseEllipse + mean[:, np.newaxis]
-        ellipseHandle.append(ax.plot(ellipse[0], ellipse[1], ellipseLineType, lw=lineWidth))
-    centerHandle = ax.plot([mean[0]], [mean[1]], centerLineType, markersize=12, aa=False, mew=lineWidth)
+        ellipseHandle.append(axis.plot(ellipse[0], ellipse[1], ellipseLineType, lw=lineWidth))
+    centerHandle = axis.plot([mean[0]], [mean[1]], centerLineType, markersize=12, aa=False, mew=lineWidth)
     return ellipseHandle, centerHandle
