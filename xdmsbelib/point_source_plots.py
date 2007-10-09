@@ -16,9 +16,7 @@
 
 import xdmsbe.xdmsbelib.interpolator as interp
 import xdmsbe.xdmsbelib.vis as vis
-from acsm.coordinate import Coordinate
-import acsm.transform
-import matplotlib.cm as cm
+from conradmisclib.transforms import rad_to_deg
 import numpy as np
 import logging
 import time
@@ -107,9 +105,9 @@ def plot_baseline_fit(figColor, stdScanList, expName):
             contPower = val.powerData[0].mean(axis=1)
             axis.plot(timeLine, contPower, lw=2, color='b')
             if stdScan.baselineUsesElevation:
-                baseline = stdScan.baselineFunc(val.elAng)[0].mean(axis=1)
+                baseline = stdScan.baselineFunc(val.elAng_rad)[0].mean(axis=1)
             else:
-                baseline = stdScan.baselineFunc(val.azAng)[0].mean(axis=1)
+                baseline = stdScan.baselineFunc(val.azAng_rad)[0].mean(axis=1)
             axis.plot(timeLine, baseline, lw=2, color='r')
         if scanInd == numScans-1:
             axis.set_xlabel('Time [s], since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
@@ -129,7 +127,7 @@ def plot_baseline_fit(figColor, stdScanList, expName):
 ## Plot multiple calibrated scans through a point source.
 # @param figColorList   List of matplotlib Figure objects to contain plots (one per frequency band)
 # @param calibScanList  List of SingleDishData objects containing the fully calibrated main segments of each scan
-# @param beamFuncList   List of Gaussian beam functions, one per band
+# @param beamFuncList   List of Gaussian beam functions and valid flags, one per band (None if not available)
 # @param expName        Title of experiment
 # @return axesColorList List of matplotlib Axes objects, one per plot
 # pylint: disable-msg=R0914
@@ -159,8 +157,13 @@ def plot_calib_scans(figColorList, calibScanList, beamFuncList, expName):
             axis = axesColorList[axesInd]
             # Total power in band
             axis.plot(timeLine, val.total_power()[:, band], color='b', lw=2)
-            # Slice through fitted beam pattern function along the same coordinates
-            axis.plot(timeLine, beamFuncList[band](val.targetCoords[:, 0:2]), color='r', lw=2)
+            if beamFuncList != None:
+                # Slice through fitted beam function along the same coordinates (change colors for invalid beams)
+                if beamFuncList[band][1]:
+                    beamColor = 'r'
+                else:
+                    beamColor = 'y'
+                axis.plot(timeLine, beamFuncList[band][0](val.targetCoords[:, 0:2]), color=beamColor, lw=2)
             if scanInd == numScans-1:
                 axis.set_xlabel('Time [s], since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
             axis.set_ylabel('Power (K)')
@@ -176,130 +179,210 @@ def plot_calib_scans(figColorList, calibScanList, beamFuncList, expName):
     return axesColorList
 
 
-## Plot beam patterns fitted to multiple scans through multiple point sources.
+## Plot beam pattern fitted to multiple scans through a single point source, in target space.
 # @param figColorList   List of matplotlib Figure objects to contain plots (one per frequency band)
-# @param calibListList  List of list of SingleDishData objects of calibrated main scans (per source, and then per scan)
-# @param beamListList   List of list of Gaussian beam functions (per source, and then per band)
+# @param calibScanList  List of SingleDishData objects of calibrated main scans (one per scan)
+# @param beamFuncList   List of Gaussian beam functions and valid flags (one per band)
 # @param expName        Title of experiment
-# @param refSource      Index of source in list considered to be reference for coordinate system [0]
-# @param plotPower      True if calibrated power values should be plotted as pcolor backdrop to beam patterns [True]
 # @return axesColorList List of matplotlib Axes objects, one per plot
 # pylint: disable-msg=R0912,R0913,R0914,R0915
-def plot_beam_patterns(figColorList, calibListList, beamListList, expName, refSource=0, plotPower=True):
+def plot_beam_pattern_target(figColorList, calibScanList, beamFuncList, expName):
     # Set up axes
     axesColorList = []
-    # Use the target coordinate system (and frequency bands) of the indicated source as reference for the rest
-    referenceScan = calibListList[refSource][0]
-    refCoordSystem = referenceScan.targetCoordSystem
-    plotFreqs = referenceScan.bandFreqs / 1e9   # Hz to GHz
+    # Use the frequency bands of the first scan as reference for the rest
+    plotFreqs = calibScanList[0].bandFreqs / 1e9   # Hz to GHz
     numBands = len(plotFreqs)
     # One figure per frequency band
     for band in range(numBands):
         axesColorList.append(figColorList[band].add_subplot(1, 1, 1))
     
-    targetMinX = targetMinY = np.inf
-    targetMaxX = targetMaxY = -np.inf
-    # Iterate through sources
-    for calibScanList, beamFuncList in zip(calibListList, beamListList):
-        # Extract total power and target coordinates of all scans of a specific source
-        totalPower = []
-        targetCoords = []
-        for scan in calibScanList:
-            totalPower.append(scan.total_power())
-            # If more than one source in list, convert target coordinates of scan to a common reference system
-            if len(calibListList) > 1:
-                targetCoordBlock = np.zeros((len(scan.timeSamples), refCoordSystem.get_dimensions()), dtype='double')
-                transformer = acsm.transform.get_factory_instance().get_transformer(scan.targetCoordSystem, \
-                                                                                    refCoordSystem)
-                for k in xrange(len(scan.timeSamples)):
-                    fromCoordinate = Coordinate(scan.targetCoordSystem, scan.targetCoords[k])
-                    toCoordinate = transformer.transform_coordinate(fromCoordinate, scan.timeSamples[k])
-                    targetCoordBlock[k] = toCoordinate.get_vector()
-                targetCoords.append(targetCoordBlock)
-            else:
-                targetCoords.append(scan.targetCoords)
-        totalPower = np.concatenate(totalPower)
-        targetCoords = np.concatenate(targetCoords)
-        
-        # Determine overall axis limits
-        targetMinX = min(targetMinX, targetCoords[:, 0].min())
-        targetMaxX = max(targetMaxX, targetCoords[:, 0].max())
-        targetMinY = min(targetMinY, targetCoords[:, 1].min())
-        targetMaxY = max(targetMaxY, targetCoords[:, 1].max())
-        # Setup uniform mesh grid for interpolated power plot (if desired)
-        if plotPower:
-            targetX = np.linspace(targetCoords[:, 0].min(), targetCoords[:, 0].max(), 101)
-            targetY = np.linspace(targetCoords[:, 1].min(), targetCoords[:, 1].max(), 101)
-            targetMeshX, targetMeshY = np.meshgrid(targetX, targetY)
-            uniformGridCoords = np.vstack((targetMeshX.ravel(), targetMeshY.ravel()))
-            # Setup slightly shifted uniform grid so that the centers of pcolor patches are correctly aligned
-            # with target coordinates for the rest of the plots
-            targetXstep = targetX[1] - targetX[0]
-            targetYstep = targetY[1] - targetY[0]
-            pcolorTargetX = np.array(targetX.tolist() + [targetX[-1]+targetXstep]) - targetXstep/2.0
-            pcolorTargetY = np.array(targetY.tolist() + [targetY[-1]+targetYstep]) - targetYstep/2.0
-        # Iterate through figures (one per band)
-        for band in range(numBands):
-            axis = axesColorList[band]
-            power = totalPower[:, band]
-            # If desired, plot the calibrated power via pcolor as a backdrop for beam pattern, to verify fit
-            if plotPower:
-                # Jitter the target coordinates to make degenerate triangles unlikely during Delaunay triangulation
-                jitter = np.vstack((targetCoords[:, 0].std() * np.random.randn(len(targetCoords)), \
-                                    targetCoords[:, 1].std() * np.random.randn(len(targetCoords)))).transpose()
-                jitteredCoords = targetCoords[:, 0:2] + 0.001 * jitter
-                # Interpolate the power values onto a 2-D grid (ignore rotator angle), and display using pcolor
-                beamRoughFit = interp.Delaunay2DFit(defaultVal=power.min())
-                beamRoughFit.fit(jitteredCoords.transpose(), power)
-                uniformGridRoughPower = beamRoughFit(uniformGridCoords).reshape(targetY.size, targetX.size)
-                axis.pcolor(pcolorTargetX * 180.0 / np.pi, pcolorTargetY * 180.0 / np.pi, uniformGridRoughPower, \
-                            shading='flat', cmap=cm.gray_r)
-            # Show the locations of the scan samples themselves
-            axis.plot(targetCoords[:, 0] * 180.0 / np.pi, targetCoords[:, 1] * 180.0 / np.pi, '.b', zorder=1)
-            # Plot the fitted Gaussian beam function as contours
-            gaussEllipses, gaussCenter = vis.plot_gaussian_ellipse(axis, beamFuncList[band].mean, \
-                                                                   np.diag(beamFuncList[band].var), \
-                                                                   contour=[0.5, 0.1], ellipseLineType='r-', \
-                                                                   centerLineType='r+', lineWidth=2)
-            # If more than one source, convert Gaussian ellipse and center to reference coordinate system
-            # (where needed, append rotator angle = 0.0 to go from 2-D ellipse coords to 3-D target coords)
-            if len(calibListList) > 1:
-                fromCoordSystem = calibScanList[0].targetCoordSystem
-                # Use arbitrary timestamp from start of scan list
-                timeStamp = calibScanList[0].timeSamples[0]
-                transformer = acsm.transform.get_factory_instance().get_transformer(fromCoordSystem, refCoordSystem)
-                for ellipse in gaussEllipses:
-                    fromData = np.array((ellipse[0].get_xdata(), ellipse[0].get_ydata())).transpose()
-                    numPoints = len(fromData)
-                    newEllipse = np.zeros((numPoints, refCoordSystem.get_dimensions()), dtype='double')
-                    for k in xrange(numPoints):
-                        fromCoordinate = Coordinate(fromCoordSystem, fromData[k].tolist() + [0.0])
-                        toCoordinate = transformer.transform_coordinate(fromCoordinate, timeStamp)
-                        newEllipse[k, :] = toCoordinate.get_vector()
-                    ellipse[0].set_xdata(newEllipse[:, 0])
-                    ellipse[0].set_ydata(newEllipse[:, 1])
-                fromCoordinate = Coordinate(fromCoordSystem, beamFuncList[band].mean.tolist() + [0.0])
-                toCoordinate = transformer.transform_coordinate(fromCoordinate, timeStamp)
-                newCenter = toCoordinate.get_vector()
-                gaussCenter[0].set_xdata([newCenter[0]])
-                gaussCenter[0].set_ydata([newCenter[1]])
-            # Change from radians to degrees for prettier picture
-            for ellipse in gaussEllipses:
-                ellipse[0].set_xdata(ellipse[0].get_xdata() * 180.0 / np.pi)
-                ellipse[0].set_ydata(ellipse[0].get_ydata() * 180.0 / np.pi)
-            gaussCenter[0].set_xdata(gaussCenter[0].get_xdata()[0] * 180.0 / np.pi)
-            gaussCenter[0].set_ydata(gaussCenter[0].get_ydata()[0] * 180.0 / np.pi)
+    # Extract total power and target coordinates of all scans
+    totalPower = []
+    targetCoords = []
+    for scan in calibScanList:
+        totalPower.append(scan.total_power())
+        targetCoords.append(scan.targetCoords)
+    totalPower = np.concatenate(totalPower)
+    targetCoords = np.concatenate(targetCoords)
+    
+    # Iterate through figures (one per band)
+    for band in range(numBands):
+        axis = axesColorList[band]
+        power = totalPower[:, band]
+        # Show the locations of the scan samples themselves, with marker sizes indicating power values
+        vis.plot_marker_3d(axis, rad_to_deg(targetCoords[:, 0]), rad_to_deg(targetCoords[:, 1]), power)
+        # Plot the fitted Gaussian beam function as contours
+        if beamFuncList[band][1]:
+            ellType, centerType = 'r-', 'r+'
+        else:
+            ellType, centerType = 'y-', 'y+'
+        gaussEllipses, gaussCenter = vis.plot_gaussian_ellipse(axis, beamFuncList[band][0].mean, \
+                                                               np.diag(beamFuncList[band][0].var), \
+                                                               contour=[0.5, 0.1], ellType=ellType, \
+                                                               centerType=centerType, lineWidth=2)
+        # Change from radians to degrees for prettier picture
+        for ellipse in gaussEllipses:
+            ellipse[0].set_xdata(rad_to_deg(ellipse[0].get_xdata()))
+            ellipse[0].set_ydata(rad_to_deg(ellipse[0].get_ydata()))
+        gaussCenter[0].set_xdata(rad_to_deg(gaussCenter[0].get_xdata()[0]))
+        gaussCenter[0].set_ydata(rad_to_deg(gaussCenter[0].get_ydata()[0]))
     
     # Axis settings and labels
     for band in range(numBands):
         axis = axesColorList[band]
-        axis.set_xlim(targetMinX * 180.0 / np.pi, targetMaxX * 180.0 / np.pi)
-        axis.set_ylim(targetMinY * 180.0 / np.pi, targetMaxY * 180.0 / np.pi)
+        axis.set_xlim(rad_to_deg(targetCoords[:, 0].min()), rad_to_deg(targetCoords[:, 0].max()))
+        axis.set_ylim(rad_to_deg(targetCoords[:, 1].min()), rad_to_deg(targetCoords[:, 1].max()))
         axis.set_aspect('equal')
         axis.set_xlabel('Target coord 1 (deg)')
         axis.set_ylabel('Target coord 2 (deg)')
         axis.set_title(expName + ' : Beam fitted in band %d : %3.3f GHz' % (band, plotFreqs[band]))
     
+    return axesColorList
+
+
+## Plot rough beam pattern derived from multiple scans through a single point source, in target space.
+# @param figColorList   List of matplotlib Figure objects to contain plots (one per frequency band)
+# @param calibScanList  List of SingleDishData objects of calibrated main scans (one per scan)
+# @param expName        Title of experiment
+# @return axesColorList List of matplotlib Axes objects, one per plot
+# pylint: disable-msg=R0912,R0913,R0914,R0915
+def plot_beam_pattern_raster(figColorList, calibScanList, expName):
+    # Set up axes
+    axesColorList = []
+    # Use the frequency bands of the first scan as reference for the rest
+    plotFreqs = calibScanList[0].bandFreqs / 1e9   # Hz to GHz
+    numBands = len(plotFreqs)
+    # One figure per frequency band
+    for band in range(numBands):
+        axesColorList.append(figColorList[band].add_subplot(1, 1, 1))
+    
+    # Extract total power and target coordinates of all scans
+    totalPower = []
+    targetCoords = []
+    for scan in calibScanList:
+        totalPower.append(scan.total_power())
+        targetCoords.append(scan.targetCoords)
+    totalPower = np.concatenate(totalPower)
+    targetCoords = np.concatenate(targetCoords)
+    
+    # Set up uniform mesh grid for contour plot
+    targetX = np.linspace(targetCoords[:, 0].min(), targetCoords[:, 0].max(), 101)
+    targetY = np.linspace(targetCoords[:, 1].min(), targetCoords[:, 1].max(), 101)
+    targetMeshX, targetMeshY = np.meshgrid(targetX, targetY)
+    uniformGridCoords = np.vstack((targetMeshX.ravel(), targetMeshY.ravel()))
+    
+    # Iterate through figures (one per band)
+    for band in range(numBands):
+        axis = axesColorList[band]
+        power = totalPower[:, band]
+        # Show the locations of the scan samples themselves
+        axis.plot(rad_to_deg(targetCoords[:, 0]), rad_to_deg(targetCoords[:, 1]), '.b', alpha=0.5)
+        # Jitter the target coordinates to make degenerate triangles unlikely during Delaunay triangulation
+        jitter = np.vstack((targetCoords[:, 0].std() * np.random.randn(len(targetCoords)), \
+                            targetCoords[:, 1].std() * np.random.randn(len(targetCoords)))).transpose()
+        jitteredCoords = targetCoords[:, 0:2] + 0.001 * jitter
+        # Interpolate the power values onto a 2-D grid (ignore rotator angle) for contour plot
+        beamRoughFit = interp.Delaunay2DFit(defaultVal=power.min())
+        beamRoughFit.fit(jitteredCoords.transpose(), power)
+        uniformGridRoughPower = beamRoughFit(uniformGridCoords).reshape(targetY.size, targetX.size)
+        # Choose contour levels as fractions of the peak power
+        contourLevels = np.arange(0.1, 1.0, 0.1) * uniformGridRoughPower.max()
+        # Indicate half-power beamwidth (contourLevel = 0.5) with wider line
+        lineWidths = 2*np.ones(len(contourLevels))
+        lineWidths[4] = 4
+        # Plot contours of rough beam pattern
+        axis.contour(rad_to_deg(targetMeshX), rad_to_deg(targetMeshY), uniformGridRoughPower, \
+                     contourLevels, linewidths=lineWidths, colors='b')
+
+    # Axis settings and labels
+    for band in range(numBands):
+        axis = axesColorList[band]
+        axis.set_xlim(rad_to_deg(targetX[0]), rad_to_deg(targetX[-1]))
+        axis.set_ylim(rad_to_deg(targetY[0]), rad_to_deg(targetY[-1]))
+        axis.set_aspect('equal')
+        axis.set_xlabel('Target coord 1 (deg)')
+        axis.set_ylabel('Target coord 2 (deg)')
+        axis.set_title(expName + ' : Beam pattern in band %d : %3.3f GHz' % (band, plotFreqs[band]))
+
+    return axesColorList
+
+
+## Plot beam patterns fitted to multiple scans through multiple point sources, in "instantaneous" mount space.
+# @param figColorList   List of matplotlib Figure objects to contain plots (one per frequency band)
+# @param calibListList  List of list of SingleDishData objects of calibrated main scans (per source, and then per scan)
+# @param beamListList   List of list of Gaussian beam functions (per source, and then per band)
+# @param transformList  List of TargetToInstantMountTransform objects (one per source)
+# @param expName        Title of experiment
+# @return axesColorList List of matplotlib Axes objects, one per plot
+# pylint: disable-msg=R0912,R0913,R0914,R0915
+def plot_beam_patterns_mount(figColorList, calibListList, beamListList, transformList, expName):
+    # Set up axes
+    axesColorList = []
+    # Use the frequency bands of the first scan of the first source as reference for the rest
+    plotFreqs = calibListList[0][0].bandFreqs / 1e9   # Hz to GHz
+    numBands = len(plotFreqs)
+    # One figure per frequency band
+    for band in range(numBands):
+        axesColorList.append(figColorList[band].add_subplot(1, 1, 1))
+
+    azMin_deg = elMin_deg = np.inf
+    azMax_deg = elMax_deg = -np.inf
+    # Iterate through sources
+    for calibScanList, beamFuncList, targetToInstantMount in zip(calibListList, beamListList, transformList):
+        # Extract total power and instantaneous mount coordinates of all scans of a specific source
+        totalPower, azAng_deg, elAng_deg = [], [], []
+        for scan in calibScanList:
+            totalPower.append(scan.total_power())
+            mountCoords = np.array([targetToInstantMount(targetCoord) for targetCoord in scan.targetCoords])
+            azAng_deg.append(mountCoords[:, 0].tolist())
+            elAng_deg.append(mountCoords[:, 1].tolist())
+        totalPower = np.concatenate(totalPower)
+        azAng_deg, elAng_deg = np.concatenate(azAng_deg), np.concatenate(elAng_deg)
+        
+        # Determine overall axis limits
+        azMin_deg = min(azMin_deg, azAng_deg.min())
+        azMax_deg = max(azMax_deg, azAng_deg.max())
+        elMin_deg = min(elMin_deg, elAng_deg.min())
+        elMax_deg = max(elMax_deg, elAng_deg.max())
+        # Iterate through figures (one per band)
+        for band in range(numBands):
+            axis = axesColorList[band]
+            power = totalPower[:, band]
+            # Show the locations of the scan samples themselves, with marker sizes indicating power values
+            vis.plot_marker_3d(axis, azAng_deg, elAng_deg, power)
+            # Plot the fitted Gaussian beam function as contours
+            if beamFuncList[band][1]:
+                ellType, centerType = 'r-', 'r+'
+            else:
+                ellType, centerType = 'y-', 'y+'
+            gaussEllipses, gaussCenter = vis.plot_gaussian_ellipse(axis, beamFuncList[band][0].mean, \
+                                                                   np.diag(beamFuncList[band][0].var), \
+                                                                   contour=[0.5, 0.1], ellType=ellType, \
+                                                                   centerType=centerType, lineWidth=2)
+            # Convert Gaussian ellipse and center to mount coordinate system
+            # (where needed, append rotator angle = 0.0 to go from 2-D ellipse coords to 3-D target coords)
+            for ellipse in gaussEllipses:
+                fromData = np.array((ellipse[0].get_xdata(), ellipse[0].get_ydata())).transpose()
+                numPoints = len(fromData)
+                newEllipse = np.zeros((numPoints, 2), dtype='double')
+                for k in xrange(numPoints):
+                    newEllipse[k, :] = targetToInstantMount(fromData[k].tolist() + [0.0])
+                ellipse[0].set_xdata(newEllipse[:, 0])
+                ellipse[0].set_ydata(newEllipse[:, 1])
+            newCenter = targetToInstantMount(beamFuncList[band][0].mean.tolist() + [0.0])
+            gaussCenter[0].set_xdata([newCenter[0]])
+            gaussCenter[0].set_ydata([newCenter[1]])
+
+    # Axis settings and labels
+    for band in range(numBands):
+        axis = axesColorList[band]
+        axis.set_xlim(azMin_deg, azMax_deg)
+        axis.set_ylim(elMin_deg, elMax_deg)
+        axis.set_aspect('equal')
+        axis.set_xlabel('Azimuth (deg)')
+        axis.set_ylabel('Elevation (deg)')
+        axis.set_title(expName + ' : Beams fitted in band %d : %3.3f GHz' % (band, plotFreqs[band]))
+        
     return axesColorList
 
 
@@ -355,13 +438,14 @@ def plot_antenna_gain(figColor, resultList, expName):
 
 ## Plot antenna gain info derived from multiple scans through multiple positions of a point source.
 # @param figColorList   List of matplotlib Figure objects to contain plots
-# @param resultList     List of results, of form (bandFreqs, sourceAngs, pointSourceSensitivity, effArea, antGain)
+# @param resultList     List of results, as (bandFreqs, names, sourceAngs, sensitivity, effArea, antGain, pointErr)
 # @param expName        Title of experiment
 # @return axesColorList List of matplotlib Axes objects, one per plot
 def plot_gain_curve(figColorList, resultList, expName):
     # Set up axes
     axesColorList = []
-    bandFreqs, sourceAngs, pssBlock, effAreaBlock, antGainBlock = resultList
+    # pylint: disable-msg=W0612
+    bandFreqs, nameList, sourceAngs, pssBlock, effAreaBlock, antGainBlock, pointingErrors = resultList
     sourceElAng_deg = sourceAngs[:, 1]
     plotFreqs = bandFreqs / 1e9   # Hz to GHz
     numBands = len(plotFreqs)
@@ -413,5 +497,54 @@ def plot_gain_curve(figColorList, resultList, expName):
         axis.set_xlabel('Elevation angle (degrees)')
         axis.set_ylabel('Gain (dB)')
         axis.set_title(expName + ' : Antenna gain in band %d : %3.3f GHz' % (band, plotFreqs[band]))
+    
+    return axesColorList
+
+
+## Plot pointing errors.
+# @param figColorList   Matplotlib Figure object to contain plots
+# @param resultList     List of results, as (bandFreqs, names, sourceAngs, sensitivity, effArea, antGain, pointErr)
+# @param expName        Title of experiment
+# @param scale          Scale of pointing errors, used to exaggerate them for visibility [1]
+# @return axesColorList List of matplotlib Axes objects, one per plot
+def plot_pointing_error(figColor, resultList, expName, scale=1):
+    # Set up axes
+    axesColorList = []
+    # pylint: disable-msg=W0612
+    bandFreqs, nameList, sourceAngs, pssBlock, effAreaBlock, antGainBlock, pointingErrors = resultList
+    # One figure, 1 subfigure
+    axesColorList.append(figColor.add_subplot(1, 1, 1))
+    
+    # Extract relevant angles from list
+    pointErr = np.array([sourceAngs[ind].tolist() + pointingErrors[ind].tolist() \
+                         for ind in xrange(len(sourceAngs)) if not np.isnan(pointingErrors[ind][0])])
+    steeredAz, steeredEl, azError, elError, azErrorSigma, elErrorSigma = [pointErr[:, ind] for ind in range(6)]
+    # Scale errors to make them more visible
+    azError *= scale
+    elError *= scale
+    azErrorSigma *= scale
+    elErrorSigma *= scale
+    meanAz, meanEl = steeredAz + azError, steeredEl + elError
+    # This forms the lines connecting steered and estimated position markers
+    arrowsAz = np.vstack((steeredAz, meanAz, np.tile(np.nan, (len(meanAz))))).transpose().ravel()
+    arrowsEl = np.vstack((steeredEl, meanEl, np.tile(np.nan, (len(meanEl))))).transpose().ravel()
+    
+    axis = axesColorList[0]
+    # Location of "true" source, indicated by Gaussian center + spread (1=sigma and 2-sigma contours)
+    for ind in xrange(len(meanAz)):
+        vis.plot_gaussian_ellipse(axis, (meanAz[ind], meanEl[ind]), \
+                                  np.diag((azErrorSigma[ind] ** 2, elErrorSigma[ind] ** 2)), \
+                                  contour=np.exp(-0.5*np.array([1, 2]) ** 2), \
+                                  ellType='r-', centerType='or', lineWidth=1, markerSize=4)
+    # Lines connecting markers
+    axis.plot(arrowsAz, arrowsEl, 'k')
+    # Marker indicating steered position (where the source was thought to be)
+    axis.plot(steeredAz, steeredEl, 'sk', markersize=4)
+    axis.set_xlim(axis.get_xlim()[0] - 10, axis.get_xlim()[1] + 10)
+    axis.set_ylim(axis.get_ylim()[0] - 10, axis.get_ylim()[1] + 10)
+    axis.set_aspect('equal')
+    axis.set_xlabel('Azimuth (deg)')
+    axis.set_ylabel('Elevation (deg)')
+    axis.set_title(expName + ' : Pointing errors')
     
     return axesColorList
