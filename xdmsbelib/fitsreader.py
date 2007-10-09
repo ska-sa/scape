@@ -13,6 +13,7 @@ import logging
 import numpy as np
 import xdmsbe.fitsgen.fits_generator as fgen
 import xdmsbe.xdmsbelib.single_dish_data as sdd
+from conradmisclib.transforms import deg_to_rad
 import cPickle
 import os
 
@@ -172,7 +173,7 @@ class FitsReader(object):
         self._numSamples = int(self._primHdr['SAMPLES'])
         
         self._mountCoordSys = self.get_pickle_from_table('Objects', 'Mount')
-        self._targetCoordSys = self.get_pickle_from_table('Objects', 'Target')
+        self._targetObject = self.get_pickle_from_table('Objects', 'Target')
     
     ## Get access to the primary header.
     # @param self The current object
@@ -369,9 +370,9 @@ class FitsReader(object):
             timeSamples = np.arange(self._numSamples)[mask] * self._samplePeriod + self._startTime + \
                           self._startTimeOffset
         
-        azAng = self.select_masked_column('MSDATA', 'AzAng', mask) / 180.0 * np.pi
-        elAng = self.select_masked_column('MSDATA', 'ElAng', mask) / 180.0 * np.pi
-        rotAng = self.select_masked_column('MSDATA', 'RotAng', mask) / 180.0 * np.pi
+        azAng_rad = deg_to_rad(self.select_masked_column('MSDATA', 'AzAng', mask))
+        elAng_rad = deg_to_rad(self.select_masked_column('MSDATA', 'ElAng', mask))
+        rotAng_rad = deg_to_rad(self.select_masked_column('MSDATA', 'RotAng', mask))
         
         if perBand:
             freqList = self.bandNoRfiFrequencies
@@ -381,8 +382,8 @@ class FitsReader(object):
         try:
             # Attempt to read Stokes visibilities from FITS file
             data = sdd.SingleDishData(get_stokes_power(mask, perBand), True, \
-                                      timeSamples, azAng, elAng, rotAng, freqList, \
-                                      mountCoordSystem=self._mountCoordSys, targetCoordSystem=self._targetCoordSys)
+                                      timeSamples, azAng_rad, elAng_rad, rotAng_rad, freqList, \
+                                      mountCoordSystem=self._mountCoordSys, targetObject=self._targetObject)
             if not stokesType:
                 data.convert_to_coherency()
             return data
@@ -390,8 +391,8 @@ class FitsReader(object):
             try:
                 # Attempt to read cross power / coherencies from FITS file
                 data = sdd.SingleDishData(get_cross_power(mask, perBand), False, \
-                                          timeSamples, azAng, elAng, rotAng, freqList, \
-                                          mountCoordSystem=self._mountCoordSys, targetCoordSystem=self._targetCoordSys)
+                                          timeSamples, azAng_rad, elAng_rad, rotAng_rad, freqList, \
+                                          mountCoordSystem=self._mountCoordSys, targetObject=self._targetObject)
                 if stokesType:
                     data.convert_to_stokes()
                 return data
