@@ -7,6 +7,7 @@
 
 from __future__ import division
 import numpy as np
+import matplotlib.patches as patches
 import numpy.linalg as linalg
 import logging
 import pylab
@@ -218,13 +219,15 @@ def draw_std_corridor(axis, xVals, mu, sigma, muLabel = None, sigmaLabel = None,
 # @param    cov             2x2 covariance matrix
 # @param    contour         Contour height of ellipse(s), as a (list of) factor(s) of the peak value [0.5]
 #                           For a factor sigma of the standard deviation, use e^(-0.5*sigma^2) here
-# @param    ellipseLineType Matplotlib linetype string for ellipse line ['b-']
-# @param    centerLineType  Matplotlib linetype string for center marker ['b+']
+# @param    ellType         Matplotlib linetype string for ellipse line ['b-']
+# @param    centerType      Matplotlib linetype string for center marker ['b+']
 # @param    lineWidth       Line widths for ellipse and center marker [1]
+# @param    markerSize      Size of center marker [12]
 # @return   ellipseHandle   Handle(s) to contour plot
 # @return   centerHandle    Handle to center of Gaussian
+# @todo Rather use matplotlib.patches.Ellipse instead of home-cooked one, just get angle from cov...
 
-def plot_gaussian_ellipse(axis, mean, cov, contour=0.5, ellipseLineType='b-', centerLineType='b+', lineWidth=1):
+def plot_gaussian_ellipse(axis, mean, cov, contour=0.5, ellType='b-', centerType='b+', lineWidth=1, markerSize=12):
     
     mean = np.asarray(mean)
     cov = np.asarray(cov)
@@ -244,6 +247,70 @@ def plot_gaussian_ellipse(axis, mean, cov, contour=0.5, ellipseLineType='b-', ce
     ellipseHandle = []
     for cnt in contour:
         ellipse = np.sqrt(-2*np.log(cnt)) * baseEllipse + mean[:, np.newaxis]
-        ellipseHandle.append(axis.plot(ellipse[0], ellipse[1], ellipseLineType, lw=lineWidth))
-    centerHandle = axis.plot([mean[0]], [mean[1]], centerLineType, markersize=12, aa=False, mew=lineWidth)
+        ellipseHandle.append(axis.plot(ellipse[0], ellipse[1], ellType, lw=lineWidth))
+    centerHandle = axis.plot([mean[0]], [mean[1]], centerType, ms=markerSize, aa=False, mew=lineWidth)
     return ellipseHandle, centerHandle
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  plot_marker_3d
+#---------------------------------------------------------------------------------------------------------
+
+## Pseudo-3D plot that plots markers at given x-y positions, with marker size determined by z values.
+# This is an alternative to pcolor, with the advantage that the x and y values do not need to be on
+# a regular grid, and that it is easier to compare the relative size of z values. The disadvantage is
+# that the markers may have excessive overlap or very small sizes, which obscures the plot. This can
+# be controlled by the maxSize and minSize parameters.
+#
+# @param axis       Matplotlib axes object associated with a matplotlib Figure
+# @param x          Array of x coordinates of markers
+# @param y          Array of y coordinates of markers
+# @param z          Array of z heights, transformed to marker size
+# @param maxSize    The radius of the biggest marker, relative to the average spacing between markers
+# @param minSize    The radius of the smallest marker, relative to the average spacing between markers
+# @param markerType Type of marker ('circle' [default], or 'asterisk')
+# @param numLines   Number of lines in asterisk [8]
+# @return Handle of asterisk line object, or list of circle patches
+# pylint: disable-msg=W0142
+def plot_marker_3d(axis, x, y, z, maxSize=0.75, minSize=0.05, markerType='circle', numLines=8, **kwargs):
+    x = np.asarray(x)
+    y = np.asarray(y)
+    z = np.asarray(z)
+    assert maxSize >= minSize, "In plot_marker_3d, minSize should not be bigger than maxSize."
+    
+    # Normalise z to lie between 0 and 1
+    zMinInd, zMaxInd = z.argmin(), z.argmax()
+    z = (z - z[zMinInd]) / (z[zMaxInd] - z[zMinInd])
+    # Threshold z, so that the minimum size will have the desired ratio to the maximum size
+    z[z < minSize/maxSize] = minSize/maxSize
+    # Determine median spacing between vectors
+    minDist = np.zeros(len(x))
+    for ind in xrange(len(x)):
+        distSq = (x - x[ind]) ** 2 + (y - y[ind]) ** 2
+        minDist[ind] = np.sqrt(distSq[distSq > 0].min())
+    # Scale z so that maximum value is desired factor of median spacing
+    z *= maxSize * np.median(minDist)
+    
+    if markerType == 'asterisk':
+        # Use random initial angles so that asterisks don't overlap in regular pattern, which obscures their size
+        ang = np.pi*np.random.random_sample(z.shape)
+        xAsterisks = []
+        yAsterisks = []
+        # pylint: disable-msg=W0612
+        for side in range(numLines):
+            xDash = np.vstack((x - z*np.cos(ang), x + z*np.cos(ang), np.tile(np.nan, x.shape))).transpose()
+            yDash = np.vstack((y - z*np.sin(ang), y + z*np.sin(ang), np.tile(np.nan, y.shape))).transpose()
+            xAsterisks += xDash.ravel().tolist()
+            yAsterisks += yDash.ravel().tolist()
+            ang += np.pi / numLines
+        # All asterisks form part of one big line...
+        return axis.plot(xAsterisks, yAsterisks, **kwargs)
+        
+    elif markerType == 'circle':
+        # Add a circle patch for each marker
+        for ind in xrange(len(x)):
+            axis.add_patch(patches.Circle((x[ind], y[ind]), z[ind], **kwargs))
+        return axis.patches
+        
+    else:
+        raise ValueError, "Unknown marker type '" + markerType + "'"
