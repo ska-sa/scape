@@ -47,32 +47,32 @@ class SingleDishData(object):
     #                             This can be interpreted as 4 data blocks of dimension time x bands
     # @param    stokesFlag        True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
     # @param    timeSamples       Sequence of timestamps for each data block (in seconds since epoch)
-    # @param    azAng             Azimuth angle sequence for each data block (in radians)
-    # @param    elAng             Elevation angle sequence for each data block (in radians)
-    # @param    rotAng            Rotator stage angle sequence for each data block (in radians)
+    # @param    azAng_rad         Azimuth angle sequence for each data block (in radians)
+    # @param    elAng_rad         Elevation angle sequence for each data block (in radians)
+    # @param    rotAng_rad        Rotator stage angle sequence for each data block (in radians)
     # @param    bandFreqs         List of band centre frequencies (in Hz)
-    # @param    mountCoordSystem  Mount coordinate system object (see acsm module)
-    # @param    targetCoordSystem Target coordinate system object (see acsm module)
+    # @param    mountCoordSystem  Mount coordinate system object (see acsm.coordinatesystem module)
+    # @param    targetObject      Target object (see acsm.targets module)
     # pylint: disable-msg=R0913
-    def __init__(self, powerData, stokesFlag, timeSamples, azAng, elAng, rotAng, bandFreqs, \
-                 mountCoordSystem=None, targetCoordSystem=None):
+    def __init__(self, powerData, stokesFlag, timeSamples, azAng_rad, elAng_rad, rotAng_rad, bandFreqs, \
+                 mountCoordSystem=None, targetObject=None):
         ## @var stokesFlag
         # True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
         self.stokesFlag = stokesFlag
         ## @var timeSamples
-        # Sequence of timestamps for data block
+        # Sequence of timestamps for data block, in seconds since epoch
         self.timeSamples = timeSamples
-        ## @var azAng
-        # Mount azimuth angle sequence for data block
-        self.azAng = azAng
-        ## @var elAng
-        # Mount elevation angle sequence for data block
-        self.elAng = elAng
-        ## @var rotAng
-        # Rotator stage angle for data block
-        self.rotAng = rotAng
+        ## @var azAng_rad
+        # Mount azimuth angle sequence for data block, in radians
+        self.azAng_rad = azAng_rad
+        ## @var elAng_rad
+        # Mount elevation angle sequence for data block, in radians
+        self.elAng_rad = elAng_rad
+        ## @var rotAng_rad
+        # Rotator stage angle for data block, in radians
+        self.rotAng_rad = rotAng_rad
         ## @var bandFreqs
-        # List of band centre frequencies
+        # List of band centre frequencies, in Hz
         self.bandFreqs = bandFreqs
         
         ## @var stokesData
@@ -82,17 +82,16 @@ class SingleDishData(object):
         # Look up coherency / cross-power data by name
         self.coherencyData = {}
         
+        ## @var mountCoordSystem
+        # Coordinate system for mount (azimuth/evelation/rotation angles)
+        self.mountCoordSystem = mountCoordSystem
+        ## @var targetObject
+        # Coordinate system for target output (some projection, typically)
+        self.targetObject = targetObject
         ## @var targetCoords
         # Target coordinates, as an NxD array (N = number of samples, D = target coordinate dimension)
         self.targetCoords = None
-        ## @var mountCoordSystem
-        # Coordinate system for mount (azimuth/evelation/rotation angles)
-        self.mountCoordSystem = None
-        ## @var targetCoordSystem
-        # Coordinate system for target output (some projection, typically)
-        self.targetCoordSystem = None
-        self._transformer = None
-        self.set_coordinate_systems(mountCoordSystem, targetCoordSystem)
+        self.update_target_coords()
         
         self._powerConvertedToTemp = False
         self._baselineSubtracted = False
@@ -108,13 +107,13 @@ class SingleDishData(object):
         
     ## Get powerData member.
     # @param self  The current object
-    # @return List of power data blocks
+    # @return Power data array
     def get_power_data(self):
         return self._powerData
     ## Set powerData member.
     # This also sets up the dictionary lookups for the data.
     # @param self  The current object
-    # @param powerData List of power data blocks
+    # @param powerData Power data array
     def set_power_data(self, powerData):
         # Make into proper 3-D matrix
         self._powerData = np.asarray(powerData)
@@ -128,27 +127,25 @@ class SingleDishData(object):
                 self.coherencyData[k] = self._powerData[v]
     ## @var powerData
     # Power data array (property).
-    powerData = property(get_power_data, set_power_data, doc='List of power data blocks.')
+    powerData = property(get_power_data, set_power_data, doc='Power data array.')
     
-    ## Set mount and target coordinate systems which was used for data capture.
-    #
-    # @param self              The current object
-    # @param mountCoordSystem  Mount coordinate system object (see acsm module)
-    # @param targetCoordSystem Target coordinate system object (see acsm module)
+    ## Use mount and target coordinate systems (if given) to calculate target coordinates for scan.
+    # @param self The current object
     # @return self The updated object
-    def set_coordinate_systems(self, mountCoordSystem, targetCoordSystem):
-        # Coordinate systems not complete - do nothing
-        if not (mountCoordSystem and targetCoordSystem):
+    def update_target_coords(self):
+        # Coordinate systems not complete - no target coordinates possible
+        if not (self.mountCoordSystem and self.targetObject):
+            self.targetCoords = None
             return self
-        self.mountCoordSystem = mountCoordSystem
-        self.targetCoordSystem = targetCoordSystem
-        self._transformer = acsm.transform.get_factory_instance().get_transformer(mountCoordSystem, targetCoordSystem)
+        targetCoordSystem = self.targetObject.get_coordinate_system()
+        mountToTarget = acsm.transform.get_factory_instance().get_transformer(self.mountCoordSystem, targetCoordSystem)
         numTimeSamples = len(self.timeSamples)
         self.targetCoords = np.zeros((numTimeSamples, targetCoordSystem.get_dimensions()), dtype='double')
         
         for k in np.arange(numTimeSamples):
-            mountCoordinate = Coordinate(mountCoordSystem, [self.azAng[k], self.elAng[k], self.rotAng[k]])
-            targetCoordinate = self._transformer.transform_coordinate(mountCoordinate, self.timeSamples[k])
+            mountCoordinate = Coordinate(self.mountCoordSystem, \
+                                         [self.azAng_rad[k], self.elAng_rad[k], self.rotAng_rad[k]])
+            targetCoordinate = mountToTarget.transform_coordinate(mountCoordinate, self.timeSamples[k])
             self.targetCoords[k, :] = targetCoordinate.get_vector()
         return self
     
@@ -160,8 +157,16 @@ class SingleDishData(object):
     # @return self The updated object
     # pylint: disable-msg=W0212
     def append(self, other):
+#        print self.targetObject.get_reference_target().get_description()
+#        print other.targetObject.get_reference_target().get_description()
+#        print self.targetObject.get_reference_target() == other.targetObject.get_reference_target()
+        # Ensure reference targets are the same
+#        if self.targetObject.get_reference_target() != other.targetObject.get_reference_target():
+#            message = "Cannot concatenate data objects with incompatible reference targets."
+#            logger.error(message)
+#            raise ValueError, message            
         # Ensure mount coordinates (az/el/rot) are compatible
-        if (self.mountCoordSystem != other.mountCoordSystem):
+        if self.mountCoordSystem != other.mountCoordSystem:
             message = "Cannot concatenate data objects with incompatible mount coordinate systems."
             logger.error(message)
             raise ValueError, message
@@ -186,12 +191,12 @@ class SingleDishData(object):
                 other.convert_to_coherency()
         # Concatenate coordinate vectors, and power data along time axis
         self.timeSamples = np.concatenate((self.timeSamples, other.timeSamples))
-        self.azAng = np.concatenate((self.azAng, other.azAng))
-        self.elAng = np.concatenate((self.elAng, other.elAng))
-        self.rotAng = np.concatenate((self.rotAng, other.rotAng))
+        self.azAng_rad = np.concatenate((self.azAng_rad, other.azAng_rad))
+        self.elAng_rad = np.concatenate((self.elAng_rad, other.elAng_rad))
+        self.rotAng_rad = np.concatenate((self.rotAng_rad, other.rotAng_rad))
         self.powerData = np.concatenate((self.powerData, other.powerData), axis=1)
-        # Convert all coordinate data to target coord system of first object
-        self.set_coordinate_systems(self.mountCoordSystem, self.targetCoordSystem)
+        # Convert all target coordinate data to target coord system of first object
+        self.update_target_coords()
         return self
     
     ## Convert the contained power buffer from Stokes vectors to coherency vectors.
@@ -252,9 +257,9 @@ class SingleDishData(object):
             raise ValueError, message
         # Obtain baseline
         if useElevation:
-            baselineData = func(self.elAng)
+            baselineData = func(self.elAng_rad)
         else:
-            baselineData = func(self.azAng)
+            baselineData = func(self.azAng_rad)
         # Subtract baseline
         self.powerData -= baselineData
         self._baselineSubtracted = True
