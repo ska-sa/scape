@@ -534,7 +534,7 @@ def plot_gain_curve(figColorList, resultList, expName):
 
 
 ## Plot pointing errors derived from multiple point sources.
-# @param figColorList   Matplotlib Figure object to contain plots
+# @param figColor       Matplotlib Figure object to contain plots
 # @param resultList     List of results, as (bandFreqs, names, sourceAngs, sensitivity, effArea, antGain, pointErr)
 # @param expName        Title of experiment
 # @param scale          Scale of pointing errors, used to exaggerate them for visibility [1]

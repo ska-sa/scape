@@ -81,25 +81,27 @@ class StandardSourceScan(object):
 # that does the transformation, and can be passed around to functions (the reason for its existence).
 class TargetToInstantMountTransform(object):
     ## Initialiser.
+    # @param self        The current object
     # @param stdScanList List of StandardSourceScan objects, one per scan through a target
     def __init__(self, stdScanList):
         # Use first main scan as reference for coordinate system
         mountSys = stdScanList[0].mainData.mountCoordSystem
-        # @var targetSys
+        ## @var targetSys
         # Target coordinate system (assumed the same for all scans in list)
         self.targetSys = stdScanList[0].mainData.targetObject.get_coordinate_system()
-        # @var targetToInstantMount
+        ## @var targetToInstantMount
         # Coordinate transformer object
         self.targetToInstantMount = acsm.transform.get_factory_instance().get_transformer(self.targetSys, mountSys)
         # The measurement time instant is taken to be the median time of all the main segments in the scan list
         allTimes = np.concatenate([stdScan.mainData.timeSamples for stdScan in stdScanList])
-        # @var timeStamp
+        ## @var timeStamp
         # Time instant at which target is deemed to be observed - all measurements are assumed to be simultaneous
         self.timeStamp = np.median(allTimes)
 
     ## Convert coordinates from target space to "instantaneous" mount space.
     # This currently assumes that the mount has a horizontal coordinate system, and it discards any rotator angle.
     # The output vector is therefore (az, el) in degrees.
+    # @param self        The current object
     # @param targetCoord Vector of coordinates in target coordinate system
     # @return Vector of coordinates in mount coordinate system, of the form (az, el) in degrees
     def __call__(self, targetCoord):
@@ -110,6 +112,7 @@ class TargetToInstantMountTransform(object):
     ## Position of target itself in "instantaneous" mount coordinates, at the median time instant.
     # This transforms the origin of the target coordinate system, which represents the position of the target itself
     # at the median time instant, to mount coordinates.
+    # @param self The current object
     # @return Position of target in mount coordinates
     def origin(self):
         return self(np.zeros(self.targetSys.get_dimensions()))

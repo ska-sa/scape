@@ -276,6 +276,7 @@ def plot_gaussian_ellipse(axis, mean, cov, contour=0.5, ellType='b-', centerType
 # @param minSize    The radius of the smallest marker, relative to the average spacing between markers
 # @param markerType Type of marker ('circle' [default], or 'asterisk')
 # @param numLines   Number of lines in asterisk [8]
+# @param kwargs     Dictionary containing extra keyword arguments
 # @return Handle of asterisk line object, or list of circle patches
 # pylint: disable-msg=W0142
 def plot_marker_3d(axis, x, y, z, maxSize=0.75, minSize=0.05, markerType='circle', numLines=8, **kwargs):
