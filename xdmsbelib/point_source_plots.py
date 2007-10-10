@@ -17,6 +17,7 @@
 import xdmsbe.xdmsbelib.interpolator as interp
 import xdmsbe.xdmsbelib.vis as vis
 from conradmisclib.transforms import rad_to_deg
+import matplotlib.axes3d as mplot3d
 import numpy as np
 import logging
 import time
@@ -180,6 +181,9 @@ def plot_calib_scans(figColorList, calibScanList, beamFuncList, expName):
 
 
 ## Plot beam pattern fitted to multiple scans through a single point source, in target space.
+# This plots contour ellipses of a Gaussian beam function fitted to multiple scans through a point source,
+# as well as the power values of the scans themselves as a pseudo-3D plot. It highlights the success of the
+# beam fitting procedure.
 # @param figColorList   List of matplotlib Figure objects to contain plots (one per frequency band)
 # @param calibScanList  List of SingleDishData objects of calibrated main scans (one per scan)
 # @param beamFuncList   List of Gaussian beam functions and valid flags (one per band)
@@ -240,8 +244,12 @@ def plot_beam_pattern_target(figColorList, calibScanList, beamFuncList, expName)
     return axesColorList
 
 
-## Plot rough beam pattern derived from multiple scans through a single point source, in target space.
-# @param figColorList   List of matplotlib Figure objects to contain plots (one per frequency band)
+## Plot rough beam pattern derived from multiple raster scans through a single point source, in target space.
+# This works with the power values derived from multiple scans through a single point source, typically made
+# in a horizontal raster pattern. It interpolates the power values onto a regular uniform grid, and plots
+# contours of the interpolated function. It also assumes that the scans themselves follow a uniform grid pattern 
+# in target space, which allows a 3D mesh/wireframe plot of the actual power values.
+# @param figColorList   List of matplotlib Figure objects to contain plots (two per frequency band)
 # @param calibScanList  List of SingleDishData objects of calibrated main scans (one per scan)
 # @param expName        Title of experiment
 # @return axesColorList List of matplotlib Axes objects, one per plot
@@ -252,62 +260,86 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
     # Use the frequency bands of the first scan as reference for the rest
     plotFreqs = calibScanList[0].bandFreqs / 1e9   # Hz to GHz
     numBands = len(plotFreqs)
-    # One figure per frequency band
+    # Two figures per frequency band
     for band in range(numBands):
+        # Normal axes for contour plot
         axesColorList.append(figColorList[band].add_subplot(1, 1, 1))
+        # 3D axes for wireframe plot
+        axesColorList.append(mplot3d.Axes3D(figColorList[band + numBands]))
     
-    # Extract total power and target coordinates of all scans
-    totalPower = []
-    targetCoords = []
+    # Extract total power and and first two target coordinates (assumed to be (az,el)) of all scans
+    azScans = []
+    elScans = []
+    totalPowerScans = []
     for scan in calibScanList:
-        totalPower.append(scan.total_power())
-        targetCoords.append(scan.targetCoords)
-    totalPower = np.concatenate(totalPower)
-    targetCoords = np.concatenate(targetCoords)
-    
-    # Set up uniform mesh grid for contour plot
-    targetX = np.linspace(targetCoords[:, 0].min(), targetCoords[:, 0].max(), 101)
-    targetY = np.linspace(targetCoords[:, 1].min(), targetCoords[:, 1].max(), 101)
+        azScan = scan.targetCoords[:, 0]
+        # Reverse any scans with descending azimuth angle, so that all scans run in the same direction
+        if azScan[0] < azScan[-1]:
+            azScans.append(azScan)
+            elScans.append(scan.targetCoords[:, 1])
+            totalPowerScans.append(scan.total_power()[np.newaxis, :, :])
+        else:
+            azScans.append(np.flipud(azScan))
+            elScans.append(np.flipud(scan.targetCoords[:, 1]))
+            totalPowerScans.append(np.flipud(scan.total_power())[np.newaxis, :, :])
+    azScans = np.vstack(azScans)
+    elScans = np.vstack(elScans)
+    totalPowerScans = np.concatenate(totalPowerScans, axis=0)
+    # Set up uniform 101x101 mesh grid for contour plot
+    targetX = np.linspace(azScans.min(), azScans.max(), 101)
+    targetY = np.linspace(elScans.min(), elScans.max(), 101)
     targetMeshX, targetMeshY = np.meshgrid(targetX, targetY)
-    uniformGridCoords = np.vstack((targetMeshX.ravel(), targetMeshY.ravel()))
+    meshCoords = np.vstack((targetMeshX.ravel(), targetMeshY.ravel()))
+    # Jitter the target coordinates to make degenerate triangles unlikely during Delaunay triangulation for contours
+    jitter = np.vstack((azScans.std() * np.random.randn(azScans.size), \
+                        elScans.std() * np.random.randn(elScans.size)))
+    jitteredCoords = np.vstack((azScans.ravel(), elScans.ravel())) + 0.0001 * jitter
     
-    # Iterate through figures (one per band)
+    # Iterate through figures (two per band)
     for band in range(numBands):
-        axis = axesColorList[band]
-        power = totalPower[:, band]
+        power = totalPowerScans[:, :, band]
+        # 2D contour plot
+        axis = axesColorList[2*band]
         # Show the locations of the scan samples themselves
-        axis.plot(rad_to_deg(targetCoords[:, 0]), rad_to_deg(targetCoords[:, 1]), '.b', alpha=0.5)
-        # Jitter the target coordinates to make degenerate triangles unlikely during Delaunay triangulation
-        jitter = np.vstack((targetCoords[:, 0].std() * np.random.randn(len(targetCoords)), \
-                            targetCoords[:, 1].std() * np.random.randn(len(targetCoords)))).transpose()
-        jitteredCoords = targetCoords[:, 0:2] + 0.001 * jitter
-        # Interpolate the power values onto a 2-D grid (ignore rotator angle) for contour plot
-        beamRoughFit = interp.Delaunay2DFit(defaultVal=power.min())
-        beamRoughFit.fit(jitteredCoords.transpose(), power)
-        uniformGridRoughPower = beamRoughFit(uniformGridCoords).reshape(targetY.size, targetX.size)
+        axis.plot(rad_to_deg(azScans.ravel()), rad_to_deg(elScans.ravel()), '.b', alpha=0.5)
+        # Interpolate the power values onto a 2-D az-el grid for a smoother contour plot
+        gridder = interp.Delaunay2DFit(defaultVal = power.min())
+        gridder.fit(jitteredCoords, power.ravel())
+        meshPower = gridder(meshCoords).reshape(targetY.size, targetX.size)
         # Choose contour levels as fractions of the peak power
-        contourLevels = np.arange(0.1, 1.0, 0.1) * uniformGridRoughPower.max()
+        contourLevels = np.arange(0.1, 1.0, 0.1) * meshPower.max()
         # Indicate half-power beamwidth (contourLevel = 0.5) with wider line
         lineWidths = 2*np.ones(len(contourLevels))
         lineWidths[4] = 4
-        # Plot contours of rough beam pattern
-        axis.contour(rad_to_deg(targetMeshX), rad_to_deg(targetMeshY), uniformGridRoughPower, \
-                     contourLevels, linewidths=lineWidths, colors='b')
-
+        # Color the 0.5 and 0.1 contours red, to coincide with the scheme followed in the beam fitting plots
+        colors = ['b'] * len(contourLevels)
+        colors[0] = colors[4] = 'r'
+        # Plot contours of interpolated beam pattern
+        axis.contour(rad_to_deg(targetMeshX), rad_to_deg(targetMeshY), meshPower, contourLevels, \
+                     linewidths=lineWidths, colors=colors)
+        # 3D wireframe plot
+        axis = axesColorList[2*band + 1]
+        axis.plot_wireframe(rad_to_deg(azScans), rad_to_deg(elScans), power)
+        
     # Axis settings and labels
-    for band in range(numBands):
+    for band in range(2*numBands):
         axis = axesColorList[band]
         axis.set_xlim(rad_to_deg(targetX[0]), rad_to_deg(targetX[-1]))
         axis.set_ylim(rad_to_deg(targetY[0]), rad_to_deg(targetY[-1]))
         axis.set_aspect('equal')
         axis.set_xlabel('Target coord 1 (deg)')
         axis.set_ylabel('Target coord 2 (deg)')
-        axis.set_title(expName + ' : Beam pattern in band %d : %3.3f GHz' % (band, plotFreqs[band]))
+        axis.set_title(expName + ' : Beam pattern in band %d : %3.3f GHz' % (band // 2, plotFreqs[band // 2]))
 
     return axesColorList
 
 
 ## Plot beam patterns fitted to multiple scans through multiple point sources, in "instantaneous" mount space.
+# The purpose of this plot is to examine the quality of beam functions fitted to multiple sources, based on multiple
+# scans through each source. The scans are adjusted to appear as if they happened instantaneously for each source,
+# which makes the sources appear stationary in mount coordinates (regardless of their actual motion). The beam
+# functions are indicated by contour ellipses, while the power values on each scan are illustrated with pseudo-3D
+# plots.
 # @param figColorList   List of matplotlib Figure objects to contain plots (one per frequency band)
 # @param calibListList  List of list of SingleDishData objects of calibrated main scans (per source, and then per scan)
 # @param beamListList   List of list of Gaussian beam functions (per source, and then per band)
@@ -501,7 +533,7 @@ def plot_gain_curve(figColorList, resultList, expName):
     return axesColorList
 
 
-## Plot pointing errors.
+## Plot pointing errors derived from multiple point sources.
 # @param figColorList   Matplotlib Figure object to contain plots
 # @param resultList     List of results, as (bandFreqs, names, sourceAngs, sensitivity, effArea, antGain, pointErr)
 # @param expName        Title of experiment

@@ -8,6 +8,7 @@
 from __future__ import division
 import numpy as np
 import matplotlib.patches as patches
+import matplotlib.axes3d as mplot3d
 import numpy.linalg as linalg
 import logging
 import pylab
@@ -63,7 +64,12 @@ def disp_interactive_figure(figureList, title = ''):
         button.pack(side = Tk.RIGHT)
         
         #canvas.show()
-    
+
+        # Restart mouse action on 3D axes, to allow rotation of plots
+        for axis in fig.get_axes():
+            if isinstance(axis, mplot3d.Axes3DI):
+                axis.mouse_init()
+        
     Tk.mainloop()
 
 
