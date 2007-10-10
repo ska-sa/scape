@@ -285,7 +285,7 @@ def load_fits(fileName, hduNames=None):
             hdulist.close()
             logger.error('File does not comply with FITS standard.')
     except IOError, e:
-        logger.error("FITS file '%s' does not exist. Exiting!" % fileName)
+        logger.error("FITS file '%s' does not exist." % fileName)
         raise e
     
     if hduNames:

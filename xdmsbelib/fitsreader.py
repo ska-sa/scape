@@ -459,7 +459,7 @@ class FitsReader(object):
     #                                ('onND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)
     #    @param   perBand           True for power per band (minus RFI), False for power per channel
     #
-    #    @return  dataDict    Data dictionary containing a SingleDishData object for each of the selection 
+    #    @return  dataDict    Data dictionary containing a SingleDishData object for each of the selection
     #                         products of dataIdNameList[i] X dataSelectionList[j]
     #
     
@@ -527,27 +527,32 @@ class FitsIterator(object):
     
     # pylint: disable-msg=R0903
     
-    ## Initialiser/constructor
-    # @param self the current object
-    # @param fitsFilename the fully qualified filename for the start of the sequence
-    # @param hduNames a list of hdu names that must be present in the files
+    ## Initialiser/constructor.
+    # @param self         The current object
+    # @param fitsFilename The fully qualified filename for the start of the sequence
+    # @param hduNames     A list of hdu names that must be present in the files
     def __init__(self, fitsFilename, hduNames=None):
         self._workingDir = os.path.dirname(fitsFilename)
         self._filename = os.path.basename(fitsFilename)
         self._hduNames = hduNames
         self._fitsReader = None
     
-    ## Return this object for use in a for loop
+    ## Return this object for use in a for loop.
+    # @param self The current object
     def __iter__(self):
         return self
     
-    ## Get the next fits reader for the sequence
-    # @param self the current object
-    # @return a FitsReader object
+    ## Get the next fits reader for the sequence.
+    # @param self The current object
+    # @return A FitsReader object
     def next(self):
         if not self._fitsReader:
-            self._fitsReader = FitsReader(fitsFilename=os.path.join(self._workingDir, self._filename), \
-                                          hduNames=self._hduNames)
+            try:
+                self._fitsReader = FitsReader(fitsFilename=os.path.join(self._workingDir, self._filename), \
+                                              hduNames=self._hduNames)
+            except IOError:
+                logger.error('Could not open initial file of FITS sequence.')
+                raise StopIteration
         else:
             primHdr = self._fitsReader.get_primary_header()
             lastFile = bool(primHdr['LastFile'])
@@ -559,11 +564,15 @@ class FitsIterator(object):
                 raise StopIteration
             # get the next filename
             if currentFilename == nextFilename:
-                message = "Next FITS filename is sequence is same as current. This will cause an infinite loop!"
+                message = "Next FITS filename in sequence is same as current. This will cause an infinite loop!"
                 logger.error(message)
                 raise ValueError, message
-            self._fitsReader = FitsReader(fitsFilename=os.path.join(self._workingDir, nextFilename), \
-                                          hduNames=self._hduNames)
+            try:
+                self._fitsReader = FitsReader(fitsFilename=os.path.join(self._workingDir, nextFilename), \
+                                              hduNames=self._hduNames)
+            except IOError:
+                logger.warning('Expected more files in FITS file sequence, stopping prematurely.')
+                raise StopIteration
             self._filename = self._fitsReader.fitsFilename
         return self._fitsReader
 
@@ -579,11 +588,11 @@ class ExpFitsIterator(object):
     
     # pylint: disable-msg=R0903
     
-    ## Initialiser/constructor
-    # @param self the current object
-    # @param fitsFilename the first filename of the experiment sequence. The experiment
+    ## Initialiser/constructor.
+    # @param self         The current object
+    # @param fitsFilename The first filename of the experiment sequence. The experiment
     #                     number will be read from this file.
-    # @param hduNames a list of hdu names that must be present in the files
+    # @param hduNames     A list of hdu names that must be present in the files
     def __init__(self, fitsFilename, hduNames=None):
         self._workingDir = os.path.dirname(fitsFilename)
         self._expSeqNum = None
@@ -593,12 +602,13 @@ class ExpFitsIterator(object):
         # The name of the first file in the next sequence else None
         self.nextFilename = None
     
-    ## Return this object for use in a for loop
+    ## Return this object for use in a for loop.
+    # @param self The current object
     def __iter__(self):
         return self
     
-    ## Get the next fits reader for the sequence. Stops if the sequence number changes
-    # @param self the current object
+    ## Get the next fits reader for the sequence. Stops if the sequence number changes.
+    # @param self The current object
     # @return A FitsReader object
     def next(self):
         fitsReader = self._iter.next()
@@ -621,24 +631,24 @@ class ExperimentIterator(object):
     
     # pylint: disable-msg=R0903
     
-    ## Initialiser/constructor
-    # @param self the current object
-    # @param fitsFilename the first filename of the sequence
-    # @param hduNames a list of hdu names that must be present in the files
+    ## Initialiser/constructor.
+    # @param self         The current object
+    # @param fitsFilename The first filename of the sequence
+    # @param hduNames     A list of hdu names that must be present in the files
     def __init__(self, fitsFilename, hduNames=None):
         self._fitsFilename = os.path.basename(fitsFilename)
         self._workingDir = os.path.dirname(fitsFilename)
         self._hduNames = hduNames
         self._fitsExpIter = None
     
-    ## Return this object for use in a for loop
+    ## Return this object for use in a for loop.
+    # @param self The current object
     def __iter__(self):
         return self
     
-    ## Get the next fits experiment iterator for the sequence. Stops if there are no
-    # more experiment sequences
-    # @param self the current object
-    # @return an ExpFitsIterator object
+    ## Get the next fits experiment iterator for the sequence. Stops if there are no more experiment sequences.
+    # @param self The current object
+    # @return An ExpFitsIterator object
     def next(self):
         if not self._fitsExpIter:
             self._fitsExpIter = ExpFitsIterator(os.path.join(self._workingDir, self._fitsFilename), self._hduNames)
