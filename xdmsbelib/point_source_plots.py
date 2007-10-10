@@ -14,7 +14,7 @@
 # Imports
 #======================================================================================================================
 
-import xdmsbe.xdmsbelib.interpolator as interp
+import xdmsbe.xdmsbelib.fitting as fitting
 import xdmsbe.xdmsbelib.vis as vis
 from conradmisclib.transforms import rad_to_deg
 import matplotlib.axes3d as mplot3d
@@ -303,7 +303,7 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
         # Show the locations of the scan samples themselves
         axis.plot(rad_to_deg(azScans.ravel()), rad_to_deg(elScans.ravel()), '.b', alpha=0.5)
         # Interpolate the power values onto a 2-D az-el grid for a smoother contour plot
-        gridder = interp.Delaunay2DFit(defaultVal = power.min())
+        gridder = fitting.Delaunay2DFit(defaultVal = power.min())
         gridder.fit(jitteredCoords, power.ravel())
         meshPower = gridder(meshCoords).reshape(targetY.size, targetX.size)
         # Choose contour levels as fractions of the peak power

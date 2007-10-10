@@ -10,7 +10,7 @@
 # pylint: disable-msg=C0103,R0902
 
 import xdmsbe.xdmsbelib.fitsreader as fitsreader
-import xdmsbe.xdmsbelib.interpolator as interpolator
+import xdmsbe.xdmsbelib.fitting as fitting
 from xdmsbe.xdmsbelib import tsys
 from xdmsbe.xdmsbelib import stats
 import xdmsbe.xdmsbelib.misc as misc
@@ -292,8 +292,8 @@ def calibrate_scan(stdScan, randomise):
     if randomise:
         p2tFactors = p2tFactors.mean + p2tFactors.sigma * random.standard_normal(p2tFactors.shape)
     # Power-to-temp conversion factor is inverse of gain, which is assumed to change linearly over time
-    stdScan.powerToTempFunc = interpolator.Independent1DFit(interpolator.ReciprocalFit( \
-                              interpolator.Polynomial1DFit(maxDegree=1)), axis=1)
+    stdScan.powerToTempFunc = fitting.Independent1DFit(fitting.ReciprocalFit( \
+                              fitting.Polynomial1DFit(maxDegree=1)), axis=1)
     stdScan.powerToTempFunc.fit(stdScan.powerToTempTimes, p2tFactors)
     # Convert baseline data to temperature, and concatenate them into a single structure
     for ind, baselineData in enumerate(stdScan.baselineDataList):
@@ -310,24 +310,24 @@ def calibrate_scan(stdScan, randomise):
     # Require variation on the order of an antenna beam width to fit higher-order polynomial
     if elAngMax - elAngMin > stdScan.antennaBeamwidth_deg * np.pi / 180.0:
         stdScan.baselineUsesElevation = True
-        interp = interpolator.Independent1DFit(interpolator.Polynomial1DFit(maxDegree=3), axis=1)
+        interp = fitting.Independent1DFit(fitting.Polynomial1DFit(maxDegree=3), axis=1)
         interp.fit(allBaselineData.elAng_rad, allBaselineData.powerData)
         if randomise:
-            interp = interpolator.randomise(interp, allBaselineData.elAng_rad, allBaselineData.powerData, 'shuffle')
+            interp = fitting.randomise(interp, allBaselineData.elAng_rad, allBaselineData.powerData, 'shuffle')
         stdScan.baselineFunc = interp
     elif azAngMax - azAngMin > stdScan.antennaBeamwidth_deg * np.pi / 180.0:
         stdScan.baselineUsesElevation = False
-        interp = interpolator.Independent1DFit(interpolator.Polynomial1DFit(maxDegree=1), axis=1)
+        interp = fitting.Independent1DFit(fitting.Polynomial1DFit(maxDegree=1), axis=1)
         interp.fit(allBaselineData.azAng_rad, allBaselineData.powerData)
         if randomise:
-            interp = interpolator.randomise(interp, allBaselineData.azAng_rad, allBaselineData.powerData, 'shuffle')
+            interp = fitting.randomise(interp, allBaselineData.azAng_rad, allBaselineData.powerData, 'shuffle')
         stdScan.baselineFunc = interp
     else:
         stdScan.baselineUsesElevation = True
-        interp = interpolator.Independent1DFit(interpolator.Polynomial1DFit(maxDegree=0), axis=1)
+        interp = fitting.Independent1DFit(fitting.Polynomial1DFit(maxDegree=0), axis=1)
         interp.fit(allBaselineData.elAng_rad, allBaselineData.powerData)
         if randomise:
-            interp = interpolator.randomise(interp, allBaselineData.elAng_rad, allBaselineData.powerData, 'shuffle')
+            interp = fitting.randomise(interp, allBaselineData.elAng_rad, allBaselineData.powerData, 'shuffle')
         stdScan.baselineFunc = interp
     # Calibrate the main segment of scan
     calibratedScan = copy.deepcopy(stdScan.mainData.convert_power_to_temp(stdScan.powerToTempFunc))
@@ -340,7 +340,7 @@ def calibrate_scan(stdScan, randomise):
 # @param targetCoords 2-D coordinates in target space, as an (N,2)-shaped numpy array
 # @param totalPower   Total power values, as an (N,M)-shaped numpy array (M = number of bands)
 # @param randomise    True if fits should be randomised, as part of a larger Monte Carlo run
-# @return List of Gaussian interpolator functions fitted to power data, one per band
+# @return List of Gaussian fitting functions fitted to power data, one per band
 def fit_beam_pattern_old(targetCoords, totalPower, randomise):
     interpList = []
     for band in range(totalPower.shape[1]):
@@ -357,14 +357,14 @@ def fit_beam_pattern_old(targetCoords, totalPower, randomise):
         diffVectors = blobPoints - centroid[np.newaxis, :]
         distToCentroid = np.sqrt((diffVectors * diffVectors).sum(axis=1))
         initStDev = 2 * distToCentroid.mean()
-        interp = interpolator.GaussianFit(centroid, initStDev*np.ones(centroid.shape), peakVal)
+        interp = fitting.GaussianFit(centroid, initStDev*np.ones(centroid.shape), peakVal)
         # Fit Gaussian beam only to points within blob, where approximation is more valid (more accurate?)
         interp.fit(blobPoints, weights)
         # Or fit Gaussian beam to all points in scan (this can provide a better fit with very noisy data)
         # interp.fit(targetCoords, bandPower)
         if randomise:
-            interp = interpolator.randomise(interp, blobPoints, weights, 'shuffle')
-            # interp = interpolator.randomise(interp, targetCoords, bandPower, 'shuffle')
+            interp = fitting.randomise(interp, blobPoints, weights, 'shuffle')
+            # interp = fitting.randomise(interp, targetCoords, bandPower, 'shuffle')
         interpList.append(interp)
     return interpList
 
@@ -383,7 +383,7 @@ def fit_beam_pattern_old(targetCoords, totalPower, randomise):
 # @param totalPower   Total power values, as an (N,M)-shaped numpy array (M = number of bands)
 # @param beamwidth    Antenna half-power beamwidth (in target coordinate scale)
 # @param randomise    True if fits should be randomised, as part of a larger Monte Carlo run
-# @return List of Gaussian interpolator functions fitted to power data, paired with valid flags (one per band)
+# @return List of Gaussian fitting functions fitted to power data, paired with valid flags (one per band)
 # @todo Fit other shapes, such as Airy
 # @todo Fix width of Gaussian during fitting process to known beamwidth
 # @todo Only fit Gaussian to points within half-power beamwidth of peak (not robust enough, need more samples)
@@ -400,12 +400,12 @@ def fit_beam_pattern(targetCoords, totalPower, beamwidth, randomise):
         # A Gaussian function reaches half its peak value at 1.183*sigma => should equal beamWidth/2 for starters
         expectedVar = (beamwidth / 2.0 / 1.183) ** 2.0
         # Use peak location as initial estimate of mean, and peak value as initial height
-        interp = interpolator.GaussianFit(peakPos, np.tile(expectedVar, peakPos.shape), peakVal)
+        interp = fitting.GaussianFit(peakPos, np.tile(expectedVar, peakPos.shape), peakVal)
         # Fit Gaussian beam to all points in scan, which is better for weak sources, but can produce
         # small errors on especially the peak amplitude
         interp.fit(targetCoords, bandPower)
         if randomise:
-            interp = interpolator.randomise(interp, targetCoords, bandPower, 'shuffle')
+            interp = fitting.randomise(interp, targetCoords, bandPower, 'shuffle')
         # Mark any fitted beam that has bad location, negative height or wildly unexpected variance as invalid
         # Make sure that more extended sources such as the Sun are not a problem...
         validFit = not np.any(np.isnan(interp.mean)) and (interp.height > 0.0) and \
