@@ -15,7 +15,7 @@ from xdmsbe.xdmsbelib import tsys
 from xdmsbe.xdmsbelib import stats
 import xdmsbe.xdmsbelib.misc as misc
 from acsm.coordinate import Coordinate
-import acsm.transform
+import acsm.transform.transformfactory as transformfactory
 import numpy as np
 import numpy.random as random
 import logging
@@ -91,7 +91,7 @@ class TargetToInstantMountTransform(object):
         self.targetSys = stdScanList[0].mainData.targetObject.get_coordinate_system()
         ## @var targetToInstantMount
         # Coordinate transformer object
-        self.targetToInstantMount = acsm.transform.get_factory_instance().get_transformer(self.targetSys, mountSys)
+        self.targetToInstantMount = transformfactory.get_transformer(self.targetSys, mountSys)
         # The measurement time instant is taken to be the median time of all the main segments in the scan list
         allTimes = np.concatenate([stdScan.mainData.timeSamples for stdScan in stdScanList])
         ## @var timeStamp
