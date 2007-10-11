@@ -715,62 +715,6 @@ def check_equality_of_means(deltaDeltaMeanConfInterval):
 
 
 #---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  interpolate_tipping_curve
-#------------------------------------------------
-
-## Calculate interpolated tippinbg curve system temperatures at a list of desired elevation angles
-#  given known values.
-#
-# @param    knownElAngs      array of elevation angles (in rad) at which tipping curve is known
-# @param    knownFreqs       array of band frequencies at which tipping curve is known
-# @param    knownTsys        2D array of known system temperatures, indexed by knownElAngs x knownFreqs
-# @param    desiredElAngs    array of desired elevation angles (in rad) for system temperatures
-# @param    desiredFreqs     array of desired frequencies for system temperatures
-#
-# @return   interpolatedTsys 2D array of interpolated system temperatures (interpolated tipping curve)
-
-def interpolate_tipping_curve(knownElAngs, knownFreqs, knownTsys, desiredElAngs, desiredFreqs):
-    
-    import scipy.sandbox.delaunay as delaunay
-    
-    freqScale = np.std(np.ravel(knownFreqs))
-    angleScale = np.std(np.ravel(knownElAngs))
-    
-    # Scale variables to comparable ranges
-    kElAngs = knownElAngs / angleScale
-    dElAngs = desiredElAngs / angleScale
-    kFreqs = knownFreqs / freqScale
-    dFreqs = desiredFreqs / freqScale
-    
-    # Get 2D interpolation grid
-    yi = np.tile(dFreqs[np.newaxis, :], (len(dElAngs), 1))
-    xi = np.tile(dElAngs[:, np.newaxis], (1, len(dFreqs)))
-    
-    y = np.tile(kFreqs[np.newaxis, :], (len(kElAngs), 1))
-    x = np.tile(kElAngs[:, np.newaxis], (1, len(kFreqs)))
-    
-    # triangulate data
-    tri = delaunay.Triangulation(np.ravel(x), np.ravel(y))
-    
-    # interpolate data
-    interp = tri.nn_interpolator(np.ravel(knownTsys))
-    
-    interpolatedTsys = interp(xi, yi)
-    
-    # knownElAngs = np.atleast_1d(knownElAngs)
-    # knownTsys = np.atleast_1d(knownTsys)
-    # desiredElAngs = np.atleast_1d(desiredElAngs)
-    # assert(len(knownElAngs.shape) == 1)
-    # assert(knownElAngs.shape == knownTsys.shape)
-    # assert(knownElAngs.size > 5)
-    # polynomialDegree = 4
-    # p1 = np.polyfit(knownElAngs, knownTsys, deg=polynomialDegree)
-    # return np.polyval(p1, desiredElAngs)
-    
-    return interpolatedTsys
-
-
-#---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  interpolate_noise_diode_profile
 #------------------------------------------------
 
