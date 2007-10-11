@@ -10,7 +10,7 @@
 # pylint: disable-msg=C0103,R0902
 
 from acsm.coordinate import Coordinate
-import acsm.transform
+import acsm.transform.transformfactory as transformfactory
 import numpy as np
 import logging
 import copy
@@ -138,7 +138,7 @@ class SingleDishData(object):
             self.targetCoords = None
             return self
         targetCoordSystem = self.targetObject.get_coordinate_system()
-        mountToTarget = acsm.transform.get_factory_instance().get_transformer(self.mountCoordSystem, targetCoordSystem)
+        mountToTarget = transformfactory.get_transformer(self.mountCoordSystem, targetCoordSystem)
         numTimeSamples = len(self.timeSamples)
         self.targetCoords = np.zeros((numTimeSamples, targetCoordSystem.get_dimensions()), dtype='double')
         
