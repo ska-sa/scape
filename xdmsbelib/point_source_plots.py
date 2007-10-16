@@ -247,7 +247,7 @@ def plot_beam_pattern_target(figColorList, calibScanList, beamFuncList, expName)
 ## Plot rough beam pattern derived from multiple raster scans through a single point source, in target space.
 # This works with the power values derived from multiple scans through a single point source, typically made
 # in a horizontal raster pattern. It interpolates the power values onto a regular uniform grid, and plots
-# contours of the interpolated function. It also assumes that the scans themselves follow a uniform grid pattern 
+# contours of the interpolated function. It also assumes that the scans themselves follow a uniform grid pattern
 # in target space, which allows a 3D mesh/wireframe plot of the actual power values.
 # @param figColorList   List of matplotlib Figure objects to contain plots (two per frequency band)
 # @param calibScanList  List of SingleDishData objects of calibrated main scans (one per scan)
@@ -320,7 +320,7 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
         # 3D wireframe plot
         axis = axesColorList[2*band + 1]
         axis.plot_wireframe(rad_to_deg(azScans), rad_to_deg(elScans), power)
-        
+    
     # Axis settings and labels
     for band in range(2*numBands):
         axis = axesColorList[band]
@@ -330,7 +330,7 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
         axis.set_xlabel('Target coord 1 (deg)')
         axis.set_ylabel('Target coord 2 (deg)')
         axis.set_title(expName + ' : Beam pattern in band %d : %3.3f GHz' % (band // 2, plotFreqs[band // 2]))
-
+    
     return axesColorList
 
 
@@ -356,7 +356,7 @@ def plot_beam_patterns_mount(figColorList, calibListList, beamListList, transfor
     # One figure per frequency band
     for band in range(numBands):
         axesColorList.append(figColorList[band].add_subplot(1, 1, 1))
-
+    
     azMin_deg = elMin_deg = np.inf
     azMax_deg = elMax_deg = -np.inf
     # Iterate through sources
@@ -392,19 +392,24 @@ def plot_beam_patterns_mount(figColorList, calibListList, beamListList, transfor
                                                                    contour=[0.5, 0.1], ellType=ellType, \
                                                                    centerType=centerType, lineWidth=2)
             # Convert Gaussian ellipse and center to mount coordinate system
-            # (where needed, append rotator angle = 0.0 to go from 2-D ellipse coords to 3-D target coords)
+            # This assumes that the beam function is defined and plotted on a 2-D coordinate space, while the target
+            # coordinate space is at least 2-D, with the first 2 dimensions corresponding to the beam's ones
+            targetDim = targetToInstantMount.get_target_dimensions()
             for ellipse in gaussEllipses:
-                fromData = np.array((ellipse[0].get_xdata(), ellipse[0].get_ydata())).transpose()
-                numPoints = len(fromData)
+                numPoints = len(ellipse[0].get_xdata())
+                fromData = np.zeros((numPoints, targetDim), dtype='double')
+                fromData[:, 0:2] = np.array((ellipse[0].get_xdata(), ellipse[0].get_ydata())).transpose()
                 newEllipse = np.zeros((numPoints, 2), dtype='double')
                 for k in xrange(numPoints):
-                    newEllipse[k, :] = targetToInstantMount(fromData[k].tolist() + [0.0])
+                    newEllipse[k, :] = targetToInstantMount(fromData[k])
                 ellipse[0].set_xdata(newEllipse[:, 0])
                 ellipse[0].set_ydata(newEllipse[:, 1])
-            newCenter = targetToInstantMount(beamFuncList[band][0].mean.tolist() + [0.0])
+            fromCenter = np.zeros(targetDim, dtype='double')
+            fromCenter[0:2] = beamFuncList[band][0].mean
+            newCenter = targetToInstantMount(fromCenter)
             gaussCenter[0].set_xdata([newCenter[0]])
             gaussCenter[0].set_ydata([newCenter[1]])
-
+    
     # Axis settings and labels
     for band in range(numBands):
         axis = axesColorList[band]
@@ -414,7 +419,7 @@ def plot_beam_patterns_mount(figColorList, calibListList, beamListList, transfor
         axis.set_xlabel('Azimuth (deg)')
         axis.set_ylabel('Elevation (deg)')
         axis.set_title(expName + ' : Beams fitted in band %d : %3.3f GHz' % (band, plotFreqs[band]))
-        
+    
     return axesColorList
 
 

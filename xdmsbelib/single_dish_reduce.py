@@ -108,14 +108,20 @@ class TargetToInstantMountTransform(object):
         targetCoordinate = Coordinate(self.targetSys, targetCoord)
         mountCoordinate = self.targetToInstantMount.transform_coordinate(targetCoordinate, self.timeStamp)
         return mountCoordinate.get_vector()[0:2] * 180.0 / np.pi
-
+    
+    ## Dimension of target coordinate vector.
+    # @param self The current object
+    # @return Dimension of target coordinate vector
+    def get_target_dimensions(self):
+        return self.targetSys.get_dimensions()
+    
     ## Position of target itself in "instantaneous" mount coordinates, at the median time instant.
     # This transforms the origin of the target coordinate system, which represents the position of the target itself
     # at the median time instant, to mount coordinates.
     # @param self The current object
     # @return Position of target in mount coordinates
     def origin(self):
-        return self(np.zeros(self.targetSys.get_dimensions()))
+        return self(np.zeros(self.get_target_dimensions()))
 
 
 #----------------------------------------------------------------------------------------------------------------------
@@ -488,9 +494,12 @@ def reduce_point_source_scan(stdScanList, randomise=False):
     if len(validBeamFuncList) == 0:
         pointingResults = None
     else:
-        # Add dummy rotator angle = 0.0 (ignored for now)
-        targetCoords = np.array([func.mean for func in validBeamFuncList]).mean(axis=0).tolist() + [0.0]
         transform = TargetToInstantMountTransform(stdScanList)
+        # Create target coordinate vector of appropriate size, filled with zeros
+        targetCoords = np.zeros(transform.get_target_dimensions(), dtype='double')
+        meanBeamCoords = np.array([func.mean for func in validBeamFuncList]).mean(axis=0)
+        # The first few dimensions (typically 2) of target coordinate vector are loaded with mean beam position
+        targetCoords[:meanBeamCoords.size] = meanBeamCoords
         mountCoords = transform(targetCoords)
         pointingResults = targetCoords, mountCoords.tolist()
         

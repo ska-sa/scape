@@ -110,6 +110,28 @@ def get_scan_parameters(fptExtension, scanExtension, srcAzm, srcEle, pointingErr
 
 
 #---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  config_logging
+#---------------------------------------------------------------------------------------------------------
+
+## Configure the logging support to either use the default (built-in) or configure using an external
+# loggin config file
+#
+# @param logConfFile Logging configuration file [None]. If not specified, the default is used.
+def config_logging(logConfFile=None):
+    if logConfFile:
+        try:
+            logging.config.fileConfig(logConfFile)
+        except ConfigParser.NoSectionError:
+            message = "Logging configuration file not found or wrong format! Using built-in default."
+            config_logging()
+            logger.error(message)
+    else:
+        logging.basicConfig(level=logging.INFO,
+                            stream=sys.stdout,
+                            format="%(asctime)s - %(name)s - %(filename)s:%(lineno)s - %(levelname)s - %(message)s")
+
+
+#---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  reduction_script_options
 #---------------------------------------------------------------------------------------------------------
 
@@ -188,28 +210,6 @@ def get_exp_list():
            '13 = Polarisation Calibration [Not Implemented]             ' + \
            '14 = OH Maser Monitoring [Not Implemented]                  ' + \
            '15 = Galactic HI Measurement [Not Implemented]              '
-
-
-#---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  config_logging
-#---------------------------------------------------------------------------------------------------------
-
-## Configure the logging support to either use the default (built-in) or configure using an external
-# loggin config file
-#
-# @param logConfFile Logging configuration file [None]. If not specified, the default is used.
-def config_logging(logConfFile=None):
-    if logConfFile:
-        try:
-            logging.config.fileConfig(logConfFile)
-        except ConfigParser.NoSectionError:
-            message = "Logging configuration file not found or wrong format! Using built-in default."
-            config_logging()
-            logger.error(message)
-    else:
-        logging.basicConfig(level=logging.INFO,
-                            stream=sys.stdout,
-                            format="%(asctime)s - %(name)s - %(filename)s:%(lineno)s - %(levelname)s - %(message)s")
 
 
 #---------------------------------------------------------------------------------------------------------
