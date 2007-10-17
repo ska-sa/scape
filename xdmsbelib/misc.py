@@ -569,6 +569,7 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
     if (outputFormat.lower() == 'stokes'):
         sigBuf = np.dot(coherency2stokesMatrix, sigBuf)
     
+
     return sigBuf
 
 
