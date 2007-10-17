@@ -9,6 +9,7 @@ from __future__ import division
 import xdmsbe.xdmpyfits as pyfits
 from optparse import OptionParser
 import numpy as np
+import numpy.linalg as linalg
 import logging
 import logging.config
 import re
@@ -588,3 +589,63 @@ def calc_ant_eff_area_and_gain(pointSourceSens, freq):
     waveLength = lightSpeed / freq
     antGain = (4.0 * np.pi * effArea) / (waveLength**2)
     return effArea, 10.0 * np.log10(antGain)
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION : unwrap_angles
+#---------------------------------------------------------------------------------------------------------
+
+## Unwrap a sequence of angles so that they do not straddle the 0 / 360 or -180 / 180 degree boundaries.
+# This assumes that the range of angle values is less than 180 degrees. If the angles are within 90 degrees
+# of 180/-180 (i.e. in the range (-180,-90) U (90,180)), they are remapped to the range (90, 270). On the other 
+# hand, if the angles are within 90 degrees of 0/360 (i.e. in the range (0,90) U (270,360)), they are remapped 
+# to the range (-90, 90).
+#
+# @param    angles              Sequence of angle values, in degrees
+# @return   Modified sequence of angle values that avoids any angle boundaries causing wrap-around
+def unwrap_angles(angles):
+    angles = np.atleast_1d(np.asarray(angles))
+    # This assumes that the angles wrap at +180 and -180, with some positive and negative angles
+    if np.all((angles < -90.0) + (angles > 90.0)) and (angles.min() < -90.0) and (angles.max() > 90.0):
+        angles = angles % 360.0
+    # This assumes that the angles wrap at 0 and 360, with some angles at either end
+    elif np.all((angles < 90.0) + (angles > 270.0)) and (angles.min() < 90.0) and (angles.max() > 270.0):
+        angles = (angles + 180.0) % 360.0 - 180.0
+    return angles
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  gaussian_ellipses
+#---------------------------------------------------------------------------------------------------------
+
+## Determine ellipse(s) representing 2-D Gaussian function.
+#
+# @param    mean            2-dimensional mean vector
+# @param    cov             2x2 covariance matrix
+# @param    contour         Contour height of ellipse(s), as a (list of) factor(s) of the peak value [0.5]
+#                           For a factor sigma of the standard deviation, use e^(-0.5*sigma^2) here
+# @param    numPoints       Number of points on each ellipse [200]
+# @return   ellipses        Array of dimension len(contour) x numPoints x 2, containing 2-D ellipse coordinates
+
+def gaussian_ellipses(mean, cov, contour=0.5, numPoints=200):
+
+    mean = np.asarray(mean)
+    cov = np.asarray(cov)
+    contour = np.atleast_1d(np.asarray(contour))
+    if (mean.shape != (2,)) or (cov.shape != (2, 2)):
+        message = 'Mean and covariance should be 2-dimensional, with shapes (2,) and (2,2) instead of' \
+                  + str(mean.shape) + ' and ' + str(cov.shape)
+        logger.error(message)
+        raise ValueError, message
+    # Create parametric circle
+    t = np.linspace(0, 2*np.pi, numPoints)
+    circle = np.vstack((np.cos(t), np.sin(t)))
+    # Determine and apply transformation to ellipse
+    eigVal, eigVec = linalg.eig(cov)
+    circleToEllipse = np.dot(eigVec, np.diag(np.sqrt(eigVal)))
+    baseEllipse = np.real(np.dot(circleToEllipse, circle))
+    ellipses = []
+    for cnt in contour:
+        ellipse = np.sqrt(-2*np.log(cnt)) * baseEllipse + mean[:, np.newaxis]
+        ellipses.append(ellipse.transpose())
+    return np.array(ellipses)

@@ -9,7 +9,6 @@ from __future__ import division
 import numpy as np
 import matplotlib.patches as patches
 import matplotlib.axes3d as mplot3d
-import numpy.linalg as linalg
 import logging
 import pylab
 import os
@@ -212,50 +211,6 @@ def draw_std_corridor(axis, xVals, mu, sigma, muLabel = None, sigmaLabel = None,
         return muHandle, sigmaCorHandles, sigmaPosHandle, sigmaNegHandle
     else:
         return muHandle, sigmaCorHandles
-
-
-#---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_gaussian_ellipse
-#---------------------------------------------------------------------------------------------------------
-
-## Plot ellipse(s) representing 2-D Gaussian function.
-#
-# @param    axis            Matplotlib axes object associated with a matplotlib Figure
-# @param    mean            2-dimensional mean vector
-# @param    cov             2x2 covariance matrix
-# @param    contour         Contour height of ellipse(s), as a (list of) factor(s) of the peak value [0.5]
-#                           For a factor sigma of the standard deviation, use e^(-0.5*sigma^2) here
-# @param    ellType         Matplotlib linetype string for ellipse line ['b-']
-# @param    centerType      Matplotlib linetype string for center marker ['b+']
-# @param    lineWidth       Line widths for ellipse and center marker [1]
-# @param    markerSize      Size of center marker [12]
-# @return   ellipseHandle   Handle(s) to contour plot
-# @return   centerHandle    Handle to center of Gaussian
-# @todo Rather use matplotlib.patches.Ellipse instead of home-cooked one, just get angle from cov...
-
-def plot_gaussian_ellipse(axis, mean, cov, contour=0.5, ellType='b-', centerType='b+', lineWidth=1, markerSize=12):
-    
-    mean = np.asarray(mean)
-    cov = np.asarray(cov)
-    contour = np.atleast_1d(np.asarray(contour))
-    if (mean.shape != (2,)) or (cov.shape != (2, 2)):
-        message = 'Mean and covariance should be 2-dimensional, with shapes (2,) and (2,2) instead of' \
-                  + str(mean.shape) + ' and ' + str(cov.shape)
-        logger.error(message)
-        raise ValueError, message
-    # Create parametric circle
-    t = np.linspace(0, 2*np.pi, 200)
-    circle = np.vstack((np.cos(t), np.sin(t)))
-    # Determine and apply transformation to ellipse
-    eigVal, eigVec = linalg.eig(cov)
-    circleToEllipse = np.dot(eigVec, np.diag(np.sqrt(eigVal)))
-    baseEllipse = np.real(np.dot(circleToEllipse, circle))
-    ellipseHandle = []
-    for cnt in contour:
-        ellipse = np.sqrt(-2*np.log(cnt)) * baseEllipse + mean[:, np.newaxis]
-        ellipseHandle.append(axis.plot(ellipse[0], ellipse[1], ellType, lw=lineWidth))
-    centerHandle = axis.plot([mean[0]], [mean[1]], centerType, ms=markerSize, aa=False, mew=lineWidth)
-    return ellipseHandle, centerHandle
 
 
 #---------------------------------------------------------------------------------------------------------

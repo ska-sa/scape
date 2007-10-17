@@ -16,6 +16,7 @@
 
 import xdmsbe.xdmsbelib.fitting as fitting
 import xdmsbe.xdmsbelib.vis as vis
+import xdmsbe.xdmsbelib.misc as misc
 from conradmisclib.transforms import rad_to_deg
 import matplotlib.axes3d as mplot3d
 import numpy as np
@@ -200,42 +201,44 @@ def plot_beam_pattern_target(figColorList, calibScanList, beamFuncList, expName)
     for band in range(numBands):
         axesColorList.append(figColorList[band].add_subplot(1, 1, 1))
     
-    # Extract total power and target coordinates of all scans
+    # Extract total power and target coordinates (in degrees) of all scans
     totalPower = []
     targetCoords = []
     for scan in calibScanList:
         totalPower.append(scan.total_power())
-        targetCoords.append(scan.targetCoords)
+        targetCoords.append(rad_to_deg(scan.targetCoords))
+    # Also extract beam centres, in order to unwrap them with the rest of angle data
+    for band in range(numBands):
+        targetCoords.append(rad_to_deg(np.atleast_2d(beamFuncList[band][0].mean)))
     totalPower = np.concatenate(totalPower)
     targetCoords = np.concatenate(targetCoords)
+    # Unwrap all angle coordinates in the plot concurrently, to prevent bad plots
+    # (this is highly unlikely, as the target coordinate space is typically centred around the origin)
+    targetCoords = np.array([misc.unwrap_angles(ang) for ang in targetCoords.transpose()]).transpose()
+    beamCentres = targetCoords[-numBands:]
+    targetCoords = targetCoords[:-numBands]
     
     # Iterate through figures (one per band)
     for band in range(numBands):
         axis = axesColorList[band]
         power = totalPower[:, band]
         # Show the locations of the scan samples themselves, with marker sizes indicating power values
-        vis.plot_marker_3d(axis, rad_to_deg(targetCoords[:, 0]), rad_to_deg(targetCoords[:, 1]), power)
+        vis.plot_marker_3d(axis, targetCoords[:, 0], targetCoords[:, 1], power)
         # Plot the fitted Gaussian beam function as contours
         if beamFuncList[band][1]:
             ellType, centerType = 'r-', 'r+'
         else:
             ellType, centerType = 'y-', 'y+'
-        gaussEllipses, gaussCenter = vis.plot_gaussian_ellipse(axis, beamFuncList[band][0].mean, \
-                                                               np.diag(beamFuncList[band][0].var), \
-                                                               contour=[0.5, 0.1], ellType=ellType, \
-                                                               centerType=centerType, lineWidth=2)
-        # Change from radians to degrees for prettier picture
-        for ellipse in gaussEllipses:
-            ellipse[0].set_xdata(rad_to_deg(ellipse[0].get_xdata()))
-            ellipse[0].set_ydata(rad_to_deg(ellipse[0].get_ydata()))
-        gaussCenter[0].set_xdata(rad_to_deg(gaussCenter[0].get_xdata()[0]))
-        gaussCenter[0].set_ydata(rad_to_deg(gaussCenter[0].get_ydata()[0]))
+        ellipses = misc.gaussian_ellipses(beamCentres[band], np.diag(beamFuncList[band][0].var), contour=[0.5, 0.1])
+        for ellipse in ellipses:
+            axis.plot(rad_to_deg(ellipse[:, 0]), rad_to_deg(ellipse[:, 1]), ellType, lw=2)
+        axis.plot([beamCentres[band][0]], [beamCentres[band][1]], centerType, ms=12, aa=False, mew=2)
     
     # Axis settings and labels
     for band in range(numBands):
         axis = axesColorList[band]
-        axis.set_xlim(rad_to_deg(targetCoords[:, 0].min()), rad_to_deg(targetCoords[:, 0].max()))
-        axis.set_ylim(rad_to_deg(targetCoords[:, 1].min()), rad_to_deg(targetCoords[:, 1].max()))
+        axis.set_xlim(targetCoords[:, 0].min(), targetCoords[:, 0].max())
+        axis.set_ylim(targetCoords[:, 1].min(), targetCoords[:, 1].max())
         axis.set_aspect('equal')
         axis.set_xlabel('Target coord 1 (deg)')
         axis.set_ylabel('Target coord 2 (deg)')
@@ -268,32 +271,37 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
         axesColorList.append(mplot3d.Axes3D(figColorList[band + numBands]))
     
     # Extract total power and and first two target coordinates (assumed to be (az,el)) of all scans
-    azScans = []
-    elScans = []
+    azScans_deg = []
+    elScans_deg = []
     totalPowerScans = []
     for scan in calibScanList:
-        azScan = scan.targetCoords[:, 0]
+        # Unwrap angles, so that the direction in which angles change are more accurately determined
+        azScan_deg = misc.unwrap_angles(rad_to_deg(scan.targetCoords[:, 0]))
         # Reverse any scans with descending azimuth angle, so that all scans run in the same direction
-        if azScan[0] < azScan[-1]:
-            azScans.append(azScan)
-            elScans.append(scan.targetCoords[:, 1])
+        if azScan_deg[0] < azScan_deg[-1]:
+            azScans_deg.append(azScan_deg)
+            elScans_deg.append(misc.unwrap_angles(rad_to_deg(scan.targetCoords[:, 1])))
             totalPowerScans.append(scan.total_power()[np.newaxis, :, :])
         else:
-            azScans.append(np.flipud(azScan))
-            elScans.append(np.flipud(scan.targetCoords[:, 1]))
+            azScans_deg.append(np.flipud(azScan_deg))
+            elScans_deg.append(np.flipud(misc.unwrap_angles(rad_to_deg(scan.targetCoords[:, 1]))))
             totalPowerScans.append(np.flipud(scan.total_power())[np.newaxis, :, :])
-    azScans = np.vstack(azScans)
-    elScans = np.vstack(elScans)
+    azScans_deg = np.vstack(azScans_deg)
+    elScans_deg = np.vstack(elScans_deg)
     totalPowerScans = np.concatenate(totalPowerScans, axis=0)
+    # Unwrap angles yet again, to make sure the group of scans stay together
+    # (It's highly unlikely that unwrapping is necessary, as the target space is typically centred around the origin)
+    azScans_deg = misc.unwrap_angles(azScans_deg.ravel()).reshape(azScans_deg.shape)
+    elScans_deg = misc.unwrap_angles(elScans_deg.ravel()).reshape(elScans_deg.shape)
     # Set up uniform 101x101 mesh grid for contour plot
-    targetX = np.linspace(azScans.min(), azScans.max(), 101)
-    targetY = np.linspace(elScans.min(), elScans.max(), 101)
+    targetX = np.linspace(azScans_deg.min(), azScans_deg.max(), 101)
+    targetY = np.linspace(elScans_deg.min(), elScans_deg.max(), 101)
     targetMeshX, targetMeshY = np.meshgrid(targetX, targetY)
     meshCoords = np.vstack((targetMeshX.ravel(), targetMeshY.ravel()))
     # Jitter the target coordinates to make degenerate triangles unlikely during Delaunay triangulation for contours
-    jitter = np.vstack((azScans.std() * np.random.randn(azScans.size), \
-                        elScans.std() * np.random.randn(elScans.size)))
-    jitteredCoords = np.vstack((azScans.ravel(), elScans.ravel())) + 0.0001 * jitter
+    jitter = np.vstack((azScans_deg.std() * np.random.randn(azScans_deg.size), \
+                        elScans_deg.std() * np.random.randn(elScans_deg.size)))
+    jitteredCoords = np.vstack((azScans_deg.ravel(), elScans_deg.ravel())) + 0.0001 * jitter
     
     # Iterate through figures (two per band)
     for band in range(numBands):
@@ -301,7 +309,7 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
         # 2D contour plot
         axis = axesColorList[2*band]
         # Show the locations of the scan samples themselves
-        axis.plot(rad_to_deg(azScans.ravel()), rad_to_deg(elScans.ravel()), '.b', alpha=0.5)
+        axis.plot(azScans_deg.ravel(), elScans_deg.ravel(), '.b', alpha=0.5)
         # Interpolate the power values onto a 2-D az-el grid for a smoother contour plot
         gridder = fitting.Delaunay2DFit(defaultVal = power.min())
         gridder.fit(jitteredCoords, power.ravel())
@@ -312,20 +320,19 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
         lineWidths = 2*np.ones(len(contourLevels))
         lineWidths[4] = 4
         # Color the 0.5 and 0.1 contours red, to coincide with the scheme followed in the beam fitting plots
-        colors = ['b'] * len(contourLevels)
-        colors[0] = colors[4] = 'r'
+#        colors = ['b'] * len(contourLevels)
+#        colors[0] = colors[4] = 'r'
         # Plot contours of interpolated beam pattern
-        axis.contour(rad_to_deg(targetMeshX), rad_to_deg(targetMeshY), meshPower, contourLevels, \
-                     linewidths=lineWidths, colors=colors)
+        axis.contour(targetMeshX, targetMeshY, meshPower, contourLevels, linewidths=lineWidths, colors='b')
         # 3D wireframe plot
         axis = axesColorList[2*band + 1]
-        axis.plot_wireframe(rad_to_deg(azScans), rad_to_deg(elScans), power)
+        axis.plot_wireframe(azScans_deg, elScans_deg, power)
     
     # Axis settings and labels
     for band in range(2*numBands):
         axis = axesColorList[band]
-        axis.set_xlim(rad_to_deg(targetX[0]), rad_to_deg(targetX[-1]))
-        axis.set_ylim(rad_to_deg(targetY[0]), rad_to_deg(targetY[-1]))
+        axis.set_xlim(targetX[0], targetX[-1])
+        axis.set_ylim(targetY[0], targetY[-1])
         axis.set_aspect('equal')
         axis.set_xlabel('Target coord 1 (deg)')
         axis.set_ylabel('Target coord 2 (deg)')
@@ -353,14 +360,18 @@ def plot_beam_patterns_mount(figColorList, calibListList, beamListList, transfor
     # Use the frequency bands of the first scan of the first source as reference for the rest
     plotFreqs = calibListList[0][0].bandFreqs / 1e9   # Hz to GHz
     numBands = len(plotFreqs)
+    numSources = len(calibListList)
+    # Number of points in each Gaussian ellipse
+    numEllPoints = 200
+    contours = [0.5, 0.1]
+    numEllipses = len(contours)
     # One figure per frequency band
     for band in range(numBands):
         axesColorList.append(figColorList[band].add_subplot(1, 1, 1))
     
-    azMin_deg = elMin_deg = np.inf
-    azMax_deg = elMax_deg = -np.inf
-    # Iterate through sources
-    for calibScanList, beamFuncList, targetToInstantMount in zip(calibListList, beamListList, transformList):
+    # Iterate through sources and collect data, converting target coordinates to instantaneous mount coordinates
+    totalPowerList, azAngList, elAngList = [], [], []
+    for calibScanList, targetToInstantMount in zip(calibListList, transformList):
         # Extract total power and instantaneous mount coordinates of all scans of a specific source
         totalPower, azAng_deg, elAng_deg = [], [], []
         for scan in calibScanList:
@@ -368,54 +379,77 @@ def plot_beam_patterns_mount(figColorList, calibListList, beamListList, transfor
             mountCoords = np.array([targetToInstantMount(targetCoord) for targetCoord in scan.targetCoords])
             azAng_deg.append(mountCoords[:, 0].tolist())
             elAng_deg.append(mountCoords[:, 1].tolist())
-        totalPower = np.concatenate(totalPower)
-        azAng_deg, elAng_deg = np.concatenate(azAng_deg), np.concatenate(elAng_deg)
-        
-        # Determine overall axis limits
-        azMin_deg = min(azMin_deg, azAng_deg.min())
-        azMax_deg = max(azMax_deg, azAng_deg.max())
-        elMin_deg = min(elMin_deg, elAng_deg.min())
-        elMax_deg = max(elMax_deg, elAng_deg.max())
-        # Iterate through figures (one per band)
+        totalPowerList.append(np.concatenate(totalPower))
+        azAngList.append(np.concatenate(azAng_deg))
+        elAngList.append(np.concatenate(elAng_deg))
+    # Create Gaussian contour ellipses in instantaneous mount coordinates
+    for beamFuncList, targetToInstantMount in zip(beamListList, transformList):
+        targetDim = targetToInstantMount.get_target_dimensions()
         for band in range(numBands):
-            axis = axesColorList[band]
+            # Create ellipses in target coordinates
+            ellipses = misc.gaussian_ellipses(beamFuncList[band][0].mean, np.diag(beamFuncList[band][0].var), \
+                                              contour=contours, numPoints=numEllPoints)
+            # Convert Gaussian ellipses and center to instantaneous mount coordinate system
+            # This assumes that the beam function is defined on a 2-D coordinate space, while the target
+            # coordinate space is at least 2-D, with the first 2 dimensions corresponding with the beam's ones
+            targetCoord = np.zeros(targetDim, dtype='double')
+            targetCoord[0:2] = beamFuncList[band][0].mean
+            mountCoord = targetToInstantMount(targetCoord)
+            azAngList.append(np.array([mountCoord[0]]))
+            elAngList.append(np.array([mountCoord[1]]))
+            for ellipse in ellipses:
+                targetCoords = np.zeros((len(ellipse), targetDim), dtype='double')
+                targetCoords[:, 0:2] = ellipse
+                mountCoords = np.array([targetToInstantMount(targetCoord) for targetCoord in targetCoords])
+                azAngList.append(mountCoords[:, 0])
+                elAngList.append(mountCoords[:, 1])
+    
+    # Do global unwrapping of all angles, across all sources, to prevent sources being split around angle boundaries
+    angInds = np.cumsum([0] + [ang.size for ang in azAngList])
+    azAngMod = misc.unwrap_angles(np.concatenate(azAngList))
+    azAngList = [azAngMod[angInds[i-1]:angInds[i]] for i in xrange(1, len(angInds))]
+    elAngMod = misc.unwrap_angles(np.concatenate(elAngList))
+    elAngList = [elAngMod[angInds[i-1]:angInds[i]] for i in xrange(1, len(angInds))]
+    # Determine overall axis limits
+    azMin_deg = np.concatenate(azAngList).min()
+    azMax_deg = np.concatenate(azAngList).max()
+    elMin_deg = np.concatenate(elAngList).min()
+    elMax_deg = np.concatenate(elAngList).max()
+    # Separate scan points and beam info again
+    azBeamInfo = np.concatenate(azAngList[numSources:]).reshape(numSources, numBands, 1+numEllipses*numEllPoints)
+    elBeamInfo = np.concatenate(elAngList[numSources:]).reshape(numSources, numBands, 1+numEllipses*numEllPoints)
+    azAngList = azAngList[:numSources]
+    elAngList = elAngList[:numSources]
+    
+    # Iterate through figures (one per band)
+    for band in range(numBands):
+        axis = axesColorList[band]
+        # Iterate through sources and plot data
+        for sourceData in zip(azAngList, elAngList, totalPowerList, azBeamInfo, elBeamInfo, beamListList):
+            azScan, elScan, totalPower, azBeam, elBeam, beamFuncList = sourceData
             power = totalPower[:, band]
             # Show the locations of the scan samples themselves, with marker sizes indicating power values
-            vis.plot_marker_3d(axis, azAng_deg, elAng_deg, power)
-            # Plot the fitted Gaussian beam function as contours
+            vis.plot_marker_3d(axis, azScan, elScan, power)
+            # Plot the fitted Gaussian beam function as contours with a centre marker
             if beamFuncList[band][1]:
                 ellType, centerType = 'r-', 'r+'
             else:
                 ellType, centerType = 'y-', 'y+'
-            gaussEllipses, gaussCenter = vis.plot_gaussian_ellipse(axis, beamFuncList[band][0].mean, \
-                                                                   np.diag(beamFuncList[band][0].var), \
-                                                                   contour=[0.5, 0.1], ellType=ellType, \
-                                                                   centerType=centerType, lineWidth=2)
-            # Convert Gaussian ellipse and center to mount coordinate system
-            # This assumes that the beam function is defined and plotted on a 2-D coordinate space, while the target
-            # coordinate space is at least 2-D, with the first 2 dimensions corresponding to the beam's ones
-            targetDim = targetToInstantMount.get_target_dimensions()
-            for ellipse in gaussEllipses:
-                numPoints = len(ellipse[0].get_xdata())
-                fromData = np.zeros((numPoints, targetDim), dtype='double')
-                fromData[:, 0:2] = np.array((ellipse[0].get_xdata(), ellipse[0].get_ydata())).transpose()
-                newEllipse = np.zeros((numPoints, 2), dtype='double')
-                for k in xrange(numPoints):
-                    newEllipse[k, :] = targetToInstantMount(fromData[k])
-                ellipse[0].set_xdata(newEllipse[:, 0])
-                ellipse[0].set_ydata(newEllipse[:, 1])
-            fromCenter = np.zeros(targetDim, dtype='double')
-            fromCenter[0:2] = beamFuncList[band][0].mean
-            newCenter = targetToInstantMount(fromCenter)
-            gaussCenter[0].set_xdata([newCenter[0]])
-            gaussCenter[0].set_ydata([newCenter[1]])
-    
-    # Axis settings and labels
-    for band in range(numBands):
-        axis = axesColorList[band]
+            for azEllipse, elEllipse in zip(azBeam[band, 1:].reshape(numEllipses, numEllPoints), \
+                                            elBeam[band, 1:].reshape(numEllipses, numEllPoints)):
+                axis.plot(azEllipse, elEllipse, ellType, lw=2)
+            axis.plot([azBeam[band, 0]], [elBeam[band, 0]], centerType, ms=12, aa=False, mew=2)
+        
+        # Axis settings and labels
         axis.set_xlim(azMin_deg, azMax_deg)
         axis.set_ylim(elMin_deg, elMax_deg)
-        axis.set_aspect('equal')
+        # Only set axis aspect ratio to equal if it is not too extreme
+        if azMin_deg == azMax_deg:
+            aspectRatio = 1e20
+        else:
+            aspectRatio = (elMax_deg - elMin_deg) / (azMax_deg - azMin_deg)
+        if (aspectRatio > 0.1) and (aspectRatio < 10):
+            axis.set_aspect('equal')
         axis.set_xlabel('Azimuth (deg)')
         axis.set_ylabel('Elevation (deg)')
         axis.set_title(expName + ' : Beams fitted in band %d : %3.3f GHz' % (band, plotFreqs[band]))
@@ -562,6 +596,9 @@ def plot_pointing_error(figColor, resultList, expName, scale=1):
     azErrorSigma *= scale
     elErrorSigma *= scale
     meanAz, meanEl = steeredAz + azError, steeredEl + elError
+    # Unwrap azimuth angles to make sure steered and estimated positions are as close together as possible
+    newAz = np.array([misc.unwrap_angles([steeredAz[ind], meanAz[ind]]) for ind in xrange(len(meanAz))])
+    steeredAz, meanAz = newAz.transpose()
     # This forms the lines connecting steered and estimated position markers
     arrowsAz = np.vstack((steeredAz, meanAz, np.tile(np.nan, (len(meanAz))))).transpose().ravel()
     arrowsEl = np.vstack((steeredEl, meanEl, np.tile(np.nan, (len(meanEl))))).transpose().ravel()
@@ -569,10 +606,12 @@ def plot_pointing_error(figColor, resultList, expName, scale=1):
     axis = axesColorList[0]
     # Location of "true" source, indicated by Gaussian center + spread (1=sigma and 2-sigma contours)
     for ind in xrange(len(meanAz)):
-        vis.plot_gaussian_ellipse(axis, (meanAz[ind], meanEl[ind]), \
-                                  np.diag((azErrorSigma[ind] ** 2, elErrorSigma[ind] ** 2)), \
-                                  contour=np.exp(-0.5*np.array([1, 2]) ** 2), \
-                                  ellType='r-', centerType='or', lineWidth=1, markerSize=4)
+        ellipses = misc.gaussian_ellipses((meanAz[ind], meanEl[ind]), \
+                                          np.diag((azErrorSigma[ind] ** 2, elErrorSigma[ind] ** 2)), \
+                                          contour=np.exp(-0.5*np.array([1, 2]) ** 2))
+        for ellipse in ellipses:
+            axis.plot(ellipse[:, 0], ellipse[:, 1], 'r-', lw=1)
+        axis.plot([meanAz[ind]], [meanEl[ind]], 'or', ms=4, aa=False, mew=1)
     # Lines connecting markers
     axis.plot(arrowsAz, arrowsEl, 'k')
     # Marker indicating steered position (where the source was thought to be)
