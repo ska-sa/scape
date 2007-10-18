@@ -8,14 +8,14 @@
 # pylint: disable-msg=C0103
 
 from __future__ import division
+import logging
 import misc
+import stats
+import time
 import numpy as np
+from xdmsbe.xdmsbelib import fitsreader
+import xdmsbe.xdmsbelib.stats as stats
 from numpy import sqrt
-#import xdmsbe.xdmsbelib.stats as stats
-#import logging
-#import stats
-#import time
-#from xdmsbe.xdmsbelib import fitsreader
 
 
 #=========================================================================================================
@@ -114,16 +114,18 @@ def time_to_az_el(time_s, dec_rad, lat_rad):
 
 
 #---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :    analyse_stokes
+#--- FUNCTION :    readable_stokes
 #---------------------------------------------------------------------------------------------------------
 
 ##  Displays an understandable interpretation of the stokes parameters
 #
-#  @param   stokes     a stokes vector
+#  @param   stokes             a stokes vector
+#
+#  @return  readablestokes     a vector describing a stokes vector in more understandable form: I, positionAngle, fraction linear polarization, fraction circular polarization
 #
 #  pylint: disable-msg=R0914,R0915,C0321,W0104,C0301,W0101
 
-def analyse_stokes(stokes):
+def readable_stokes(stokes):
 
     I             = stokes[0];
     Q             = stokes[1];
@@ -132,15 +134,13 @@ def analyse_stokes(stokes):
 
 #    Ex            = np.sqrt((I+Q)/2);       #magnitude of x pol
 #    Ey            = np.sqrt((I-Q)/2);       #magnitude of y pol
-    Etheta        = np.arctan2(V, U);        #phase angle between pol
+#    Etheta        = np.arctan2(V, U);       #phase angle between pol
 #    fracPol       = np.sqrt(Q*Q+U*U+V*V)/I; #fracion of power that is polarized
+    posAngle      = 0.5*np.arctan2(U, Q);   #position angle/ parallactic rotation angle
     fracLinPol    = np.sqrt(Q*Q+U*U)/I;     #fraction that is linearly polarized
     fracCircPol   = np.abs(V)/I;            #fraction that is circularly polarized
-    posAngle      = 0.5*np.arctan2(U, Q);    #position angle/ parallactic rotation angle
     
-    print ";    ".join(["Magnitude I: %s" % (I)]);
-    print ";    ".join(["Position angle: %s, phase angle: %s" % (posAngle*180/np.pi, Etheta*180/np.pi)]);
-    print ";    ".join(["Frac lin pol: %s, frac circ pol: %s" % (fracLinPol, fracCircPol)]);
+    return np.array([I, posAngle, fracLinPol, fracCircPol]);
 
 
 #---------------------------------------------------------------------------------------------------------
@@ -156,61 +156,19 @@ def analyse_stokes(stokes):
 #  pylint: disable-msg=R0914,R0915,C0321,W0104,C0301,W0101
 
 def compare_stokes(stokes, stokesX, stokesSigma):
-    I             = stokes[0];
-    Q             = stokes[1];
-    U             = stokes[2];
-    V             = stokes[3];
- 
-#    Ex            = np.sqrt((I+Q)/2);       #magnitude of x pol
-#    Ey            = np.sqrt((I-Q)/2);       #magnitude of y pol
-    Etheta        = np.arctan2(V, U);        #phase angle between pol
-#    fracPol       = np.sqrt(Q*Q+U*U+V*V)/I; #fracion of power that is polarized
-    fracLinPol    = np.sqrt(Q*Q+U*U)/I;     #fraction that is linearly polarized
-    fracCircPol   = np.abs(V)/I;            #fraction that is circularly polarized
-    posAngle      = 0.5*np.arctan2(U, Q);    #position angle/ parallactic rotation angle
+    
+    readableStokes  = readable_stokes(stokes);
+    readableStokesX = readable_stokes(stokesX);
 
-    IX             = stokesX[0];
-    QX             = stokesX[1];
-    UX             = stokesX[2];
-    VX             = stokesX[3];
- 
-    EthetaX        = np.arctan2(VX, UX);            #phase angle between pol
-    fracLinPolX    = np.sqrt(QX*QX+UX*UX)/IX;      #fraction that is linearly polarized
-    fracCircPolX   = np.abs(VX)/IX;                #fraction that is circularly polarized
-    posAngleX      = 0.5*np.arctan2(UX, QX);        #position angle/ parallactic rotation angle
-
-    IS             = stokesSigma[0];
-    QS             = stokesSigma[1];
-    US             = stokesSigma[2];
-    VS             = stokesSigma[3];
-
-   
-    print '---Comparison of source------------'
+    print '---Comparison of sources-------------------------'
     print '              True         Estimated      Sigma'
-    print  ";".join(["I            %8.3f  \t %8.3f \t %8.3f" % (I, IX, IS)]);
-    print  ";".join(["Q            %8.3f  \t %8.3f \t %8.3f" % (Q, QX, QS)]);
-    print  ";".join(["U            %8.3f  \t %8.3f \t %8.3f" % (U, UX, US)]);
-    print  ";".join(["V            %8.3f  \t %8.3f \t %8.3f" % (V, VX, VS)]);
-    print  ";".join(["Pos angle    %8.3f  \t %8.3f " % (posAngle*180/np.pi, posAngleX*180/np.pi)]);
-    print  ";".join(["Phase angle  %8.3f  \t %8.3f" % (Etheta*180/np.pi, EthetaX*180/np.pi)]);
-    print  ";".join(["Frac linpol  %8.3f  \t %8.3f" % (fracLinPol, fracLinPolX)]);
-    print  ";".join(["Frac circpol %8.3f  \t %8.3f" % (fracCircPol, fracCircPolX)]);
-
-
-#---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :    analyse_feedMx
-#---------------------------------------------------------------------------------------------------------
-
-##  Displays the feed matrix in a readable form
-#
-#  @param   feedMx     complex feed matrix
-#
-
-def analyse_feedMx(feedMx):
-
-    print ";".join(["[%s L %s,  %s L %s;" % (np.abs(feedMx[0, 0]), np.angle(feedMx[0, 0])*180/np.pi, np.abs(feedMx[0, 1]), np.angle(feedMx[0, 1])*180/np.pi)]);
-    print ";".join([" %s L %s,  %s L %s]" % (np.abs(feedMx[1, 0]), np.angle(feedMx[1, 0])*180/np.pi, np.abs(feedMx[1, 1]), np.angle(feedMx[1, 1])*180/np.pi)]);
-
+    print  ";".join(["I            %8.3f  \t %8.3f \t %8.3f" % (stokes[0], stokesX[0], stokesSigma[0])]);
+    print  ";".join(["Q            %8.3f  \t %8.3f \t %8.3f" % (stokes[1], stokesX[1], stokesSigma[1])]);
+    print  ";".join(["U            %8.3f  \t %8.3f \t %8.3f" % (stokes[2], stokesX[2], stokesSigma[2])]);
+    print  ";".join(["V            %8.3f  \t %8.3f \t %8.3f" % (stokes[3], stokesX[3], stokesSigma[3])]);
+    print  ";".join(["Pos angle    %8.3f  \t %8.3f " % (readableStokes[1]*180/np.pi, readableStokesX[1]*180/np.pi)]);
+    print  ";".join(["Frac linpol  %8.3f  \t %8.3f" % (readableStokes[2], readableStokesX[2])]);
+    print  ";".join(["Frac circpol %8.3f  \t %8.3f" % (readableStokes[3], readableStokesX[3])]);
 
 
 #---------------------------------------------------------------------------------------------------------
@@ -226,12 +184,13 @@ def analyse_feedMx(feedMx):
 #  pylint: disable-msg=R0914,R0915,C0321,W0104,C0301,W0101
 
 def compare_feedMx(feedMx, feedMxX, feedMxS):
-    print '---Comparison of feed Matrix------------'
+
+    print '---Comparison of feed Matrices-------------------'
     print '         True                     Estimated                Sigma'
-    print  ";".join(["   %8.3f + %8.3fj \t %8.3f + %8.3fj \t %8.3f + %8.3fj" % (np.real(feedMx[0, 0]), np.imag(feedMx[0, 0]), np.real(feedMxX[0, 0]), np.imag(feedMxX[0, 0]), np.real(feedMxS[0, 0]), np.imag(feedMxS[0, 0]))]);
-    print  ";".join(["   %8.3f + %8.3fj \t %8.3f + %8.3fj \t %8.3f + %8.3fj" % (np.real(feedMx[0, 1]), np.imag(feedMx[0, 1]), np.real(feedMxX[0, 1]), np.imag(feedMxX[0, 1]), np.real(feedMxS[0, 1]), np.imag(feedMxS[0, 1]))]);
-    print  ";".join(["   %8.3f + %8.3fj \t %8.3f + %8.3fj \t %8.3f + %8.3fj" % (np.real(feedMx[1, 0]), np.imag(feedMx[1, 0]), np.real(feedMxX[1, 0]), np.imag(feedMxX[1, 0]), np.real(feedMxS[1, 0]), np.imag(feedMxS[1, 0]))]);
-    print  ";".join(["   %8.3f + %8.3fj \t %8.3f + %8.3fj \t %8.3f + %8.3fj" % (np.real(feedMx[1, 1]), np.imag(feedMx[1, 1]), np.real(feedMxX[1, 1]), np.imag(feedMxX[1, 1]), np.real(feedMxS[1, 1]), np.imag(feedMxS[1, 1]))]);
+    print  ";".join(["XX   %8.3f + %8.3fj \t %8.3f + %8.3fj \t %8.3f + %8.3fj" % (np.real(feedMx[0, 0]), np.imag(feedMx[0, 0]), np.real(feedMxX[0, 0]), np.imag(feedMxX[0, 0]), np.real(feedMxS[0, 0]), np.imag(feedMxS[0, 0]))]);
+    print  ";".join(["XY   %8.3f + %8.3fj \t %8.3f + %8.3fj \t %8.3f + %8.3fj" % (np.real(feedMx[0, 1]), np.imag(feedMx[0, 1]), np.real(feedMxX[0, 1]), np.imag(feedMxX[0, 1]), np.real(feedMxS[0, 1]), np.imag(feedMxS[0, 1]))]);
+    print  ";".join(["YX   %8.3f + %8.3fj \t %8.3f + %8.3fj \t %8.3f + %8.3fj" % (np.real(feedMx[1, 0]), np.imag(feedMx[1, 0]), np.real(feedMxX[1, 0]), np.imag(feedMxX[1, 0]), np.real(feedMxS[1, 0]), np.imag(feedMxS[1, 0]))]);
+    print  ";".join(["XX   %8.3f + %8.3fj \t %8.3f + %8.3fj \t %8.3f + %8.3fj" % (np.real(feedMx[1, 1]), np.imag(feedMx[1, 1]), np.real(feedMxX[1, 1]), np.imag(feedMxX[1, 1]), np.real(feedMxS[1, 1]), np.imag(feedMxS[1, 1]))]);
 
     print  ";".join(["XX   %8.3f L %8.3f \t %8.3f L %8.3f" % (np.abs(feedMx[0, 0]), np.angle(feedMx[0, 0])*180/np.pi, np.abs(feedMxX[0, 0]), np.angle(feedMxX[0, 0])*180/np.pi)]);
     print  ";".join(["XY   %8.3f L %8.3f \t %8.3f L %8.3f" % (np.abs(feedMx[0, 1]), np.angle(feedMx[0, 1])*180/np.pi, np.abs(feedMxX[0, 1]), np.angle(feedMxX[0, 1])*180/np.pi)]);
@@ -245,24 +204,23 @@ def compare_feedMx(feedMx, feedMxX, feedMxS):
 
 ##  Converts comprehendable specification of polarized electromagnetic wave into equivalent stokes parameter representation
 #
+#  @param    stokesI        Stokes parameter I.
 #  @param    positionAngle  for linear and elliptical polarizations, this is the orientation of the electromagnetic
 #                           wave in the plane perpendicular to the direction of propagation.
 #  @param    fracLinPol     the fraction of the wave's power that is linearly polarized
 #  @param    fracCircPol    the fraction of the wave's power that is circularly polarized
-#  @param    stokesI        Stokes parameter I.
 #
 #  @return   stokes         Stokes parameter representation of the specified wave.
 #  pylint: disable-msg=R0914,R0915,C0321,W0104,C0301,W0101
 
-def construct_stokes(positionAngle, fracLinPol, fracCircPol, stokesI):
+def construct_stokes(stokesI, positionAngle, fracLinPol, fracCircPol):
     #Note: TotFracPol.^2=FracLinPol.^2+FracCircPol.^2;
     
     stokesQ = fracLinPol*stokesI*np.cos(2.0*positionAngle);
     stokesU = fracLinPol*stokesI*np.sin(2.0*positionAngle);
     stokesV = fracCircPol*stokesI;
-    stokes = np.array([stokesI, stokesQ, stokesU, stokesV]);
- 
-    return stokes;
+
+    return np.array([stokesI, stokesQ, stokesU, stokesV]);
 
 
 
@@ -319,6 +277,43 @@ def generate_values(stokes, nAverage, n):
             outstokes[:, ind] = np.mean(np.dot(coherency2stokes, coherencyin), 1);
 
     return outstokes
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :    make_fake_packets
+#---------------------------------------------------------------------------------------------------------
+
+## creates fakes packets by shuffling round the residuals - more, artificial data of same variance 
+#
+#  @param    X                the vector of unknown values that are determined by data reduction
+#                             where [[X[0],X[1]+j*X[2]],[X[3]+j*X[4],X[5]+j*X[6]]] is feedMx
+#                             and  [X[7],X[8],X[9],X[10]] is stokes vector of source 
+#  @param    packetHeader     header information 
+#  @param    packets          original data packets
+#
+#  @return   fakepackets      fake packets
+
+def make_fake_packets(X, packetHeader, packets):
+
+    calStokesVal = get_feed_stokes_X(packetHeader.calStokes, X);
+    calStokes = np.dot(calStokesVal[:, np.newaxis], np.ones([1, packetHeader.nCalStokes]));
+    
+    fakepackets = np.copy(packets);
+    calResiduals = np.zeros([4, packetHeader.nPackets*packetHeader.nCalStokes]);
+    sourceResiduals = np.zeros([4, packetHeader.nPackets*packetHeader.nStokes]);
+    for ipacket in range(0, packetHeader.nPackets):
+        sourceStokes = get_feed_rotate_stokes_X(fakepackets[ipacket].parRotation, X);
+        calResiduals[:, range(ipacket*packetHeader.nCalStokes, (ipacket+1)*packetHeader.nCalStokes)] = fakepackets[ipacket].calStokes - calStokes; 
+        sourceResiduals[:, range(ipacket*packetHeader.nStokes, (ipacket+1)*packetHeader.nStokes)] = fakepackets[ipacket].sourceStokes - sourceStokes; 
+    for istokes in range(0, 4):
+        np.random.shuffle(calResiduals[istokes]);
+        np.random.shuffle(sourceResiduals[istokes]);
+    for ipacket in range(0, packetHeader.nPackets):
+        sourceStokes = get_feed_rotate_stokes_X(fakepackets[ipacket].parRotation, X);
+        fakepackets[ipacket].calStokes = calResiduals[:, range(ipacket*packetHeader.nCalStokes, (ipacket+1)*packetHeader.nCalStokes)] + calStokes; 
+        fakepackets[ipacket].sourceStokes = sourceResiduals[:, range(ipacket*packetHeader.nStokes, (ipacket+1)*packetHeader.nStokes)] + sourceStokes; 
+        
+    return fakepackets;
 
 
 #---------------------------------------------------------------------------------------------------------
@@ -487,37 +482,6 @@ def get_feed_dstokes_dX(stokes, X):
 
     return (newstokes, dIdX, dQdX, dUdX, dVdX);
 
-#---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :    get_feed_std_X
-#---------------------------------------------------------------------------------------------------------
-
-# this function performs the inverse of get_feed_stokes_X and computes the std of the parameters X about X
-#  previously computed values are modified if appropriate (the smallest standard dev is used).
-#
-#  @param    stokes      the stokes vector of the known calibration noise source in the feed
-#  @param    X           the vector of unknown values that are determined by data reduction
-#                        where [[X[0],X[1]+j*X[2]],[X[3]+j*X[4],X[5]+j*X[6]]] is feedMx
-#                        and  [X[7],X[8],X[9],X[10]] is stokes vector of source 
-#  @param   calStokes    the series of stokes vectors that is the noise source calibration data
-#  @param   stdX         the standard deviation of the parameters due to the data
-#
-#  @return  stdX         the standard deviation of the parameters due to the data
-#  pylint: disable-msg=R0914,R0915,C0321,W0104,C0301,W0101
-
-#def get_feed_stdX(stokes, X, calStokes, stdX):
-   
-#    I0 = stokes[0];
-#    Q0 = stokes[1];
-#    U0 = stokes[2];
-#    V0 = stokes[3];
-    
-#    calStokes[0] = 1.0/2.0*I0*(X[5]**2+X[6]**2+X[1]**2+X[2]**2+X[4]**2+X[3]**2+X[0]**2)+1.0/2.0*Q0*(-X[5]**2-X[6]**2-X[1]**2-X[2]**2+X[4]**2+X[3]**2+X[0]**2)+(X[0]*X[1]+X[3]*X[5]+X[4]*X[6])*U0+(X[0]*X[2]-X[4]*X[5]+X[3]*X[6])*V0;
-#    calStokes[1] = 1.0/2.0*I0*(-X[6]**2-X[5]**2+X[1]**2+X[2]**2+X[0]**2-X[3]**2-X[4]**2)+1.0/2.0*Q0*(X[6]**2+X[5]**2-X[1]**2-X[2]**2+X[0]**2-X[3]**2-X[4]**2)+U0*(-X[4]*X[6]-X[3]*X[5]+X[0]*X[1])+V0*(-X[3]*X[6]+X[4]*X[5]+X[0]*X[2]);
-#    calStokes[2] = I0*(X[2]*X[6]+X[1]*X[5]+X[0]*X[3])+Q0*(-X[2]*X[6]-X[1]*X[5]+X[0]*X[3])+U0*(X[2]*X[4]+X[1]*X[3]+X[0]*X[5])+V0*(X[2]*X[3]-X[1]*X[4]+X[0]*X[6]);
-#    calStokes[3] = I0*(-X[0]*X[4]-X[1]*X[6]+X[2]*X[5])+Q0*(-X[0]*X[4]+X[1]*X[6]-X[2]*X[5])+U0*(-X[0]*X[6]-X[1]*X[4]+X[2]*X[3])+V0*(X[0]*X[5]-X[1]*X[3]-X[2]*X[4]);
-
-#    return stdX;
-
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :    get_feed_rotate_stokes_X
@@ -632,206 +596,7 @@ def get_feed_rotate_dstokes_dX(parAngle, X):
 
     return (newstokes, dIdX, dQdX, dUdX, dVdX);
 
-
-#---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :    get_feed_rotate_stdX
-#---------------------------------------------------------------------------------------------------------
-
-## Rotates by parallactic angle and matrix multiplies input stokes vector values by feed matrix 
-#  This function uses the unknown vector X directly
-#
-#  @param    parAngle        a vector of angles in radians that each corresponding stokes vector is rotated by
-#  @param    X               the vector of unknown values that are determined by data reduction
-#                            where [[X[0],X[1]+j*X[2]],[X[3]+j*X[4],X[5]+j*X[6]]] is feedMx
-#                            and  [X[7],X[8],X[9],X[10]] is stokes vector of source 
-#  @param    sourceStokes    input series of stokes vectors of observed celestial source; each column is a seperate stokes vector 
-#  @param    packetHeader    header information 
-#
-#  @return   stdX            the standard deviation of the parameters
-#  pylint: disable-msg=R0914,R0915,C0321,W0104,C0301,W0101
-
-def get_feed_rotate_stdX(parAngle, X, sourceStokes, packetHeader):
     
-    cosParAngle2 = np.cos(2.0*parAngle);
-    sinParAngle2 = np.sin(2.0*parAngle);
-
-    stdX = np.inf*np.ones([11, 1]);
-  
-#    sourceStokes[0]=1.0/2.0*X[7]*(X[5]**2+X[6]**2+X[1]**2+X[2]**2+X[4]**2+X[3]**2+X[0]**2)+1.0/2.0*(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[6]**2-X[1]**2-X[2]**2+X[4]**2+X[3]**2+X[0]**2)+(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[0]*X[1]+X[3]*X[5]+X[4]*X[6])+(X[0]*X[2]-X[4]*X[5]+X[3]*X[6])*X[10]
-    X0       = -sqrt(-(X[7]*(X[5]**2+X[6]**2+X[1]**2+X[2]**2+X[4]**2+X[3]**2)-2*sourceStokes[0]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[6]**2-X[1]**2-X[2]**2+X[4]**2+X[3]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[3]*X[5]+X[4]*X[6])+2*(-X[4]*X[5]+X[3]*X[6])*X[10])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[1]+X[2]*X[10])**2/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[1]+X[2]*X[10])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7]);
-    stdX[0]  =  np.min([np.sqrt(np.sum((X0-X[0])**2)/(packetHeader.nStokes)), stdX[0]]);
-    X0       =  sqrt(-(X[7]*(X[5]**2+X[6]**2+X[1]**2+X[2]**2+X[4]**2+X[3]**2)-2*sourceStokes[0]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[6]**2-X[1]**2-X[2]**2+X[4]**2+X[3]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[3]*X[5]+X[4]*X[6])+2*(-X[4]*X[5]+X[3]*X[6])*X[10])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[1]+X[2]*X[10])**2/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[1]+X[2]*X[10])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7]);
-    stdX[0]  =  np.min([np.sqrt(np.sum((X0-X[0])**2)/(packetHeader.nStokes)), stdX[0]]);
-    X1       = -sqrt(-(X[7]*(X[5]**2+X[6]**2+X[2]**2+X[4]**2+X[3]**2+X[0]**2)-2*sourceStokes[0]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[6]**2-X[2]**2+X[4]**2+X[3]**2+X[0]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[3]*X[5]+X[4]*X[6])+2*(X[0]*X[2]-X[4]*X[5]+X[3]*X[6])*X[10])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])**2*X[0]**2)/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[0])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7]);
-    stdX[1]  =  np.min([np.sqrt(np.sum((X1-X[1])**2)/(packetHeader.nStokes)), stdX[1]]);
-    X1       =  sqrt(-(X[7]*(X[5]**2+X[6]**2+X[2]**2+X[4]**2+X[3]**2+X[0]**2)-2*sourceStokes[0]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[6]**2-X[2]**2+X[4]**2+X[3]**2+X[0]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[3]*X[5]+X[4]*X[6])+2*(X[0]*X[2]-X[4]*X[5]+X[3]*X[6])*X[10])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])**2*X[0]**2)/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[0])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7]);
-    stdX[1]  =  np.min([np.sqrt(np.sum((X1-X[1])**2)/(packetHeader.nStokes)), stdX[1]]);
-    X2       = -sqrt(-(X[7]*(X[5]**2+X[6]**2+X[1]**2+X[4]**2+X[3]**2+X[0]**2)-2*sourceStokes[0]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[6]**2-X[1]**2+X[4]**2+X[3]**2+X[0]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[0]*X[1]+X[3]*X[5]+X[4]*X[6])+2*(-X[4]*X[5]+X[3]*X[6])*X[10])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])+(X[0]**2*X[10]**2)/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])**2)-(X[0]*X[10])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7]);
-    stdX[2]  =  np.min([np.sqrt(np.sum((X2-X[2])**2)/(packetHeader.nStokes)), stdX[2]]);
-    X2       =  sqrt(-(X[7]*(X[5]**2+X[6]**2+X[1]**2+X[4]**2+X[3]**2+X[0]**2)-2*sourceStokes[0]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[6]**2-X[1]**2+X[4]**2+X[3]**2+X[0]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[0]*X[1]+X[3]*X[5]+X[4]*X[6])+2*(-X[4]*X[5]+X[3]*X[6])*X[10])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])+(X[0]**2*X[10]**2)/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])**2)-(X[0]*X[10])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7]);
-    stdX[2]  =  np.min([np.sqrt(np.sum((X2-X[2])**2)/(packetHeader.nStokes)), stdX[2]]);
-    X3       = -sqrt(-(X[7]*(X[5]**2+X[6]**2+X[1]**2+X[2]**2+X[4]**2+X[0]**2)-2*sourceStokes[0]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[6]**2-X[1]**2-X[2]**2+X[4]**2+X[0]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[0]*X[1]+X[4]*X[6])+2*(X[0]*X[2]-X[4]*X[5])*X[10])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[5]+X[6]*X[10])**2/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[5]+X[6]*X[10])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7]);
-    stdX[3]  =  np.min([np.sqrt(np.sum((X3-X[3])**2)/(packetHeader.nStokes)), stdX[3]]);
-    X3       =  sqrt(-(X[7]*(X[5]**2+X[6]**2+X[1]**2+X[2]**2+X[4]**2+X[0]**2)-2*sourceStokes[0]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[6]**2-X[1]**2-X[2]**2+X[4]**2+X[0]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[0]*X[1]+X[4]*X[6])+2*(X[0]*X[2]-X[4]*X[5])*X[10])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[5]+X[6]*X[10])**2/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[5]+X[6]*X[10])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7]);
-    stdX[3]  =  np.min([np.sqrt(np.sum((X3-X[3])**2)/(packetHeader.nStokes)), stdX[3]]);
-    X4       = -sqrt(-(X[7]*(X[5]**2+X[6]**2+X[1]**2+X[2]**2+X[3]**2+X[0]**2)-2*sourceStokes[0]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[6]**2-X[1]**2-X[2]**2+X[3]**2+X[0]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[0]*X[1]+X[3]*X[5])+2*(X[0]*X[2]+X[3]*X[6])*X[10])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[6]-X[5]*X[10])**2/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[6]-X[5]*X[10])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7]);
-    stdX[4]  =  np.min([np.sqrt(np.sum((X4-X[4])**2)/(packetHeader.nStokes)), stdX[4]]);
-    X4       =  sqrt(-(X[7]*(X[5]**2+X[6]**2+X[1]**2+X[2]**2+X[3]**2+X[0]**2)-2*sourceStokes[0]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[6]**2-X[1]**2-X[2]**2+X[3]**2+X[0]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[0]*X[1]+X[3]*X[5])+2*(X[0]*X[2]+X[3]*X[6])*X[10])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[6]-X[5]*X[10])**2/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[6]-X[5]*X[10])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7]);
-    stdX[4]  =  np.min([np.sqrt(np.sum((X4-X[4])**2)/(packetHeader.nStokes)), stdX[4]]);
-    X5       = -sqrt(-(-2*sourceStokes[0]+X[7]*(X[6]**2+X[1]**2+X[2]**2+X[4]**2+X[3]**2+X[0]**2)+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[6]**2-X[1]**2-X[2]**2+X[4]**2+X[3]**2+X[0]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[0]*X[1]+X[4]*X[6])+2*(X[0]*X[2]+X[3]*X[6])*X[10])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[3]-X[4]*X[10])**2/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[3]-X[4]*X[10])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7]);
-    stdX[5]  =  np.min([np.sqrt(np.sum((X5-X[5])**2)/(packetHeader.nStokes)), stdX[5]]);
-    X5       =  sqrt(-(-2*sourceStokes[0]+X[7]*(X[6]**2+X[1]**2+X[2]**2+X[4]**2+X[3]**2+X[0]**2)+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[6]**2-X[1]**2-X[2]**2+X[4]**2+X[3]**2+X[0]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[0]*X[1]+X[4]*X[6])+2*(X[0]*X[2]+X[3]*X[6])*X[10])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[3]-X[4]*X[10])**2/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[3]-X[4]*X[10])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7]);
-    stdX[5]  =  np.min([np.sqrt(np.sum((X5-X[5])**2)/(packetHeader.nStokes)), stdX[5]]);
-    X6       = -sqrt(-(-2*sourceStokes[0]+X[7]*(X[5]**2+X[1]**2+X[2]**2+X[4]**2+X[3]**2+X[0]**2)+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[1]**2-X[2]**2+X[4]**2+X[3]**2+X[0]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[0]*X[1]+X[3]*X[5])+2*(X[0]*X[2]-X[4]*X[5])*X[10])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[4]+X[3]*X[10])**2/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[4]+X[3]*X[10])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7]);
-    stdX[6]  =  np.min([np.sqrt(np.sum((X6-X[6])**2)/(packetHeader.nStokes)), stdX[6]]);
-    X6       =  sqrt(-(-2*sourceStokes[0]+X[7]*(X[5]**2+X[1]**2+X[2]**2+X[4]**2+X[3]**2+X[0]**2)+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[1]**2-X[2]**2+X[4]**2+X[3]**2+X[0]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[0]*X[1]+X[3]*X[5])+2*(X[0]*X[2]-X[4]*X[5])*X[10])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[4]+X[3]*X[10])**2/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[4]+X[3]*X[10])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7]);
-    stdX[6]  =  np.min([np.sqrt(np.sum((X6-X[6])**2)/(packetHeader.nStokes)), stdX[6]]);
-    X7       = -2*(-sourceStokes[0]+1/2*(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[6]**2-X[1]**2-X[2]**2+X[4]**2+X[3]**2+X[0]**2)+(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[0]*X[1]+X[3]*X[5]+X[4]*X[6])+(X[0]*X[2]-X[4]*X[5]+X[3]*X[6])*X[10])/(X[5]**2+X[6]**2+X[1]**2+X[2]**2+X[4]**2+X[3]**2+X[0]**2);
-    stdX[7]  =  np.min([np.sqrt(np.sum((X7-X[7])**2)/(packetHeader.nStokes)), stdX[7]]);
-    X8       = -(1/2*X[7]*(X[5]**2+X[6]**2+X[1]**2+X[2]**2+X[4]**2+X[3]**2+X[0]**2)-sourceStokes[0]-1/2*sinParAngle2*X[9]*(-X[5]**2-X[6]**2-X[1]**2-X[2]**2+X[4]**2+X[3]**2+X[0]**2)+cosParAngle2*X[9]*(X[0]*X[1]+X[3]*X[5]+X[4]*X[6])+(X[0]*X[2]-X[4]*X[5]+X[3]*X[6])*X[10])/(sinParAngle2*(X[0]*X[1]+X[3]*X[5]+X[4]*X[6])+1/2*cosParAngle2*(-X[5]**2-X[6]**2-X[1]**2-X[2]**2+X[4]**2+X[3]**2+X[0]**2));
-    stdX[8]  =  np.min([np.sqrt(np.sum((X8-X[8])**2)/(packetHeader.nStokes)), stdX[8]]);
-    X9       =  (1/2*X[7]*(X[5]**2+X[6]**2+X[1]**2+X[2]**2+X[4]**2+X[3]**2+X[0]**2)+1/2*cosParAngle2*X[8]*(-X[5]**2-X[6]**2-X[1]**2-X[2]**2+X[4]**2+X[3]**2+X[0]**2)-sourceStokes[0]+sinParAngle2*X[8]*(X[0]*X[1]+X[3]*X[5]+X[4]*X[6])+(X[0]*X[2]-X[4]*X[5]+X[3]*X[6])*X[10])/(-cosParAngle2*(X[0]*X[1]+X[3]*X[5]+X[4]*X[6])+1/2*sinParAngle2*(-X[5]**2-X[6]**2-X[1]**2-X[2]**2+X[4]**2+X[3]**2+X[0]**2));
-    stdX[9]  =  np.min([np.sqrt(np.sum((X9-X[9])**2)/(packetHeader.nStokes)), stdX[9]]);
-    X10      = -(1/2*X[7]*(X[5]**2+X[6]**2+X[1]**2+X[2]**2+X[4]**2+X[3]**2+X[0]**2)+1/2*(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[5]**2-X[6]**2-X[1]**2-X[2]**2+X[4]**2+X[3]**2+X[0]**2)+(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[0]*X[1]+X[3]*X[5]+X[4]*X[6])-sourceStokes[0])/(X[0]*X[2]-X[4]*X[5]+X[3]*X[6]);
-    stdX[10] = np.min([np.sqrt(np.sum((X10-X[10])**2)/(packetHeader.nStokes)), stdX[10]]);
-
-#    sourceStokes[1]=1.0/2.0*X[7]*(-X[6]**2-X[5]**2+X[1]**2+X[2]**2+X[0]**2-X[3]**2-X[4]**2)+1.0/2.0*(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2+X[5]**2-X[1]**2-X[2]**2+X[0]**2-X[3]**2-X[4]**2)+(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[4]*X[6]-X[3]*X[5]+X[0]*X[1])+X[10]*(-X[3]*X[6]+X[4]*X[5]+X[0]*X[2])
-    X0       = -sqrt(-(-2*sourceStokes[1]+X[7]*(-X[6]**2-X[5]**2+X[1]**2+X[2]**2-X[3]**2-X[4]**2)+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2+X[5]**2-X[1]**2-X[2]**2-X[3]**2-X[4]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[4]*X[6]-X[3]*X[5])+2*X[10]*(-X[3]*X[6]+X[4]*X[5]))/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[1]+X[10]*X[2])**2/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[1]+X[10]*X[2])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])
-    stdX[0]  =  np.min([np.sqrt(np.sum((X0-X[0])**2)/(packetHeader.nStokes)), stdX[0]]);
-    X0       =  sqrt(-(-2*sourceStokes[1]+X[7]*(-X[6]**2-X[5]**2+X[1]**2+X[2]**2-X[3]**2-X[4]**2)+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2+X[5]**2-X[1]**2-X[2]**2-X[3]**2-X[4]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[4]*X[6]-X[3]*X[5])+2*X[10]*(-X[3]*X[6]+X[4]*X[5]))/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[1]+X[10]*X[2])**2/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[1]+X[10]*X[2])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])
-    stdX[0]  =  np.min([np.sqrt(np.sum((X0-X[0])**2)/(packetHeader.nStokes)), stdX[0]]);
-    X1       = -sqrt(-(-2*sourceStokes[1]+X[7]*(-X[6]**2-X[5]**2+X[2]**2+X[0]**2-X[3]**2-X[4]**2)+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2+X[5]**2-X[2]**2+X[0]**2-X[3]**2-X[4]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[4]*X[6]-X[3]*X[5])+2*X[10]*(-X[3]*X[6]+X[4]*X[5]+X[0]*X[2]))/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])**2*X[0]**2)/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[0])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])
-    stdX[1]  =  np.min([np.sqrt(np.sum((X1-X[1])**2)/(packetHeader.nStokes)), stdX[1]]);
-    X1       =  sqrt(-(-2*sourceStokes[1]+X[7]*(-X[6]**2-X[5]**2+X[2]**2+X[0]**2-X[3]**2-X[4]**2)+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2+X[5]**2-X[2]**2+X[0]**2-X[3]**2-X[4]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[4]*X[6]-X[3]*X[5])+2*X[10]*(-X[3]*X[6]+X[4]*X[5]+X[0]*X[2]))/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])**2*X[0]**2)/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[0])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])
-    stdX[1]  =  np.min([np.sqrt(np.sum((X1-X[1])**2)/(packetHeader.nStokes)), stdX[1]]);
-    X2       = -sqrt(-(-2*sourceStokes[1]+X[7]*(-X[6]**2-X[5]**2+X[1]**2+X[0]**2-X[3]**2-X[4]**2)+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2+X[5]**2-X[1]**2+X[0]**2-X[3]**2-X[4]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[4]*X[6]-X[3]*X[5]+X[0]*X[1])+2*X[10]*(-X[3]*X[6]+X[4]*X[5]))/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])+(X[10]**2*X[0]**2)/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])**2)-(X[10]*X[0])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])
-    stdX[2]  =  np.min([np.sqrt(np.sum((X2-X[2])**2)/(packetHeader.nStokes)), stdX[2]]);
-    X2       =  sqrt(-(-2*sourceStokes[1]+X[7]*(-X[6]**2-X[5]**2+X[1]**2+X[0]**2-X[3]**2-X[4]**2)+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2+X[5]**2-X[1]**2+X[0]**2-X[3]**2-X[4]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[4]*X[6]-X[3]*X[5]+X[0]*X[1])+2*X[10]*(-X[3]*X[6]+X[4]*X[5]))/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])+(X[10]**2*X[0]**2)/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])**2)-(X[10]*X[0])/(-cosParAngle2*X[8]+sinParAngle2*X[9]+X[7])
-    stdX[2]  =  np.min([np.sqrt(np.sum((X2-X[2])**2)/(packetHeader.nStokes)), stdX[2]]);
-    X3       = -sqrt((X[7]*(-X[6]**2-X[5]**2+X[1]**2+X[2]**2+X[0]**2-X[4]**2)-2*sourceStokes[1]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2+X[5]**2-X[1]**2-X[2]**2+X[0]**2-X[4]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[4]*X[6]+X[0]*X[1])+2*X[10]*(X[4]*X[5]+X[0]*X[2]))/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[5]+X[10]*X[6])**2/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[5]+X[10]*X[6])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])
-    stdX[3]  =  np.min([np.sqrt(np.sum((X3-X[3])**2)/(packetHeader.nStokes)), stdX[3]]);
-    X3       =  sqrt((X[7]*(-X[6]**2-X[5]**2+X[1]**2+X[2]**2+X[0]**2-X[4]**2)-2*sourceStokes[1]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2+X[5]**2-X[1]**2-X[2]**2+X[0]**2-X[4]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[4]*X[6]+X[0]*X[1])+2*X[10]*(X[4]*X[5]+X[0]*X[2]))/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[5]+X[10]*X[6])**2/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[5]+X[10]*X[6])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])
-    stdX[3]  =  np.min([np.sqrt(np.sum((X3-X[3])**2)/(packetHeader.nStokes)), stdX[3]]);
-    X4       = -sqrt((X[7]*(-X[6]**2-X[5]**2+X[1]**2+X[2]**2+X[0]**2-X[3]**2)-2*sourceStokes[1]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2+X[5]**2-X[1]**2-X[2]**2+X[0]**2-X[3]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[3]*X[5]+X[0]*X[1])+2*X[10]*(-X[3]*X[6]+X[0]*X[2]))/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[6]-X[10]*X[5])**2/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[6]-X[10]*X[5])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])
-    stdX[4]  =  np.min([np.sqrt(np.sum((X4-X[4])**2)/(packetHeader.nStokes)), stdX[4]]);
-    X4       =  sqrt((X[7]*(-X[6]**2-X[5]**2+X[1]**2+X[2]**2+X[0]**2-X[3]**2)-2*sourceStokes[1]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2+X[5]**2-X[1]**2-X[2]**2+X[0]**2-X[3]**2)+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[3]*X[5]+X[0]*X[1])+2*X[10]*(-X[3]*X[6]+X[0]*X[2]))/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[6]-X[10]*X[5])**2/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])**2)-((sinParAngle2*X[8]+cosParAngle2*X[9])*X[6]-X[10]*X[5])/(cosParAngle2*X[8]-sinParAngle2*X[9]+X[7])
-    stdX[4]  =  np.min([np.sqrt(np.sum((X4-X[4])**2)/(packetHeader.nStokes)), stdX[4]]);
-    X5       = -sqrt(-(X[7]*(-X[6]**2+X[1]**2+X[2]**2+X[0]**2-X[3]**2-X[4]**2)+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2-X[1]**2-X[2]**2+X[0]**2-X[3]**2-X[4]**2)-2*sourceStokes[1]+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[4]*X[6]+X[0]*X[1])-2*X[10]*X[3]*X[6]+2*X[10]*X[0]*X[2])/(-X[7]+cosParAngle2*X[8]-sinParAngle2*X[9])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[3]-X[10]*X[4])**2/(-X[7]+cosParAngle2*X[8]-sinParAngle2*X[9])**2)+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[3]-X[10]*X[4])/(-X[7]+cosParAngle2*X[8]-sinParAngle2*X[9])
-    stdX[5]  =  np.min([np.sqrt(np.sum((X5-X[5])**2)/(packetHeader.nStokes)), stdX[5]]);
-    X5       =  sqrt(-(X[7]*(-X[6]**2+X[1]**2+X[2]**2+X[0]**2-X[3]**2-X[4]**2)+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2-X[1]**2-X[2]**2+X[0]**2-X[3]**2-X[4]**2)-2*sourceStokes[1]+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[4]*X[6]+X[0]*X[1])-2*X[10]*X[3]*X[6]+2*X[10]*X[0]*X[2])/(-X[7]+cosParAngle2*X[8]-sinParAngle2*X[9])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[3]-X[10]*X[4])**2/(-X[7]+cosParAngle2*X[8]-sinParAngle2*X[9])**2)+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[3]-X[10]*X[4])/(-X[7]+cosParAngle2*X[8]-sinParAngle2*X[9])
-    stdX[5]  =  np.min([np.sqrt(np.sum((X5-X[5])**2)/(packetHeader.nStokes)), stdX[5]]);
-    X6       = -sqrt(-(X[7]*(-X[5]**2+X[1]**2+X[2]**2+X[0]**2-X[3]**2-X[4]**2)+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[5]**2-X[1]**2-X[2]**2+X[0]**2-X[3]**2-X[4]**2)-2*sourceStokes[1]+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[3]*X[5]+X[0]*X[1])+2*X[10]*(X[4]*X[5]+X[0]*X[2]))/(-X[7]+cosParAngle2*X[8]-sinParAngle2*X[9])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[4]+X[10]*X[3])**2/(-X[7]+cosParAngle2*X[8]-sinParAngle2*X[9])**2)+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[4]+X[10]*X[3])/(-X[7]+cosParAngle2*X[8]-sinParAngle2*X[9])
-    stdX[6]  =  np.min([np.sqrt(np.sum((X6-X[6])**2)/(packetHeader.nStokes)), stdX[6]]);
-    X6       =  sqrt(-(X[7]*(-X[5]**2+X[1]**2+X[2]**2+X[0]**2-X[3]**2-X[4]**2)+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[5]**2-X[1]**2-X[2]**2+X[0]**2-X[3]**2-X[4]**2)-2*sourceStokes[1]+2*(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[3]*X[5]+X[0]*X[1])+2*X[10]*(X[4]*X[5]+X[0]*X[2]))/(-X[7]+cosParAngle2*X[8]-sinParAngle2*X[9])+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[4]+X[10]*X[3])**2/(-X[7]+cosParAngle2*X[8]-sinParAngle2*X[9])**2)+((sinParAngle2*X[8]+cosParAngle2*X[9])*X[4]+X[10]*X[3])/(-X[7]+cosParAngle2*X[8]-sinParAngle2*X[9])
-    stdX[6]  =  np.min([np.sqrt(np.sum((X6-X[6])**2)/(packetHeader.nStokes)), stdX[6]]);
-    X7       = -2*(-sourceStokes[1]+1/2*(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2+X[5]**2-X[1]**2-X[2]**2+X[0]**2-X[3]**2-X[4]**2)+(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[4]*X[6]-X[3]*X[5]+X[0]*X[1])+X[10]*(-X[3]*X[6]+X[4]*X[5]+X[0]*X[2]))/(-X[6]**2-X[5]**2+X[1]**2+X[2]**2+X[0]**2-X[3]**2-X[4]**2)
-    stdX[7]  =  np.min([np.sqrt(np.sum((X7-X[7])**2)/(packetHeader.nStokes)), stdX[7]]);
-    X8       = -(1/2*X[7]*(-X[6]**2-X[5]**2+X[1]**2+X[2]**2+X[0]**2-X[3]**2-X[4]**2)-sourceStokes[1]-X[9]*(-cosParAngle2*(-X[4]*X[6]-X[3]*X[5]+X[0]*X[1])+1/2*sinParAngle2*(X[6]**2+X[5]**2-X[1]**2-X[2]**2+X[0]**2-X[3]**2-X[4]**2))+X[10]*(-X[3]*X[6]+X[4]*X[5]+X[0]*X[2]))/(sinParAngle2*(-X[4]*X[6]-X[3]*X[5]+X[0]*X[1])+1/2*cosParAngle2*(X[6]**2+X[5]**2-X[1]**2-X[2]**2+X[0]**2-X[3]**2-X[4]**2))
-    stdX[8]  =  np.min([np.sqrt(np.sum((X8-X[8])**2)/(packetHeader.nStokes)), stdX[8]]);
-    X9       =  (1/2*X[7]*(-X[6]**2-X[5]**2+X[1]**2+X[2]**2+X[0]**2-X[3]**2-X[4]**2)+X[8]*(sinParAngle2*(-X[4]*X[6]-X[3]*X[5]+X[0]*X[1])+1/2*cosParAngle2*(X[6]**2+X[5]**2-X[1]**2-X[2]**2+X[0]**2-X[3]**2-X[4]**2))-sourceStokes[1]+X[10]*(-X[3]*X[6]+X[4]*X[5]+X[0]*X[2]))/(-cosParAngle2*(-X[4]*X[6]-X[3]*X[5]+X[0]*X[1])+1/2*sinParAngle2*(X[6]**2+X[5]**2-X[1]**2-X[2]**2+X[0]**2-X[3]**2-X[4]**2))
-    stdX[9]  =  np.min([np.sqrt(np.sum((X9-X[9])**2)/(packetHeader.nStokes)), stdX[9]]);
-    X10      = -(1/2*X[7]*(-X[6]**2-X[5]**2+X[1]**2+X[2]**2+X[0]**2-X[3]**2-X[4]**2)+1/2*(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[6]**2+X[5]**2-X[1]**2-X[2]**2+X[0]**2-X[3]**2-X[4]**2)+(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[4]*X[6]-X[3]*X[5]+X[0]*X[1])-sourceStokes[1])/(-X[3]*X[6]+X[4]*X[5]+X[0]*X[2])
-    stdX[10] =  np.min([np.sqrt(np.sum((X10-X[10])**2)/(packetHeader.nStokes)), stdX[10]]);
-
-#    sourceStokes[2]=X[7]*(X[2]*X[6]+X[1]*X[5]+X[0]*X[3])+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[2]*X[6]-X[1]*X[5]+X[0]*X[3])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[2]*X[4]+X[1]*X[3]+X[0]*X[5])+X[10]*(X[2]*X[3]-X[1]*X[4]+X[0]*X[6])
-    X0       = -(X[7]*(X[2]*X[6]+X[1]*X[5])-sourceStokes[2]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[2]*X[6]-X[1]*X[5])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[2]*X[4]+X[1]*X[3])+X[10]*(X[2]*X[3]-X[1]*X[4]))/((sinParAngle2*X[8]+cosParAngle2*X[9])*X[5]+X[10]*X[6]+(cosParAngle2*X[8]-sinParAngle2*X[9])*X[3]+X[7]*X[3])
-    stdX[0]  =  np.min([np.sqrt(np.sum((X0-X[0])**2)/(packetHeader.nStokes)), stdX[0]]);
-    X1       = -(X[7]*(X[2]*X[6]+X[0]*X[3])-sourceStokes[2]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[2]*X[6]+X[0]*X[3])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[2]*X[4]+X[0]*X[5])+X[10]*(X[2]*X[3]+X[0]*X[6]))/((sinParAngle2*X[8]+cosParAngle2*X[9])*X[3]-X[10]*X[4]-(cosParAngle2*X[8]-sinParAngle2*X[9])*X[5]+X[7]*X[5])
-    stdX[1]  =  np.min([np.sqrt(np.sum((X1-X[1])**2)/(packetHeader.nStokes)), stdX[1]]);
-    X2       = -(X[7]*(X[1]*X[5]+X[0]*X[3])-sourceStokes[2]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[1]*X[5]+X[0]*X[3])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[1]*X[3]+X[0]*X[5])+X[10]*(-X[1]*X[4]+X[0]*X[6]))/((sinParAngle2*X[8]+cosParAngle2*X[9])*X[4]+X[10]*X[3]-(cosParAngle2*X[8]-sinParAngle2*X[9])*X[6]+X[7]*X[6])
-    stdX[2]  =  np.min([np.sqrt(np.sum((X2-X[2])**2)/(packetHeader.nStokes)), stdX[2]]);
-    X3       = -(X[7]*(X[2]*X[6]+X[1]*X[5])-sourceStokes[2]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[2]*X[6]-X[1]*X[5])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[2]*X[4]+X[0]*X[5])+X[10]*(-X[1]*X[4]+X[0]*X[6]))/((sinParAngle2*X[8]+cosParAngle2*X[9])*X[1]+X[10]*X[2]+(cosParAngle2*X[8]-sinParAngle2*X[9])*X[0]+X[7]*X[0])
-    stdX[3]  =  np.min([np.sqrt(np.sum((X3-X[3])**2)/(packetHeader.nStokes)), stdX[3]]);
-    X4       = -(X[7]*(X[2]*X[6]+X[1]*X[5]+X[0]*X[3])+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[2]*X[6]-X[1]*X[5]+X[0]*X[3])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[1]*X[3]+X[0]*X[5])-sourceStokes[2]+X[10]*(X[2]*X[3]+X[0]*X[6]))/((sinParAngle2*X[8]+cosParAngle2*X[9])*X[2]-X[10]*X[1])
-    stdX[4]  =  np.min([np.sqrt(np.sum((X4-X[4])**2)/(packetHeader.nStokes)), stdX[4]]);
-    X5       = -(X[7]*(X[2]*X[6]+X[0]*X[3])-sourceStokes[2]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[2]*X[6]+X[0]*X[3])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[2]*X[4]+X[1]*X[3])+X[10]*(X[2]*X[3]-X[1]*X[4]+X[0]*X[6]))/((sinParAngle2*X[8]+cosParAngle2*X[9])*X[0]-(cosParAngle2*X[8]-sinParAngle2*X[9])*X[1]+X[7]*X[1])
-    stdX[5]  =  np.min([np.sqrt(np.sum((X5-X[5])**2)/(packetHeader.nStokes)), stdX[5]]);
-    X6       = -(X[7]*(X[1]*X[5]+X[0]*X[3])-sourceStokes[2]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[1]*X[5]+X[0]*X[3])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[2]*X[4]+X[1]*X[3]+X[0]*X[5])+X[10]*(X[2]*X[3]-X[1]*X[4]))/(-(cosParAngle2*X[8]-sinParAngle2*X[9])*X[2]+X[10]*X[0]+X[7]*X[2])
-    stdX[6]  =  np.min([np.sqrt(np.sum((X6-X[6])**2)/(packetHeader.nStokes)), stdX[6]]);
-    X7       = -(-sourceStokes[2]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[2]*X[6]-X[1]*X[5]+X[0]*X[3])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[2]*X[4]+X[1]*X[3]+X[0]*X[5])+X[10]*(X[2]*X[3]-X[1]*X[4]+X[0]*X[6]))/(X[2]*X[6]+X[1]*X[5]+X[0]*X[3])
-    stdX[7]  =  np.min([np.sqrt(np.sum((X7-X[7])**2)/(packetHeader.nStokes)), stdX[7]]);
-    X8       = -(X[7]*(X[2]*X[6]+X[1]*X[5]+X[0]*X[3])-sourceStokes[2]-sinParAngle2*X[9]*(-X[2]*X[6]-X[1]*X[5]+X[0]*X[3])+cosParAngle2*X[9]*(X[2]*X[4]+X[1]*X[3]+X[0]*X[5])+X[10]*(X[2]*X[3]-X[1]*X[4]+X[0]*X[6]))/(sinParAngle2*(X[2]*X[4]+X[1]*X[3]+X[0]*X[5])+cosParAngle2*(-X[2]*X[6]-X[1]*X[5]+X[0]*X[3]))
-    stdX[8]  =  np.min([np.sqrt(np.sum((X8-X[8])**2)/(packetHeader.nStokes)), stdX[8]]);
-    X9       = -(X[7]*(X[2]*X[6]+X[1]*X[5]+X[0]*X[3])+cosParAngle2*X[8]*(-X[2]*X[6]-X[1]*X[5]+X[0]*X[3])-sourceStokes[2]+sinParAngle2*X[8]*(X[2]*X[4]+X[1]*X[3]+X[0]*X[5])+X[10]*(X[2]*X[3]-X[1]*X[4]+X[0]*X[6]))/(-sinParAngle2*(-X[2]*X[6]-X[1]*X[5]+X[0]*X[3])+cosParAngle2*(X[2]*X[4]+X[1]*X[3]+X[0]*X[5]))
-    stdX[9]  =  np.min([np.sqrt(np.sum((X9-X[9])**2)/(packetHeader.nStokes)), stdX[9]]);
-    X10      = -(X[7]*(X[2]*X[6]+X[1]*X[5]+X[0]*X[3])+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[2]*X[6]-X[1]*X[5]+X[0]*X[3])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(X[2]*X[4]+X[1]*X[3]+X[0]*X[5])-sourceStokes[2])/(X[2]*X[3]-X[1]*X[4]+X[0]*X[6])
-    stdX[10] = np.min([np.sqrt(np.sum((X10-X[10])**2)/(packetHeader.nStokes)), stdX[10]]);
-
-#    sourceStokes[3]=X[7]*(-X[0]*X[4]-X[1]*X[6]+X[2]*X[5])+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[0]*X[4]+X[1]*X[6]-X[2]*X[5])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[0]*X[6]-X[1]*X[4]+X[2]*X[3])+X[10]*(X[0]*X[5]-X[1]*X[3]-X[2]*X[4])
-    X0       =  (-sourceStokes[3]+X[7]*(-X[1]*X[6]+X[2]*X[5])+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[1]*X[6]-X[2]*X[5])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[1]*X[4]+X[2]*X[3])+X[10]*(-X[1]*X[3]-X[2]*X[4]))/((sinParAngle2*X[8]+cosParAngle2*X[9])*X[6]-X[10]*X[5]+(cosParAngle2*X[8]-sinParAngle2*X[9])*X[4]+X[7]*X[4])
-    stdX[0]  =  np.min([np.sqrt(np.sum((X0-X[0])**2)/(packetHeader.nStokes)), stdX[0]]);
-    X1       = -(X[7]*(-X[0]*X[4]+X[2]*X[5])+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[0]*X[4]-X[2]*X[5])-sourceStokes[3]+(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[0]*X[6]+X[2]*X[3])+X[10]*(X[0]*X[5]-X[2]*X[4]))/(-(sinParAngle2*X[8]+cosParAngle2*X[9])*X[4]-X[10]*X[3]+(cosParAngle2*X[8]-sinParAngle2*X[9])*X[6]-X[7]*X[6])
-    stdX[1]  =  np.min([np.sqrt(np.sum((X1-X[1])**2)/(packetHeader.nStokes)), stdX[1]]);
-    X2       = -(X[7]*(-X[0]*X[4]-X[1]*X[6])-sourceStokes[3]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[0]*X[4]+X[1]*X[6])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[0]*X[6]-X[1]*X[4])+X[10]*(X[0]*X[5]-X[1]*X[3]))/((sinParAngle2*X[8]+cosParAngle2*X[9])*X[3]-X[10]*X[4]-(cosParAngle2*X[8]-sinParAngle2*X[9])*X[5]+X[7]*X[5])
-    stdX[2]  =  np.min([np.sqrt(np.sum((X2-X[2])**2)/(packetHeader.nStokes)), stdX[2]]);
-    X3       = -(X[7]*(-X[0]*X[4]-X[1]*X[6]+X[2]*X[5])+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[0]*X[4]+X[1]*X[6]-X[2]*X[5])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[0]*X[6]-X[1]*X[4])-sourceStokes[3]+X[10]*(X[0]*X[5]-X[2]*X[4]))/((sinParAngle2*X[8]+cosParAngle2*X[9])*X[2]-X[10]*X[1])
-    stdX[3]  =  np.min([np.sqrt(np.sum((X3-X[3])**2)/(packetHeader.nStokes)), stdX[3]]);
-    X4       =  (X[7]*(-X[1]*X[6]+X[2]*X[5])-sourceStokes[3]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(X[1]*X[6]-X[2]*X[5])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[0]*X[6]+X[2]*X[3])+X[10]*(X[0]*X[5]-X[1]*X[3]))/((sinParAngle2*X[8]+cosParAngle2*X[9])*X[1]+X[10]*X[2]+(cosParAngle2*X[8]-sinParAngle2*X[9])*X[0]+X[7]*X[0])
-    stdX[4]  =  np.min([np.sqrt(np.sum((X4-X[4])**2)/(packetHeader.nStokes)), stdX[4]]);
-    X5       = -(X[7]*(-X[0]*X[4]-X[1]*X[6])-sourceStokes[3]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[0]*X[4]+X[1]*X[6])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[0]*X[6]-X[1]*X[4]+X[2]*X[3])+X[10]*(-X[1]*X[3]-X[2]*X[4]))/(-(cosParAngle2*X[8]-sinParAngle2*X[9])*X[2]+X[10]*X[0]+X[7]*X[2])
-    stdX[5]  =  np.min([np.sqrt(np.sum((X5-X[5])**2)/(packetHeader.nStokes)), stdX[5]]);
-    X6       =  (-sourceStokes[3]+X[7]*(-X[0]*X[4]+X[2]*X[5])+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[0]*X[4]-X[2]*X[5])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[1]*X[4]+X[2]*X[3])+X[10]*(X[0]*X[5]-X[1]*X[3]-X[2]*X[4]))/((sinParAngle2*X[8]+cosParAngle2*X[9])*X[0]-(cosParAngle2*X[8]-sinParAngle2*X[9])*X[1]+X[7]*X[1])
-    stdX[6]  =  np.min([np.sqrt(np.sum((X6-X[6])**2)/(packetHeader.nStokes)), stdX[6]]);
-    X7       = -(-sourceStokes[3]+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[0]*X[4]+X[1]*X[6]-X[2]*X[5])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[0]*X[6]-X[1]*X[4]+X[2]*X[3])+X[10]*(X[0]*X[5]-X[1]*X[3]-X[2]*X[4]))/(-X[0]*X[4]-X[1]*X[6]+X[2]*X[5])
-    stdX[7]  =  np.min([np.sqrt(np.sum((X7-X[7])**2)/(packetHeader.nStokes)), stdX[7]]);
-    X8       = -(X[7]*(-X[0]*X[4]-X[1]*X[6]+X[2]*X[5])-sourceStokes[3]-sinParAngle2*X[9]*(-X[0]*X[4]+X[1]*X[6]-X[2]*X[5])+cosParAngle2*X[9]*(-X[0]*X[6]-X[1]*X[4]+X[2]*X[3])+X[10]*(X[0]*X[5]-X[1]*X[3]-X[2]*X[4]))/(sinParAngle2*(-X[0]*X[6]-X[1]*X[4]+X[2]*X[3])+cosParAngle2*(-X[0]*X[4]+X[1]*X[6]-X[2]*X[5]))
-    stdX[8]  =  np.min([np.sqrt(np.sum((X8-X[8])**2)/(packetHeader.nStokes)), stdX[8]]);
-    X9       =  (X[7]*(-X[0]*X[4]-X[1]*X[6]+X[2]*X[5])+cosParAngle2*X[8]*(-X[0]*X[4]+X[1]*X[6]-X[2]*X[5])-sourceStokes[3]+sinParAngle2*X[8]*(-X[0]*X[6]-X[1]*X[4]+X[2]*X[3])+X[10]*(X[0]*X[5]-X[1]*X[3]-X[2]*X[4]))/(-cosParAngle2*(-X[0]*X[6]-X[1]*X[4]+X[2]*X[3])+sinParAngle2*(-X[0]*X[4]+X[1]*X[6]-X[2]*X[5]))
-    stdX[9]  =  np.min([np.sqrt(np.sum((X9-X[9])**2)/(packetHeader.nStokes)), stdX[9]]);
-    X10      = -(X[7]*(-X[0]*X[4]-X[1]*X[6]+X[2]*X[5])+(cosParAngle2*X[8]-sinParAngle2*X[9])*(-X[0]*X[4]+X[1]*X[6]-X[2]*X[5])+(sinParAngle2*X[8]+cosParAngle2*X[9])*(-X[0]*X[6]-X[1]*X[4]+X[2]*X[3])-sourceStokes[3])/(X[0]*X[5]-X[1]*X[3]-X[2]*X[4])    
-    stdX[10] =  np.min([np.sqrt(np.sum((X10-X[10])**2)/(packetHeader.nStokes)), stdX[10]]);
-     
-    return stdX;
-
-
-#---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :    get_data_std
-#---------------------------------------------------------------------------------------------------------
-
-## determine standard deviations of the estimated parameters and the measurement data 
-#
-#  @param    X                the vector of unknown values that are determined by data reduction
-#                             where [[X[0],X[1]+j*X[2]],[X[3]+j*X[4],X[5]+j*X[6]]] is feedMx
-#                             and  [X[7],X[8],X[9],X[10]] is stokes vector of source 
-#  @param    packetHeader     header information 
-#  @param    packets          measurement data
-#
-#  @return   stdX             standard deviation of the estimated parameters
-#  @return   stdprecaldata    standard deviation of precalibration data
-#  @return   stdsourcedata    standard deviation of source data
-#  @return   stdpostcaldata   standard deviation of postcalibration data
-#  @return   stddata          standard deviation of combined data
-#  pylint: disable-msg=R0914,R0915,C0321,W0104,C0301,W0101
-
-def get_data_std(X, packetHeader, packets):
-
-    calStokesVal  = get_feed_stokes_X(packetHeader.calStokes, X);
-    calStokes     = np.dot(calStokesVal[:, np.newaxis], np.ones([1, packetHeader.nCalStokes]));
-    preStokes     = np.zeros([4, packetHeader.nPackets*packetHeader.nCalStokes]);
-    parAngle      = np.zeros([packetHeader.nPackets*packetHeader.nStokes]);
-    srcStokes     = np.zeros([4, packetHeader.nPackets*packetHeader.nStokes]);
-    preErrors     = np.zeros([4, packetHeader.nPackets*packetHeader.nCalStokes]);
-    sourceErrors  = np.zeros([4, packetHeader.nPackets*packetHeader.nStokes   ]);
-    postErrors    = np.zeros([4, packetHeader.nPackets*packetHeader.nCalStokes]);
-    allErrors     = np.zeros([4, packetHeader.nPackets*(packetHeader.nCalStokes*2+packetHeader.nStokes)]);
-    for ipacket in range(0, packetHeader.nPackets):
-        sourceStokes = get_feed_rotate_stokes_X(packets[ipacket].parRotation, X);
-        preStokes[:, range(ipacket*packetHeader.nCalStokes, ipacket*packetHeader.nCalStokes+packetHeader.nCalStokes)] = packets[ipacket].preCalStokes;
-        srcStokes[:, range(ipacket*packetHeader.nStokes, ipacket*packetHeader.nStokes+packetHeader.nStokes)] = packets[ipacket].sourceStokes;
-        parAngle[:, range(ipacket*packetHeader.nStokes, ipacket*packetHeader.nStokes+packetHeader.nStokes)] = packets[ipacket].parRotation;
-        preErrors[:, range(ipacket*packetHeader.nCalStokes, ipacket*packetHeader.nCalStokes+packetHeader.nCalStokes)] = packets[ipacket].preCalStokes-calStokes;
-        sourceErrors[:, range(ipacket*packetHeader.nStokes, ipacket*packetHeader.nStokes+packetHeader.nStokes)] = packets[ipacket].sourceStokes-sourceStokes;
-        postErrors[:, range(ipacket*packetHeader.nCalStokes, ipacket*packetHeader.nCalStokes+packetHeader.nCalStokes)] = packets[ipacket].postCalStokes-calStokes;
-        
-    allErrors[:, range(0, packetHeader.nPackets*packetHeader.nCalStokes)] = preErrors;
-    allErrors[:, range(packetHeader.nPackets*packetHeader.nCalStokes, packetHeader.nPackets*(packetHeader.nCalStokes+packetHeader.nStokes))] = sourceErrors;
-    allErrors[:, range(packetHeader.nPackets*(packetHeader.nCalStokes+packetHeader.nStokes), packetHeader.nPackets*(packetHeader.nCalStokes*2+packetHeader.nStokes))] = postErrors;
-    
-    stdX = get_feed_rotate_stdX(parAngle, X, srcStokes, packetHeader);
-    #stdX=get_feed_stdX(packetHeader.calStokes,X,preStokes);
-    #stdX=get_feed_stdX(packetHeader.calStokes,X,postStokes);
-        
-    return stdX, np.std(preErrors), np.std(sourceErrors), np.std(postErrors), np.std(allErrors)
 
 
 #---------------------------------------------------------------------------------------------------------
@@ -856,7 +621,7 @@ def get_stokes_cost(X, packetHeader, packets):
     for ipacket in range(0, packetHeader.nPackets):
         sourceStokes = get_feed_rotate_stokes_X(packets[ipacket].parRotation, X);
         
-        cost += np.sum((packets[ipacket].preCalStokes-calStokes)**2)+np.sum((packets[ipacket].sourceStokes-sourceStokes)**2)+np.sum((packets[ipacket].postCalStokes-calStokes)**2);
+        cost += np.sum((packets[ipacket].calStokes-calStokes)**2)+np.sum((packets[ipacket].sourceStokes-sourceStokes)**2);
 
     return cost;
 
@@ -889,7 +654,7 @@ def get_stokes_dcost(X, packetHeader, packets):
         (sourceStokes, dIdX, dQdX, dUdX, dVdX) = get_feed_rotate_dstokes_dX(packets[ipacket].parRotation, X);
         for ix in range(0, 11):
             dSourceStokes[ix] = np.array([dIdX[ix], dQdX[ix], dUdX[ix], dVdX[ix]]);        
-            dX[ix] += -np.sum(2*(packets[ipacket].preCalStokes-calStokes)*dCalStokes[ix])-np.sum(2*(packets[ipacket].sourceStokes-sourceStokes)*dSourceStokes[ix])-np.sum(2*(packets[ipacket].postCalStokes-calStokes)*dCalStokes[ix]);
+            dX[ix] += -np.sum(2*(packets[ipacket].calStokes-calStokes)*dCalStokes[ix])-np.sum(2*(packets[ipacket].sourceStokes-sourceStokes)*dSourceStokes[ix]);
 
     return np.mean(dX, 1);#mean just to remove dimension
 
