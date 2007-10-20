@@ -8,14 +8,8 @@
 # pylint: disable-msg=C0103
 
 from __future__ import division
-import logging
 import misc
-import stats
-import time
 import numpy as np
-from xdmsbe.xdmsbelib import fitsreader
-import xdmsbe.xdmsbelib.stats as stats
-from numpy import sqrt
 
 
 #=========================================================================================================
