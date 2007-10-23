@@ -169,7 +169,7 @@ def figure_to_svg(fig, dpi=100):
 # pylint: disable-msg=R0913,R0914
 
 def draw_std_corridor(axis, xVals, mu, sigma, muLabel = None, sigmaLabel = None, muLineType = 'b-', \
-                      sigmaFillColor = 'b', sigmaAlpha = '0.5', sigmaLineType = None):
+                      sigmaFillColor = 'b', sigmaAlpha = 0.5, sigmaLineType = None):
     
     mu = np.asarray(mu)
     sigma = np.asarray(sigma)
