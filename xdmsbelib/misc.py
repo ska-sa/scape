@@ -12,6 +12,7 @@ import numpy as np
 import numpy.linalg as linalg
 import logging
 import logging.config
+import os.path
 import re
 import sys
 import ConfigParser
@@ -139,6 +140,26 @@ def reduction_script_options(expType, disabledOpts=''):
         raise IndexError, message
     
     return opts, args, fitsFileName
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  experiment_label
+#---------------------------------------------------------------------------------------------------------
+
+## Extracts experiment label from first part of FITS filename.
+# This assumes that the FITS filename has the structure experimentlabel_xxxx.fits, where xxxx is a set
+# of digits indicating the order of the file in the FITS set.
+# @param     fileName  FITS filename
+# @return    expLabel  Experiment label
+#
+def experiment_label(fileName):
+    
+    fileRoot = os.path.splitext(os.path.basename(fileName))[0]
+    lastUnderscore = fileRoot.rfind('_')
+    if lastUnderscore >= 0:
+        return fileRoot[:lastUnderscore]
+    else:
+        return fileRoot
 
 
 #---------------------------------------------------------------------------------------------------------
