@@ -37,8 +37,11 @@ def power_index_dict(stokes):
 
 ## A container for single-dish data consisting of polarised power measurements combined with pointing information.
 # The main data member of this class is the 3-D powerData array, which stores power (autocorrelation) measurements as a
-# function of polarisation index, time and frequency band. Additional information contained in the class is the
-# pointing data (azimuth/elevation/rotator angles) and timestamps.
+# function of polarisation index, time and frequency band. This array can take one of two forms:
+# - Stokes [I,Q,U,V] parameters, which are always real in the case of a single dish (I = the non-negative total power)
+# - Coherencies [XX,YY,XY,YX], where XX and YY are real and non-negative polarisation powers, and XY and YX can be
+#   complex in the general case (this makes powerData a potentially complex-valued array).
+# Additional information contained in the class is the pointing data (azimuth/elevation/rotator angles) and timestamps.
 class SingleDishData(object):
     ## Initialiser/constructor
     #
@@ -112,6 +115,7 @@ class SingleDishData(object):
         return self._powerData
     ## Set powerData member.
     # This also sets up the dictionary lookups for the data.
+    # It enforces the real nature of I, Q, U, V, XX and YY for single-dish data.
     # @param self  The current object
     # @param powerData Power data array
     def set_power_data(self, powerData):
@@ -122,9 +126,12 @@ class SingleDishData(object):
         self.coherencyData = {}
         for k, v in power_index_dict(self.stokesFlag).iteritems():
             if self.stokesFlag:
-                self.stokesData[k] = self._powerData[v]
+                self.stokesData[k] = self._powerData[v].real
             else:
-                self.coherencyData[k] = self._powerData[v]
+                if (k == 'XX') or (k == 'YY'):
+                    self.coherencyData[k] = self._powerData[v].real
+                else:
+                    self.coherencyData[k] = self._powerData[v]
     ## @var powerData
     # Power data array (property).
     powerData = property(get_power_data, set_power_data, doc='Power data array.')
@@ -157,9 +164,6 @@ class SingleDishData(object):
     # @return self The updated object
     # pylint: disable-msg=W0212
     def append(self, other):
-#        print self.targetObject.get_reference_target().get_description()
-#        print other.targetObject.get_reference_target().get_description()
-#        print self.targetObject.get_reference_target() == other.targetObject.get_reference_target()
         # Ensure reference targets are the same
 #        if self.targetObject.get_reference_target() != other.targetObject.get_reference_target():
 #            message = "Cannot concatenate data objects with incompatible reference targets."
@@ -200,6 +204,7 @@ class SingleDishData(object):
         return self
     
     ## Convert the contained power buffer from Stokes vectors to coherency vectors.
+    # This can result in a complex-valued powerData array.
     # @param self  The current object
     # @return self The current object
     def convert_to_coherency(self):
@@ -212,15 +217,16 @@ class SingleDishData(object):
         return self
     
     ## Convert the contained power buffer from coherency vectors to Stokes vectors.
+    # This is forced to result in a real-valued powerData array.
     # @param self  The current object
     # @return self The current object
     def convert_to_stokes(self):
         if not(self.stokesFlag):
             self.stokesFlag = True
-            self.powerData = [self.coherencyData['XX']+self.coherencyData['YY'], \
-                              self.coherencyData['XX']-self.coherencyData['YY'], \
-                              self.coherencyData['XY']+self.coherencyData['YX'], \
-                              1j*(self.coherencyData['YX']-self.coherencyData['XY'])]
+            self.powerData = np.array([self.coherencyData['XX']+self.coherencyData['YY'], \
+                                       self.coherencyData['XX']-self.coherencyData['YY'], \
+                                       self.coherencyData['XY']+self.coherencyData['YX'], \
+                                   1j*(self.coherencyData['YX']-self.coherencyData['XY'])]).real
         return self
     
     ## Convert raw power measurements (W) into temperature (K) using the provided conversion function.
@@ -266,6 +272,7 @@ class SingleDishData(object):
         return self
     
     ## The total power in the block of power data (as a function of time and frequency band).
+    # This returns a non-negative real-valued array.
     # @param self The current object
     # @return The total power value (Stokes I), as a function of time and frequency band
     def total_power(self):
