@@ -14,6 +14,7 @@ import xdmsbe.xdmsbelib.fitting as fitting
 from xdmsbe.xdmsbelib import tsys
 from xdmsbe.xdmsbelib import stats
 import xdmsbe.xdmsbelib.misc as misc
+from conradmisclib.transforms import rad_to_deg, deg_to_rad
 from acsm.coordinate import Coordinate
 import acsm.transform.transformfactory as transformfactory
 import numpy as np
@@ -31,12 +32,12 @@ logger = logging.getLogger("xdmsbe.xdmsbelib.single_dish_reduce")
 
 ## Container for the components of a standard scan across a source.
 # This struct contains all the parts that make up a standard scan:
-# - information about the source (name and position)
+# - information about the source (name)
 # - information about the antenna (beamwidth)
 # - the main scan segment to be calibrated
 # - powerToTemp conversion info, as derived from gain cal data at the start and end of the scan
 # - the actual powerToTemp function used to calibrate power measurements for whole scan
-# - scan segments used to fit a baseline
+# - scan segments used to fit a baseline (if available)
 # - the baseline function that will be subtracted from main scan segment
 # pylint: disable-msg=R0903
 class StandardSourceScan(object):
@@ -107,7 +108,7 @@ class TargetToInstantMountTransform(object):
     def __call__(self, targetCoord):
         targetCoordinate = Coordinate(self.targetSys, targetCoord)
         mountCoordinate = self.targetToInstantMount.transform_coordinate(targetCoordinate, self.timeStamp)
-        return mountCoordinate.get_vector()[0:2] * 180.0 / np.pi
+        return rad_to_deg(mountCoordinate.get_vector()[0:2])
     
     ## Dimension of target coordinate vector.
     # @param self The current object
@@ -132,10 +133,11 @@ class TargetToInstantMountTransform(object):
 ## Loads a list of standard scans across various point sources from a chain of FITS files.
 # @param fitsFileName      Name of initial file in FITS chain
 # @param alpha             Alpha value for statistical tests used in gain calibration
+# @param fitBaseline       True if baseline fitting is required [True]
 # @return stdScanList      List of StandardSourceScan objects, one per scan through a source
 # @return rawPowerScanList List of SingleDishData objects, containing copies of all raw data blocks
-# pylint: disable-msg=R0914,R0915
-def load_point_source_scan_list(fitsFileName, alpha):
+# pylint: disable-msg=R0912,R0914,R0915
+def load_point_source_scan_list(fitsFileName, alpha, fitBaseline=True):
     fitsIter = fitsreader.FitsIterator(fitsFileName)
     workDict = {}
     stdScanList = []
@@ -163,20 +165,21 @@ def load_point_source_scan_list(fitsFileName, alpha):
             #..................................................................................................
             # Extract the initial part, which is assumed to be of a piece of empty sky preceding the source
             #..................................................................................................
-            fitsReaderPreScan = fitsIter.next()
-            
-            if expSeqNum != fitsReaderPreScan.expSeqNum:
-                logger.error("Unexpected change in experiment sequence number!")
-            
-            # Extract data and masks
-            dataIdNameList = ['scan']
-            dataSelectionList = [('PreBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
-            preScanDict = fitsReaderPreScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
-            
-            preScanData = preScanDict.values()[0]
-            
-            misc.set_or_check_param_continuity(workDict, 'numBands', len(preScanData.bandFreqs))
-            misc.set_or_check_param_continuity(workDict, 'bandFreqs', preScanData.bandFreqs)
+            if fitBaseline:
+                fitsReaderPreScan = fitsIter.next()
+                
+                if expSeqNum != fitsReaderPreScan.expSeqNum:
+                    logger.error("Unexpected change in experiment sequence number!")
+                
+                # Extract data and masks
+                dataIdNameList = ['scan']
+                dataSelectionList = [('PreBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
+                preScanDict = fitsReaderPreScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+                
+                preScanData = preScanDict.values()[0]
+                
+                misc.set_or_check_param_continuity(workDict, 'numBands', len(preScanData.bandFreqs))
+                misc.set_or_check_param_continuity(workDict, 'bandFreqs', preScanData.bandFreqs)
             
             #..................................................................................................
             # This is the main part of the scan, which contains the calibrator source
@@ -202,20 +205,21 @@ def load_point_source_scan_list(fitsFileName, alpha):
             #..................................................................................................
             # Extract the final part, which is assumed to be of a piece of empty sky following the source
             #..................................................................................................
-            fitsReaderPostScan = fitsIter.next()
+            if fitBaseline:
+                fitsReaderPostScan = fitsIter.next()
             
-            if expSeqNum != fitsReaderPostScan.expSeqNum:
-                logger.error("Unexpected change in experiment sequence number!")
+                if expSeqNum != fitsReaderPostScan.expSeqNum:
+                    logger.error("Unexpected change in experiment sequence number!")
             
-            # Extract data and masks
-            dataIdNameList = ['scan']
-            dataSelectionList = [('PostBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
-            postScanDict = fitsReaderPostScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+                # Extract data and masks
+                dataIdNameList = ['scan']
+                dataSelectionList = [('PostBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
+                postScanDict = fitsReaderPostScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
             
-            postScanData = postScanDict.values()[0]
+                postScanData = postScanDict.values()[0]
             
-            misc.set_or_check_param_continuity(workDict, 'numBands', len(postScanData.bandFreqs))
-            misc.set_or_check_param_continuity(workDict, 'bandFreqs', postScanData.bandFreqs)
+                misc.set_or_check_param_continuity(workDict, 'numBands', len(postScanData.bandFreqs))
+                misc.set_or_check_param_continuity(workDict, 'bandFreqs', postScanData.bandFreqs)
             
             #..................................................................................................
             # Now extract the second gain calibration chunk
@@ -237,9 +241,9 @@ def load_point_source_scan_list(fitsFileName, alpha):
             logger.info("Found scan ID : %s" % (mainScanName))
             logger.info("Source name = %s" % (stdScan.sourceName))
             logger.info("Scan start coordinate [az, el] = [%5.3f, %5.3f]" \
-                        % (mainScanData.azAng_rad[0] * 180.0 / np.pi, mainScanData.elAng_rad[0] * 180.0 / np.pi))
+                        % (rad_to_deg(mainScanData.azAng_rad[0]), rad_to_deg(mainScanData.elAng_rad[0])))
             logger.info("Scan stop coordinate  [az, el] = [%5.3f, %5.3f]" \
-                        % (mainScanData.azAng_rad[-1] * 180.0 / np.pi, mainScanData.elAng_rad[-1] * 180.0 / np.pi))
+                        % (rad_to_deg(mainScanData.azAng_rad[-1]), rad_to_deg(mainScanData.elAng_rad[-1])))
             
             # Set up power-to-temperature conversion factors
             # Check if variation in Fpt is significant - choose linear interp in that case, else constant interp
@@ -266,15 +270,18 @@ def load_point_source_scan_list(fitsFileName, alpha):
             rawList = []
             for dataBlock in preCalResDict['data'].itervalues():
                 rawList.append(dataBlock)
-            rawList.append(copy.deepcopy(preScanData))
+            if fitBaseline:
+                rawList.append(copy.deepcopy(preScanData))
             rawList.append(copy.deepcopy(mainScanData))
-            rawList.append(copy.deepcopy(postScanData))
+            if fitBaseline:
+                rawList.append(copy.deepcopy(postScanData))
             for dataBlock in postCalResDict['data'].itervalues():
                 rawList.append(dataBlock)
             rawPowerScanList.append(rawList)
             # Set up standard scan object (rest of members will be filled in during calibration)
             stdScan.mainData = mainScanData
-            stdScan.baselineDataList = [preScanData, postScanData]
+            if fitBaseline:
+                stdScan.baselineDataList = [preScanData, postScanData]
             stdScan.powerToTempTimes = fptTime
             stdScan.powerToTempFactors = stats.MuSigmaArray(fptMean, fptSigma)
             stdScanList.append(stdScan)
@@ -301,6 +308,11 @@ def calibrate_scan(stdScan, randomise):
     stdScan.powerToTempFunc = fitting.Independent1DFit(fitting.ReciprocalFit( \
                               fitting.Polynomial1DFit(maxDegree=1)), axis=1)
     stdScan.powerToTempFunc.fit(stdScan.powerToTempTimes, p2tFactors)
+    # Convert the main segment of scan to temperature, and make a copy to preserve original data
+    calibratedScan = copy.deepcopy(stdScan.mainData.convert_power_to_temp(stdScan.powerToTempFunc))
+    # Without baseline data segments, the calibration is done
+    if stdScan.baselineDataList == None:
+        return calibratedScan
     # Convert baseline data to temperature, and concatenate them into a single structure
     for ind, baselineData in enumerate(stdScan.baselineDataList):
         baselineData.convert_power_to_temp(stdScan.powerToTempFunc)
@@ -314,14 +326,14 @@ def calibrate_scan(stdScan, randomise):
     azAngMin = allBaselineData.azAng_rad.min()
     azAngMax = allBaselineData.azAng_rad.max()
     # Require variation on the order of an antenna beam width to fit higher-order polynomial
-    if elAngMax - elAngMin > stdScan.antennaBeamwidth_deg * np.pi / 180.0:
+    if elAngMax - elAngMin > deg_to_rad(stdScan.antennaBeamwidth_deg):
         stdScan.baselineUsesElevation = True
         interp = fitting.Independent1DFit(fitting.Polynomial1DFit(maxDegree=3), axis=1)
         interp.fit(allBaselineData.elAng_rad, allBaselineData.powerData)
         if randomise:
             interp = fitting.randomise(interp, allBaselineData.elAng_rad, allBaselineData.powerData, 'shuffle')
         stdScan.baselineFunc = interp
-    elif azAngMax - azAngMin > stdScan.antennaBeamwidth_deg * np.pi / 180.0:
+    elif azAngMax - azAngMin > deg_to_rad(stdScan.antennaBeamwidth_deg):
         stdScan.baselineUsesElevation = False
         interp = fitting.Independent1DFit(fitting.Polynomial1DFit(maxDegree=1), axis=1)
         interp.fit(allBaselineData.azAng_rad, allBaselineData.powerData)
@@ -335,8 +347,7 @@ def calibrate_scan(stdScan, randomise):
         if randomise:
             interp = fitting.randomise(interp, allBaselineData.elAng_rad, allBaselineData.powerData, 'shuffle')
         stdScan.baselineFunc = interp
-    # Calibrate the main segment of scan
-    calibratedScan = copy.deepcopy(stdScan.mainData.convert_power_to_temp(stdScan.powerToTempFunc))
+    # Subtract baseline and return calibrated data
     return calibratedScan.subtract_baseline(stdScan.baselineFunc, stdScan.baselineUsesElevation)
 
 
@@ -437,7 +448,7 @@ def calibrate_and_fit_beam_pattern(stdScanList, randomise):
     targetCoords = np.concatenate(targetCoords)[:, 0:2]
     totalPowerData = np.concatenate(totalPowerData)
 #    beamFuncList = fit_beam_pattern_old(targetCoords, totalPowerData, randomise)
-    targetBeamwidth = stdScanList[0].antennaBeamwidth_deg * np.pi / 180.0
+    targetBeamwidth = deg_to_rad(stdScanList[0].antennaBeamwidth_deg)
     beamFuncList = fit_beam_pattern(targetCoords, totalPowerData, targetBeamwidth, randomise)
     return beamFuncList, calibScanList
 

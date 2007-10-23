@@ -58,9 +58,9 @@ def plot_raw_power(figColor, rawPowerScanList, expName):
     minY = maxY = []
     for scanInd, rawList in enumerate(rawPowerScanList):
         axis = axesColorList[scanInd]
-        for val in rawList:
-            timeLine = val.timeSamples - timeRef
-            contPower = val.powerData[0, :, 0]
+        for block in rawList:
+            timeLine = block.timeSamples - timeRef
+            contPower = block.powerData[0, :, 0]
             axis.plot(timeLine, contPower, lw=2, color='b')
         if scanInd == numScans-1:
             axis.set_xlabel('Time [s], since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
@@ -82,7 +82,7 @@ def plot_raw_power(figColor, rawPowerScanList, expName):
 # @param stdScanList    List of StandardSourceScan objects, after power-to-temp conversion, with fitted baselines
 # @param expName        Title of experiment
 # @return axesColorList List of matplotlib Axes objects, one per plot
-# pylint: disable-msg=R0914
+# pylint: disable-msg=R0912,R0914
 def plot_baseline_fit(figColor, stdScanList, expName):
     # Set up axes
     axesColorList = []
@@ -95,22 +95,27 @@ def plot_baseline_fit(figColor, stdScanList, expName):
     timeRef = np.double(np.inf)
     for stdScan in stdScanList:
         timeRef = min(timeRef, stdScan.mainData.timeSamples.min())
-        for data in stdScan.baselineDataList:
-            timeRef = min(timeRef, data.timeSamples.min())
+        if stdScan.baselineDataList != None:
+            for data in stdScan.baselineDataList:
+                timeRef = min(timeRef, data.timeSamples.min())
     
     # Plot of (continuum) baseline fits
     minY = maxY = []
     for scanInd, stdScan in enumerate(stdScanList):
         axis = axesColorList[scanInd]
-        for val in [stdScan.mainData] + stdScan.baselineDataList:
-            timeLine = val.timeSamples - timeRef
-            contPower = val.powerData[0].mean(axis=1)
+        dataBlocks = [stdScan.mainData]
+        if stdScan.baselineDataList:
+            dataBlocks += stdScan.baselineDataList
+        for block in dataBlocks:
+            timeLine = block.timeSamples - timeRef
+            contPower = block.powerData[0].mean(axis=1)
             axis.plot(timeLine, contPower, lw=2, color='b')
-            if stdScan.baselineUsesElevation:
-                baseline = stdScan.baselineFunc(val.elAng_rad)[0].mean(axis=1)
-            else:
-                baseline = stdScan.baselineFunc(val.azAng_rad)[0].mean(axis=1)
-            axis.plot(timeLine, baseline, lw=2, color='r')
+            if stdScan.baselineFunc != None:
+                if stdScan.baselineUsesElevation:
+                    baseline = stdScan.baselineFunc(block.elAng_rad)[0].mean(axis=1)
+                else:
+                    baseline = stdScan.baselineFunc(block.azAng_rad)[0].mean(axis=1)
+                axis.plot(timeLine, baseline, lw=2, color='r')
         if scanInd == numScans-1:
             axis.set_xlabel('Time [s], since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
         axis.set_ylabel('Power (K)')
@@ -152,20 +157,20 @@ def plot_calib_scans(figColorList, calibScanList, beamFuncList, expName):
     
     # Plot one figure per frequency band
     minY = maxY = []
-    for scanInd, val in enumerate(calibScanList):
-        timeLine = val.timeSamples - timeRef
+    for scanInd, block in enumerate(calibScanList):
+        timeLine = block.timeSamples - timeRef
         for band in range(numBands):
             axesInd = band*numScans + scanInd
             axis = axesColorList[axesInd]
             # Total power in band
-            axis.plot(timeLine, val.total_power()[:, band], color='b', lw=2)
+            axis.plot(timeLine, block.total_power()[:, band], color='b', lw=2)
             if beamFuncList != None:
                 # Slice through fitted beam function along the same coordinates (change colors for invalid beams)
                 if beamFuncList[band][1]:
                     beamColor = 'r'
                 else:
                     beamColor = 'y'
-                axis.plot(timeLine, beamFuncList[band][0](val.targetCoords[:, 0:2]), color=beamColor, lw=2)
+                axis.plot(timeLine, beamFuncList[band][0](block.targetCoords[:, 0:2]), color=beamColor, lw=2)
             if scanInd == numScans-1:
                 axis.set_xlabel('Time [s], since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
             axis.set_ylabel('Power (K)')
@@ -621,6 +626,6 @@ def plot_pointing_error(figColor, resultList, expName, scale=1):
     axis.set_aspect('equal')
     axis.set_xlabel('Azimuth (deg)')
     axis.set_ylabel('Elevation (deg)')
-    axis.set_title(expName + ' : Pointing errors')
+    axis.set_title(expName + ' : Pointing errors (magnified %4.2fx)' % scale)
     
     return axesColorList
