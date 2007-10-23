@@ -507,33 +507,13 @@ def randn_complex(dim, numSamples, complexType='complex128', power=1, whiten=Tru
 #
 # @param    numPowerSamples                 dimension of random variables
 # @param    numVoltSamplesPerIntPeriod      number of samples integrated
+# @param    S                               2x2 matrix consisting of Jones matrices and coherency-to-Stokes matrix
 # @param    desiredTotalPower               desired total power of generated signal
-# @param    stokesVector                    Desired Stokes parameters of polarised signal ( default=[1,0,0,0] )
 # @param    outputFormat                    'stokes' or 'coherency' vectors             ()
 # @return   sigBuf                          data sample buffer
 # pylint: disable-msg=W0102,R0914
 
-def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTotalPower=1.0, \
-                        stokesVector=[1, 0, 0, 0], outputFormat='stokes'):
-    
-    RVec = np.dot(stokes2coherencyMatrix, np.array(stokesVector)) # Coherency vector
-    Rxx = RVec[0]
-    Rxy = RVec[1]
-    Ryx = RVec[2]
-    Ryy = RVec[3]
-    P = np.array([[Rxx, Rxy], [Ryx, Ryy]],'complex128')  # Correlation matrix for given Stokes parameters
-    
-    # Have to check for matrices which are non-positive definite
-    if ((P[0, 1]==0) and (P[1, 0]==0)) and ((P[0, 0]==0) or (P[1, 1]==0)):
-        S = np.sqrt(P)
-    else:
-        P[0, 0] += 1e-12
-        P[1, 1] += 1e-12
-        # Make sure P have unity total gain
-        S = np.linalg.cholesky(P)
-    
-    normFact = np.sqrt(2.0 / np.sum(np.ravel(S * S.conj())))
-    S = normFact * S
+def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, S, desiredTotalPower=1.0, outputFormat='stokes'):
     
     linR = np.array(S.ravel().real, dtype='double')
     linI = np.array(S.ravel().imag, dtype='double')
@@ -552,8 +532,8 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
     yyR = np.array(yy.real, dtype='double')
     yyI = np.array(yy.imag, dtype='double')
     
-    success = sc.simcor(long(numPowerSamples), long(numVoltSamplesPerIntPeriod), \
-                        float(desiredTotalPower), linR, linI, xxR, xxI, xyR, xyI, yxR, yxI, yyR, yyI)
+    success = sc.simcor(long(numPowerSamples), long(numVoltSamplesPerIntPeriod), float(desiredTotalPower), 
+                        linR, linI, xxR, xxI, xyR, xyI, yxR, yxI, yyR, yyI)
     if success:
         xx.real = xxR
         xx.imag = xxI
@@ -569,7 +549,6 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, desiredTota
     
     if (outputFormat.lower() == 'stokes'):
         sigBuf = np.dot(coherency2stokesMatrix, sigBuf)
-    
 
     return sigBuf
 
