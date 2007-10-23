@@ -63,54 +63,6 @@ coherency2stokesMatrix = np.array([[1, 0, 0, 1],  \
 #=======================================================================================================
 
 #---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  get_scan_parameters
-#---------------------------------------------------------------------------------------------------------
-
-## Return reference position and offset values for scan-type experiments
-# @param    fptExtension           extension of main scan for gain cal position [deg]
-# @param    scanExtension          extension of main scan for baseline-scan [deg]
-# @param    srcAzm                 source azimuth position [deg]
-# @param    srcEle                 source elevation position [deg]
-# @param    pointingError          antenna pointing error [azm, ele] [deg]
-# @param    horizontalScanStart    start of horizontal offset
-# @param    horizontalScanStop     stop of horizontal offset
-# @param    verticalScanStart      start of vertical offset
-# @param    verticalScanStop       stop of vertical offset
-# pylint: disable-msg=R0913,R0914
-#
-def get_scan_parameters(fptExtension, scanExtension, srcAzm, srcEle, pointingError,
-                        horizontalScanStart, horizontalScanStop, verticalScanStart, verticalScanStop):
-    
-    offsetVec1 = [horizontalScanStart, verticalScanStart]
-    offsetVec1Mag = np.sqrt(offsetVec1[0]**2.0 + offsetVec1[1]**2.0)
-    offsetVec1Angle = np.arctan2(offsetVec1[1], offsetVec1[0])
-    offsetVec1Fpt = [np.cos(offsetVec1Angle) * (offsetVec1Mag + fptExtension),
-                     np.sin(offsetVec1Angle) * (offsetVec1Mag + fptExtension)]
-    offsetVec1Scan = [np.cos(offsetVec1Angle) * (offsetVec1Mag + scanExtension),
-                      np.sin(offsetVec1Angle) * (offsetVec1Mag + scanExtension)]
-    
-    offsetVec2 = [horizontalScanStop, verticalScanStop]
-    offsetVec2Mag = np.sqrt(offsetVec2[0]**2.0 + offsetVec2[1]**2.0)
-    offsetVec2Angle = np.arctan2(offsetVec2[1], offsetVec2[0])
-    offsetVec2Fpt = [np.cos(offsetVec2Angle) * (offsetVec2Mag + fptExtension),
-                     np.sin(offsetVec2Angle) * (offsetVec2Mag + fptExtension)]
-    offsetVec2Scan = [np.cos(offsetVec2Angle) * (offsetVec2Mag + scanExtension),
-                      np.sin(offsetVec2Angle) * (offsetVec2Mag + scanExtension)]
-    
-    fptSrcAzm1 = srcAzm - pointingError[0] + offsetVec1Fpt[0]
-    fptSrcEle1 = srcEle - pointingError[1] + offsetVec1Fpt[1]
-    fptSrcAzm2 = srcAzm - pointingError[0] + offsetVec2Fpt[0]
-    fptSrcEle2 = srcEle - pointingError[1] + offsetVec2Fpt[1]
-    
-    hOffset1 = np.array([offsetVec1Scan[0], horizontalScanStart])
-    vOffset1 = np.array([offsetVec1Scan[1], verticalScanStart])
-    hOffset2 = np.array([horizontalScanStop, offsetVec2Scan[0]])
-    vOffset2 = np.array([verticalScanStop, offsetVec2Scan[1]])
-    
-    return fptSrcAzm1, fptSrcEle1, fptSrcAzm2, fptSrcEle2, hOffset1, vOffset1, hOffset2, vOffset2
-
-
-#---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  config_logging
 #---------------------------------------------------------------------------------------------------------
 
@@ -190,30 +142,6 @@ def reduction_script_options(expType, disabledOpts=''):
 
 
 #---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  get_exp_list
-#---------------------------------------------------------------------------------------------------------
-
-## Return list of experiments
-def get_exp_list():
-    return 'XDM experiment N (default=None)                             ' + \
-           '1  = Tsys Measurement at Zenith                             ' + \
-           '2  = System Temperature Stability Test                      ' + \
-           '3  = Tipping Curve                                          ' + \
-           '4  = Pointing Model                                         ' + \
-           '5  = Calibrator Source Scan                                 ' + \
-           '6  = Gain Curve                                             ' + \
-           '7  = Strong Source Scan                                     ' + \
-           '8  = Feed Focussing                                         ' + \
-           '9  = Rotation Axis Alignment [Not Implemented]              ' + \
-           '10 = Beam Pattern Mapping by Raster Scan                    ' + \
-           '11 = Dish Cone Effects                                      ' + \
-           '12 = Floodlight Calibration                                 ' + \
-           '13 = Polarisation Calibration [Not Implemented]             ' + \
-           '14 = OH Maser Monitoring [Not Implemented]                  ' + \
-           '15 = Galactic HI Measurement [Not Implemented]              '
-
-
-#---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  fmt_seq_num
 #---------------------------------------------------------------------------------------------------------
 
@@ -231,39 +159,6 @@ def fmt_seq_num(seqNum, digits):
     seqStr = str(seqNum)
     seqStr = seqStr.rjust(digits, '0')
     return seqStr
-
-
-#---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  get_power
-#---------------------------------------------------------------------------------------------------------
-
-## Calculate and return XDM power measurements
-# @param     numChannels           number of channels
-# @param     numIntegrationBins    number of samples that have been integrated together
-# @param     temperature           received power expressend in temperature [K]
-# @param     channelBandwidth      channel bandwidth [Hz]
-# @param     rxGain                receiver gain [dB]
-# @return    power                 2-D array of measured power [W]
-# pylint: disable-msg=R0913
-#
-def get_power(numChannels, numIntegrationBins, temperature, channelBandwidth, rxGain):
-    np.random.seed()
-    numSamples = len(temperature)
-    pMean  =  np.array(temperature) * (boltzmannK * channelBandwidth * pow(10.0, rxGain / 10.0))
-    pSigma = pMean * (np.sqrt(2.0) / np.sqrt(numIntegrationBins))
-    vMean  = np.sqrt(pMean)
-    vSigma = (0.5 / np.sqrt(pMean)) * pSigma
-    power = np.random.normal(vMean.repeat(numChannels).reshape(numSamples, numChannels),
-                             vSigma.repeat(numChannels).reshape(numSamples, numChannels),
-                             (numSamples, numChannels)) ** 2.0
-
-#    power = vMean**2 * np.ones((numSamples, numChannels), dtype = 'float')
-#    vMean2, vCov = spStats(np.sqrt, pMean, (pSigma ** 2.0), h=np.sqrt(3))
-#    print vMean, vMean2
-#    print vSigma, np.sqrt(vCov)
-#    print
-    
-    return power
 
 
 #---------------------------------------------------------------------------------------------------------
