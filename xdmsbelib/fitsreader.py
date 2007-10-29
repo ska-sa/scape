@@ -344,7 +344,7 @@ class FitsReader(object):
         # @param perBand True if per-channel data is to be converted to per-band data
         # @return Array of power values
         def get_masked_power_col(name, mask, perBand):
-            chanPower = np.array(self.select_masked_column('MSDATA', 'PS' + str(self.stokesIdxDict[name]), mask))
+            chanPower = np.array(self.select_masked_column('MSDATA', name, mask))
             if perBand:
                 return power_channels_to_bands_ex_rfi(chanPower)
             else:
