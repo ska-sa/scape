@@ -13,6 +13,7 @@ import numpy.linalg as linalg
 import logging
 import logging.config
 import os.path
+import csv
 import re
 import sys
 import ConfigParser
@@ -544,3 +545,169 @@ def gaussian_ellipses(mean, cov, contour=0.5, numPoints=200):
         ellipse = np.sqrt(-2*np.log(cnt)) * baseEllipse + mean[:, np.newaxis]
         ellipses.append(ellipse.transpose())
     return np.array(ellipses)
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  read_spectrum_analyzer_data
+#---------------------------------------------------------------------------------------------------------
+
+## Function to read noise diode profile measured by spectrum analyzer
+# @param filename the noise diode profile filename 
+#
+def read_spectrum_analyzer_data(filename):
+    # pylint: disable-msg=R0914
+
+    try:
+        fileHandle = open(filename, 'r')
+    except IOError:
+        msg = "Filename (%s) does not exist or cannot be read" % filename
+        logger.error(msg)
+        sys.exit(1)
+    
+    lineList = [line for line in csv.reader(fileHandle, delimiter=';')]
+
+    # Close file
+    fileHandle.close()
+
+    valuesInd = [ind for ind in xrange(len(lineList)) if lineList[ind][0] == 'Values']
+    if len(valuesInd) == 0:
+        logger.error("Could not find 'Values' field in %s" % filename)
+        sys.exit(1)
+    
+    headerEnd = valuesInd[0]
+    header = dict([line[:2] for line in lineList[:headerEnd]])
+    data = np.array([[np.double(line[0]), np.double(line[1])] for line in lineList[headerEnd+1:]])
+    freqs_Hz, power_dBm = data[:, 0], data[:, 1]
+    
+    # Convert power to temperature
+    resBW = np.double(header['RBW'])
+    mW_to_W = 1e3
+    temp_K = np.power(10.0, power_dBm / 10.0) / mW_to_W / (boltzmannK * resBW)
+    
+    return freqs_Hz, temp_K
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  read_coupling_data
+#---------------------------------------------------------------------------------------------------------
+
+## Function to read coupling parameter data
+# @param filename the filename of the coupling parameter file
+#
+def read_coupling_data(filename):
+    # pylint: disable-msg=R0912
+
+    try:
+        fileHandle = open(filename, 'r')
+    except IOError:
+        msg = "Filename (%s) does not exist or cannot be read" % filename
+        logger.error(msg)
+        sys.exit(1)
+    
+    # Strip empty lines at beginning
+    line = fileHandle.readline()
+    while line.strip().split() == []:
+        line = fileHandle.readline()
+    
+    # Strip comments and empty lines
+    lineList = line.strip().split()
+    while lineList[0] == '%':
+        line = fileHandle.readline()
+        while line.strip().split() == []:
+            line = fileHandle.readline()
+        lineList = line.strip().split()
+    
+    # Read number of frequencies and number of rotation stage angles
+    while lineList[0] != 'Number':
+        line = fileHandle.readline()
+        while line.strip().split() == []:
+            line = fileHandle.readline()
+        lineList = line.strip().split()
+    if len(lineList) == 4:
+        if (lineList[0] == 'Number') & (lineList[2] == 'frequencies:'):
+            numFrequencies = np.long(lineList[3])
+    line = fileHandle.readline()
+    lineList = line.strip().split()
+    while lineList[0] != 'Number':
+        line = fileHandle.readline()
+        while line.strip().split() == []:
+            line = fileHandle.readline()
+        lineList = line.strip().split()
+    if len(lineList) == 6:
+        if (lineList[0] == 'Number') & (lineList[2] == 'rotation'):
+            numRotations = np.long(lineList[5])
+    
+    # Read rotator angle values
+    while lineList[0] != 'Angle:':
+        line = fileHandle.readline()
+        while line.strip().split() == []:
+            line = fileHandle.readline()
+        lineList = line.strip().split()
+    rotAngle_deg = np.array([float(s) for s in lineList[1:]])
+    
+    # Read until 'Frequency' keyword
+    while lineList[0] != 'Frequency':
+        line = fileHandle.readline()
+        while line.strip().split() == []:
+            line = fileHandle.readline()
+        lineList = line.strip().split()
+    line = fileHandle.readline()
+    lineList = line.strip().split()
+    
+    # Initialise
+    coupleFreq = np.zeros(numFrequencies)
+    coupleAmpl = np.zeros((numRotations, numFrequencies))
+    couplePhase = np.zeros((numRotations, numFrequencies))
+    
+    # Read data
+    for i in range(numFrequencies):
+        lineList = line.strip().split()
+        coupleFreq[i] = np.float(lineList[0]) * 1e6
+        for k in range(numRotations):
+            coupleAmpl[k, i] = np.float(lineList[1 + (k*2)])
+            couplePhase[k, i] = np.float(lineList[2 + (k*2)])
+        line = fileHandle.readline()
+
+    # Close file
+    fileHandle.close()
+
+    return rotAngle_deg, coupleFreq, coupleAmpl, couplePhase
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  read_cal_data
+#---------------------------------------------------------------------------------------------------------
+
+## Function to read calibration FITS file data (noise diode and floodlight illuminator)
+# @param opts option parser options
+#
+def read_cal_data(opts):
+    
+    # Read data
+    freqs_Hz, temp_K = read_spectrum_analyzer_data(opts.measured)
+    rotAngleB0p1_deg, coupleFreqB0p1, coupleAmplB0p1, couplePhaseB0p1 = read_coupling_data(opts.b0p1)
+    rotAngleB0p2_deg, coupleFreqB0p2, coupleAmplB0p2, couplePhaseB0p2 = read_coupling_data(opts.b0p2)
+    rotAngleB1p1_deg, coupleFreqB1p1, coupleAmplB1p1, couplePhaseB1p1 = read_coupling_data(opts.b1p1)
+    rotAngleB1p2_deg, coupleFreqB1p2, coupleAmplB1p2, couplePhaseB1p2 = read_coupling_data(opts.b1p2)
+    
+    # Check if data is consistent
+    if not ((rotAngleB0p1_deg == rotAngleB0p2_deg).all() and (rotAngleB0p1_deg == rotAngleB1p1_deg).all() and
+        (rotAngleB0p1_deg == rotAngleB1p2_deg).all()):
+        msg = "Rotation angles are not consistent among coupling data files"
+        logger.error(msg)
+        sys.exit(1)
+    if not ((coupleFreqB0p1 == coupleFreqB0p2).all() and (coupleFreqB0p1 == coupleFreqB1p1).all() and
+        (coupleFreqB0p1 == coupleFreqB1p2).all()):
+        msg = "Frequency values are not consistent among coupling data files"
+        logger.error(msg)
+        sys.exit(1)
+    
+    return freqs_Hz, temp_K, rotAngleB0p1_deg, coupleFreqB0p1, coupleAmplB0p1, couplePhaseB0p1, coupleAmplB0p2, \
+           couplePhaseB0p2, coupleAmplB1p1, couplePhaseB1p1, coupleAmplB1p2, couplePhaseB1p2
+    
+
+
+    
+
+
+
