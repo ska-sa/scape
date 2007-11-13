@@ -274,18 +274,18 @@ class MuSigmaArray(np.ndarray):
     # for obvious reasons.
     # @return Dictionary containing property getter and setter methods, and doc string
     # pylint: disable-msg=E0211,E0202,W0212,W0612
-    def mean():
+    def mu():
         doc = 'Mean array.'
         def fget(self):
             return self.view(np.ndarray)
         def fset(self, value):
             self = value
         return locals()
-    ## @var mean
+    ## @var mu
     # Mean array. This is merely for convenience, to restrict the object to be an numpy.ndarray.
     # Normal access to the object also provides the mean.
     # pylint: disable-msg=W0142,W1001
-    mean = property(**mean())
+    mu = property(**mu())
     
     ## Class method which creates sigma property.
     # @return Dictionary containing property getter and setter methods, and doc string
@@ -310,65 +310,73 @@ class MuSigmaArray(np.ndarray):
     ## Official string representation
     # @param self  The current object
     def __repr__(self):
-        return self.__class__.__name__ + '(' + repr(self.mean) + ',' + repr(self.sigma) + ')'
+        return self.__class__.__name__ + '(' + repr(self.mu) + ',' + repr(self.sigma) + ')'
     ## Informal string representation
     # @param self  The current object
     def __str__(self):
-        return 'mu    = ' + str(self.mean) + '\nsigma = ' + str(self.sigma)
+        return 'mu    = ' + str(self.mu) + '\nsigma = ' + str(self.sigma)
     ## Index both arrays at the same time
     def __getitem__(self, value):
         if self.sigma == None:
-            return MuSigmaArray(self.mean[value], None)
+            return MuSigmaArray(self.mu[value], None)
         else:
-            return MuSigmaArray(self.mean[value], self.sigma[value])
+            return MuSigmaArray(self.mu[value], self.sigma[value])
     ## Index both arrays at the same time
     def __getslice__(self, first, last):
         if self.sigma == None:
-            return MuSigmaArray(self.mean[first:last], None)
+            return MuSigmaArray(self.mu[first:last], None)
         else:
-            return MuSigmaArray(self.mean[first:last], self.sigma[first:last])
+            return MuSigmaArray(self.mu[first:last], self.sigma[first:last])
     ## Shallow copy operation
     def __copy__(self):
-        return MuSigmaArray(self.mean, self.sigma)
+        return MuSigmaArray(self.mu, self.sigma)
     ## Deep copy operation
     def __deepcopy__(self, memo):
-        return MuSigmaArray(copy.deepcopy(self.mean, memo), copy.deepcopy(self.sigma, memo))
+        return MuSigmaArray(copy.deepcopy(self.mu, memo), copy.deepcopy(self.sigma, memo))
     
 ## Concatenate MuSigmaArrays.
 # @param msaList List of MuSigmaArrays to concatenate
 # @return MuSigmaArray that is concatenation of list
 def ms_concatenate(msaList):
-    meanList = [msa.mean for msa in msaList]
+    muList = [msa.mu for msa in msaList]
     sigmaList = [msa.sigma for msa in msaList]
     # If any sigma is None, discard the rest
     if None in sigmaList:
-        return MuSigmaArray(np.concatenate(meanList), None)
+        return MuSigmaArray(np.concatenate(muList), None)
     else:
-        return MuSigmaArray(np.concatenate(meanList), np.concatenate(sigmaList))
+        return MuSigmaArray(np.concatenate(muList), np.concatenate(sigmaList))
 
 ## Stack MuSigmaArrays horizontally.
 # @param msaList List of MuSigmaArrays to stack
 # @return MuSigmaArray that is horizontal stack of list
 def ms_hstack(msaList):
-    meanList = [msa.mean for msa in msaList]
+    muList = [msa.mu for msa in msaList]
     sigmaList = [msa.sigma for msa in msaList]
     # If any sigma is None, discard the rest
     if None in sigmaList:
-        return MuSigmaArray(np.hstack(meanList), None)
+        return MuSigmaArray(np.hstack(muList), None)
     else:
-        return MuSigmaArray(np.hstack(meanList), np.hstack(sigmaList))
+        return MuSigmaArray(np.hstack(muList), np.hstack(sigmaList))
 
 ## Stack MuSigmaArrays vertically.
 # @param msaList List of MuSigmaArrays to stack
 # @return MuSigmaArray that is vertical stack of list
 def ms_vstack(msaList):
-    meanList = [msa.mean for msa in msaList]
+    muList = [msa.mu for msa in msaList]
     sigmaList = [msa.sigma for msa in msaList]
     # If any sigma is None, discard the rest
     if None in sigmaList:
-        return MuSigmaArray(np.vstack(meanList), None)
+        return MuSigmaArray(np.vstack(muList), None)
     else:
-        return MuSigmaArray(np.vstack(meanList), np.vstack(sigmaList))
+        return MuSigmaArray(np.vstack(muList), np.vstack(sigmaList))
+
+## Determine second-order statistics from data.
+# Convenience function to return second-order statistics of data along given axis as a MuSigmaArray.
+# @param data Numpy data array of arbitrary shape
+# @param axis Index of axis along which stats are calculated (will be averaged away in the process) [0]
+# @return MuSigmaArray containing data stats, of same dimension as data, but without given axis
+def mu_sigma(data, axis=0):
+    return MuSigmaArray(data.mean(axis=axis), data.std(axis=axis))
 
 #=========================================================================================================
 #=== FUNCTIONS                                                                                         ===
@@ -575,7 +583,7 @@ def sp_uncorrelated_stats(func, muSigmaX, h=np.sqrt(3)):
         message = 'sp_uncorrelated_stats expects MuSigmaArray object for muSigmaX.'
         logger.error(message)
         raise TypeError, message
-    muX = np.atleast_1d(muSigmaX.mean)
+    muX = np.atleast_1d(muSigmaX.mu)
     # No sigma info allows a quick shortcut - only the mean is propagated
     if muSigmaX.sigma == None:
         return MuSigmaArray(func(muX), None)

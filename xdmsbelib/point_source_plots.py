@@ -478,7 +478,7 @@ def plot_antenna_gain(figColor, resultList, expName):
     
     axis = axesColorList[0]
     try:
-        vis.draw_std_corridor(axis, plotFreqs, pointSourceSensitivity.mean, pointSourceSensitivity.sigma, \
+        vis.draw_std_corridor(axis, plotFreqs, pointSourceSensitivity.mu, pointSourceSensitivity.sigma, \
                               muLineType='b-o')
     except AttributeError:
         axis.plot(plotFreqs, pointSourceSensitivity, '-ob')
@@ -490,7 +490,7 @@ def plot_antenna_gain(figColor, resultList, expName):
     axis.set_title(expName + ' : Point source sensitivity')
     axis = axesColorList[1]
     try:
-        vis.draw_std_corridor(axis, plotFreqs, effArea.mean, effArea.sigma, muLineType='b-o')
+        vis.draw_std_corridor(axis, plotFreqs, effArea.mu, effArea.sigma, muLineType='b-o')
     except AttributeError:
         axis.plot(plotFreqs, effArea, '-ob')
     axis.set_ylim(min(0.95*effArea.min(), axis.get_ylim()[0]), max(1.05*effArea.max(), axis.get_ylim()[1]))
@@ -500,7 +500,7 @@ def plot_antenna_gain(figColor, resultList, expName):
     axis.set_title(expName + ' : Antenna effective area')
     axis = axesColorList[2]
     try:
-        vis.draw_std_corridor(axis, plotFreqs, antGain.mean, antGain.sigma, muLineType='b-o')
+        vis.draw_std_corridor(axis, plotFreqs, antGain.mu, antGain.sigma, muLineType='b-o')
     except AttributeError:
         axis.plot(plotFreqs, antGain, '-ob')
     axis.set_ylim(min(0.98*antGain.min(), axis.get_ylim()[0]), max(1.02*antGain.max(), axis.get_ylim()[1]))
@@ -537,7 +537,7 @@ def plot_gain_curve(figColorList, resultList, expName):
         axis = axesColorList[axesInd]
         pointSourceSensitivity = pssBlock[:, band]
         try:
-            vis.draw_std_corridor(axis, sourceElAng_deg, pointSourceSensitivity.mean, pointSourceSensitivity.sigma, \
+            vis.draw_std_corridor(axis, sourceElAng_deg, pointSourceSensitivity.mu, pointSourceSensitivity.sigma, \
                                   muLineType='b-o')
         except AttributeError:
             axis.plot(sourceElAng_deg, pointSourceSensitivity, '-ob')
@@ -552,7 +552,7 @@ def plot_gain_curve(figColorList, resultList, expName):
         axis = axesColorList[axesInd]
         effArea = effAreaBlock[:, band]
         try:
-            vis.draw_std_corridor(axis, sourceElAng_deg, effArea.mean, effArea.sigma, muLineType='b-o')
+            vis.draw_std_corridor(axis, sourceElAng_deg, effArea.mu, effArea.sigma, muLineType='b-o')
         except AttributeError:
             axis.plot(sourceElAng_deg, effArea, '-ob')
         axis.set_ylim(min(0.95*effArea.min(), axis.get_ylim()[0]), max(1.05*effArea.max(), axis.get_ylim()[1]))
@@ -565,7 +565,7 @@ def plot_gain_curve(figColorList, resultList, expName):
         axis = axesColorList[axesInd]
         antGain = antGainBlock[:, band]
         try:
-            vis.draw_std_corridor(axis, sourceElAng_deg, antGain.mean, antGain.sigma, muLineType='b-o')
+            vis.draw_std_corridor(axis, sourceElAng_deg, antGain.mu, antGain.sigma, muLineType='b-o')
         except AttributeError:
             axis.plot(sourceElAng_deg, antGain, '-ob')
         axis.set_ylim(min(0.98*antGain.min(), axis.get_ylim()[0]), max(1.02*antGain.max(), axis.get_ylim()[1]))

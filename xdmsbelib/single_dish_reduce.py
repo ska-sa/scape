@@ -303,7 +303,7 @@ def calibrate_scan(stdScan, randomise):
     # Set up power-to-temp conversion factors (optionally randomising it)
     p2tFactors = stdScan.powerToTempFactors
     if randomise:
-        p2tFactors = p2tFactors.mean + p2tFactors.sigma * random.standard_normal(p2tFactors.shape)
+        p2tFactors = p2tFactors.mu + p2tFactors.sigma * random.standard_normal(p2tFactors.shape)
     # Power-to-temp conversion factor is inverse of gain, which is assumed to change linearly over time
     stdScan.powerToTempFunc = fitting.Independent1DFit(fitting.ReciprocalFit( \
                               fitting.Polynomial1DFit(maxDegree=1)), axis=1)
@@ -575,8 +575,8 @@ def reduce_point_source_scan_with_stats(stdScanList, method='resample', numSampl
         raise NotImplementedError, 'Currently broken, see @todo...'
         # Currently only Fpt factors are sigma'ed, as the full data set will be too computationally intensive
         # pylint: disable-msg=W0101
-        print [stdScan.powerToTempFactors.mean.shape for stdScan in stdScanList]
-        fptMean = np.array([stdScan.powerToTempFactors.mean for stdScan in stdScanList])
+        print [stdScan.powerToTempFactors.mu.shape for stdScan in stdScanList]
+        fptMean = np.array([stdScan.powerToTempFactors.mu for stdScan in stdScanList])
         fptSigma = np.array([stdScan.powerToTempFactors.sigma for stdScan in stdScanList])
         fptMuSigma = stats.MuSigmaArray(fptMean.ravel(), fptSigma.ravel())
         
@@ -607,14 +607,14 @@ def reduce_point_source_scan_with_stats(stdScanList, method='resample', numSampl
         
         # Re-assemble results
         numBands = len(stdScanList[0].mainData.bandFreqs)
-        if np.all(np.isnan(resMuSigma[numBands:2*numBands].mean)):
+        if np.all(np.isnan(resMuSigma[numBands:2*numBands].mu)):
             gainResults = None
         else:
-            gainResults = resMuSigma[0:numBands].mean, resMuSigma[numBands:2*numBands], \
+            gainResults = resMuSigma[0:numBands].mu, resMuSigma[numBands:2*numBands], \
                           resMuSigma[2*numBands:3*numBands], resMuSigma[3*numBands:4*numBands], \
                           resMuSigma[4*numBands:5*numBands]
         pointingResults = resMuSigma[5*numBands:5*numBands+3], resMuSigma[5*numBands+3:5*numBands+5]
-        if np.all(np.isnan(pointingResults.mean)):
+        if np.all(np.isnan(pointingResults.mu)):
             pointingResults = None
     else:
         raise ValueError, "Unknown stats method '" + method + "'."
