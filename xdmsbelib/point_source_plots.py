@@ -303,10 +303,6 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
     targetY = np.linspace(elScans_deg.min(), elScans_deg.max(), 101)
     targetMeshX, targetMeshY = np.meshgrid(targetX, targetY)
     meshCoords = np.vstack((targetMeshX.ravel(), targetMeshY.ravel()))
-    # Jitter the target coordinates to make degenerate triangles unlikely during Delaunay triangulation for contours
-    jitter = np.vstack((azScans_deg.std() * np.random.randn(azScans_deg.size), \
-                        elScans_deg.std() * np.random.randn(elScans_deg.size)))
-    jitteredCoords = np.vstack((azScans_deg.ravel(), elScans_deg.ravel())) + 0.0001 * jitter
     
     # Iterate through figures (two per band)
     for band in range(numBands):
@@ -315,9 +311,9 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
         axis = axesColorList[2*band]
         # Show the locations of the scan samples themselves
         axis.plot(azScans_deg.ravel(), elScans_deg.ravel(), '.b', alpha=0.5)
-        # Interpolate the power values onto a 2-D az-el grid for a smoother contour plot
-        gridder = fitting.Delaunay2DFit(defaultVal = power.min())
-        gridder.fit(jitteredCoords, power.ravel())
+        # Interpolate the power values onto a (jittered) 2-D az-el grid for a smoother contour plot
+        gridder = fitting.Delaunay2DFit(defaultVal = power.min(), jitter=True)
+        gridder.fit(np.vstack((azScans_deg.ravel(), elScans_deg.ravel())), power.ravel())
         meshPower = gridder(meshCoords).reshape(targetY.size, targetX.size)
         # Choose contour levels as fractions of the peak power
         contourLevels = np.arange(0.1, 1.0, 0.1) * meshPower.max()
