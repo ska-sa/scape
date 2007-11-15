@@ -11,14 +11,13 @@
 
 import xdmsbe.xdmsbelib.fitsreader as fitsreader
 import xdmsbe.xdmsbelib.fitting as fitting
-from xdmsbe.xdmsbelib import tsys
+import xdmsbe.xdmsbelib.gain_cal_data as gain_cal_data
 from xdmsbe.xdmsbelib import stats
 import xdmsbe.xdmsbelib.misc as misc
 from conradmisclib.transforms import rad_to_deg, deg_to_rad
 from acsm.coordinate import Coordinate
 import acsm.transform.transformfactory as transformfactory
 import numpy as np
-import numpy.random as random
 import logging
 import copy
 
@@ -35,7 +34,7 @@ logger = logging.getLogger("xdmsbe.xdmsbelib.single_dish_reduce")
 # - information about the source (name)
 # - information about the antenna (beamwidth)
 # - the main scan segment to be calibrated
-# - powerToTemp conversion info, as derived from gain cal data at the start and end of the scan
+# - a summary of gain cal data recorded at the start and end of the scan, and noise diode characteristics
 # - the actual powerToTemp function used to calibrate power measurements for whole scan
 # - scan segments used to fit a baseline (if available)
 # - the baseline function that will be subtracted from main scan segment
@@ -50,12 +49,12 @@ class StandardSourceScan(object):
     ## @var mainData
     # SingleDishData object for main scan segment
     mainData = None
-    ## @var powerToTempTimes
-    # Array of times where Fpt factors were measured
-    powerToTempTimes = None
-    ## @var powerToTempFactors
-    # Array of Fpt factors, per time, band and polarisation type
-    powerToTempFactors = None
+    ## @var noiseDiodeData
+    # Object storing noise diode characteristics
+    noiseDiodeData = None
+    ## @var gainCalData
+    # Object storing summary of power measurements made before and after the scan, for gain calibration
+    gainCalData = None
     ## @var powerToTempFunc
     # Interpolated power-to-temperature conversion function (Fpt as a function of time)
     powerToTempFunc = None
@@ -130,165 +129,178 @@ class TargetToInstantMountTransform(object):
 #----------------------------------------------------------------------------------------------------------------------
 
 
+## Checks consistency of data blocks loaded from a set of FITS files.
+# This checks that all the data blocks that make up a standard source scan have consistent parameters.
+# @param dataBlocks List of SingleDishData objects containing raw power data of a standard scan
+# @param dataLabels List of block labels (or ID strings), identifying each block
+def check_data_consistency(dataBlocks, dataLabels):
+    # Nothing to check
+    if len(dataBlocks) == 0:
+        return
+    referenceBlock = dataBlocks[0]
+    for block in dataBlocks[1:]:
+        if np.any(block.bandFreqs != referenceBlock.bandFreqs):
+            message = "Channel frequencies of two blocks in standard scan differ: " + str(block.bandFreqs) + \
+                      " vs. " + str(referenceBlock.bandFreqs)
+            logger.error(message)
+            raise ValueError, message
+    # Skip 'esn' and convert everything up to first '_' as experiment sequence number
+    expSeqNums = [int(label[3:label.find('_')]) for label in dataLabels]
+    if len(set(expSeqNums)) != 1:
+        message = "Different experiment sequence numbers found within a standard scan: " + str(expSeqNums)
+        logger.error(message)
+        raise ValueError, message
+
+
 ## Loads a list of standard scans across various point sources from a chain of FITS files.
 # @param fitsFileName      Name of initial file in FITS chain
-# @param alpha             Alpha value for statistical tests used in gain calibration
 # @param fitBaseline       True if baseline fitting is required [True]
 # @return stdScanList      List of StandardSourceScan objects, one per scan through a source
 # @return rawPowerScanList List of SingleDishData objects, containing copies of all raw data blocks
 # pylint: disable-msg=R0912,R0914,R0915
-def load_point_source_scan_list(fitsFileName, alpha, fitBaseline=True):
+def load_point_source_scan_list(fitsFileName, fitBaseline=True):
     fitsIter = fitsreader.FitsIterator(fitsFileName)
-    workDict = {}
     stdScanList = []
     rawPowerScanList = []
+    noiseDiodeData = None
     print "                 **** Loading scan data from FITS files ****\n"
+    # Iterate through multiple standard scans
     while True:
+        stdScan = StandardSourceScan()
+        # Put this before printing the banner below, otherwise the banner will appear once too many
         try:
-            stdScan = StandardSourceScan()
             fitsReaderPreCal = fitsIter.next()
-            
-            print "==============================================================================================\n"
-            print "                             **** SCAN %d ****\n" % len(stdScanList)
-            
-            #..................................................................................................
-            # Extract the first gain calibration chunk
-            #..................................................................................................
-            expSeqNum = fitsReaderPreCal.expSeqNum
-            
-            preCalResDict = tsys.process(fitsreader.SingleShotIterator(fitsReaderPreCal), \
-                                         testLinearity = False, alpha = alpha)
-            
-            misc.set_or_check_param_continuity(workDict, 'numBands', preCalResDict['numBands'])
-            misc.set_or_check_param_continuity(workDict, 'bandFreqs', preCalResDict['bandFreqs'])
-            
-            #..................................................................................................
-            # Extract the initial part, which is assumed to be of a piece of empty sky preceding the source
-            #..................................................................................................
-            if fitBaseline:
-                fitsReaderPreScan = fitsIter.next()
-                
-                if expSeqNum != fitsReaderPreScan.expSeqNum:
-                    logger.error("Unexpected change in experiment sequence number!")
-                
-                # Extract data and masks
-                dataIdNameList = ['scan']
-                dataSelectionList = [('PreBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
-                preScanDict = fitsReaderPreScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
-                
-                preScanData = preScanDict.values()[0]
-                
-                misc.set_or_check_param_continuity(workDict, 'numBands', len(preScanData.bandFreqs))
-                misc.set_or_check_param_continuity(workDict, 'bandFreqs', preScanData.bandFreqs)
-            
-            #..................................................................................................
-            # This is the main part of the scan, which contains the calibrator source
-            #..................................................................................................
-            fitsReaderScan = fitsIter.next()
-            
-            if expSeqNum != fitsReaderScan.expSeqNum:
-                logger.error("Unexpected change in experiment sequence number!")
-            
-            # Extract data and masks
-            dataIdNameList = ['scan']
-            dataSelectionList = [('MainScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
-            scanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
-            
-            mainScanName, mainScanData = scanDict.items()[0]
-            # Get the source name and position from the main scan, as well as the antenna beamwidth
-            stdScan.sourceName = fitsReaderScan.get_primary_header()['Target']
-            stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth', mask=None)[0]
-            
-            misc.set_or_check_param_continuity(workDict, 'numBands', len(mainScanData.bandFreqs))
-            misc.set_or_check_param_continuity(workDict, 'bandFreqs', mainScanData.bandFreqs)
-            
-            #..................................................................................................
-            # Extract the final part, which is assumed to be of a piece of empty sky following the source
-            #..................................................................................................
-            if fitBaseline:
-                fitsReaderPostScan = fitsIter.next()
-            
-                if expSeqNum != fitsReaderPostScan.expSeqNum:
-                    logger.error("Unexpected change in experiment sequence number!")
-            
-                # Extract data and masks
-                dataIdNameList = ['scan']
-                dataSelectionList = [('PostBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
-                postScanDict = fitsReaderPostScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
-            
-                postScanData = postScanDict.values()[0]
-            
-                misc.set_or_check_param_continuity(workDict, 'numBands', len(postScanData.bandFreqs))
-                misc.set_or_check_param_continuity(workDict, 'bandFreqs', postScanData.bandFreqs)
-            
-            #..................................................................................................
-            # Now extract the second gain calibration chunk
-            #..................................................................................................
-            fitsReaderPostCal = fitsIter.next()
-            
-            if expSeqNum != fitsReaderPostCal.expSeqNum:
-                logger.error("Unexpected change in experiment sequence number!")
-            
-            postCalResDict = tsys.process(fitsreader.SingleShotIterator(fitsReaderPostCal), \
-                                          testLinearity = False, alpha = alpha)
-            
-            misc.set_or_check_param_continuity(workDict, 'numBands', postCalResDict['numBands'])
-            misc.set_or_check_param_continuity(workDict, 'bandFreqs', postCalResDict['bandFreqs'])
-            
-            #..................................................................................................
-            # Now package the data in objects
-            #..................................................................................................
-            logger.info("Found scan ID : %s" % (mainScanName))
-            logger.info("Source name = %s" % (stdScan.sourceName))
-            logger.info("Scan start coordinate [az, el] = [%5.3f, %5.3f]" \
-                        % (rad_to_deg(mainScanData.azAng_rad[0]), rad_to_deg(mainScanData.elAng_rad[0])))
-            logger.info("Scan stop coordinate  [az, el] = [%5.3f, %5.3f]" \
-                        % (rad_to_deg(mainScanData.azAng_rad[-1]), rad_to_deg(mainScanData.elAng_rad[-1])))
-            
-            # Set up power-to-temperature conversion factors
-            # Check if variation in Fpt is significant - choose linear interp in that case, else constant interp
-            fptDiff = np.abs(preCalResDict['Fpt'] - postCalResDict['Fpt'])
-            fptTotSig = np.sqrt(preCalResDict['Fpt_sigma']**2 + postCalResDict['Fpt_sigma']**2)
-            msDiff = fptTotSig - fptDiff
-            isLinear = msDiff.mean(axis=1) > 0.0
-            preCalResDict['Fpt'] = preCalResDict['Fpt'][:, np.newaxis, :]
-            postCalResDict['Fpt'] = postCalResDict['Fpt'][:, np.newaxis, :]
-            preCalResDict['Fpt_sigma'] = preCalResDict['Fpt_sigma'][:, np.newaxis, :]
-            postCalResDict['Fpt_sigma'] = postCalResDict['Fpt_sigma'][:, np.newaxis, :]
-            if np.all(isLinear):
-                logger.info("Pre and Post gain cal within stable bounds. Using average gain.")
-                fptMean = 0.5*(preCalResDict['Fpt'] + postCalResDict['Fpt'])
-                fptSigma = np.sqrt(preCalResDict['Fpt_sigma']**2 + postCalResDict['Fpt_sigma']**2)
-                fptTime = 0.5*(preCalResDict['Fpt_time'] + postCalResDict['Fpt_time'])
-            else:
-                logger.info("Pre and Post gain cal outside stable bounds. Fitting linear gain profile.")
-                fptMean = np.concatenate((preCalResDict['Fpt'], postCalResDict['Fpt']), axis=1)
-                fptSigma = np.concatenate((preCalResDict['Fpt_sigma'], postCalResDict['Fpt_sigma']), axis=1)
-                fptTime = np.array((preCalResDict['Fpt_time'], postCalResDict['Fpt_time']))
-            
-            # Save raw power objects
-            rawList = []
-            for dataBlock in preCalResDict['data'].itervalues():
-                rawList.append(dataBlock)
-            if fitBaseline:
-                rawList.append(copy.deepcopy(preScanData))
-            rawList.append(copy.deepcopy(mainScanData))
-            if fitBaseline:
-                rawList.append(copy.deepcopy(postScanData))
-            for dataBlock in postCalResDict['data'].itervalues():
-                rawList.append(dataBlock)
-            rawPowerScanList.append(rawList)
-            # Set up standard scan object (rest of members will be filled in during calibration)
-            stdScan.mainData = mainScanData
-            if fitBaseline:
-                stdScan.baselineDataList = [preScanData, postScanData]
-            stdScan.powerToTempTimes = fptTime
-            stdScan.powerToTempFactors = stats.MuSigmaArray(fptMean, fptSigma)
-            stdScanList.append(stdScan)
-        
         except StopIteration:
             break
-    
+        
+        print "==============================================================================================\n"
+        print "                             **** SCAN %d ****\n" % len(stdScanList)
+        
+        #..................................................................................................
+        # Extract the first gain calibration chunks
+        #..................................................................................................
+        # Load noise diode characteristics from first FITS file
+        if noiseDiodeData == None:
+            noiseDiodeData = gain_cal_data.NoiseDiodeData(fitsReaderPreCal)
+        
+        dataIdNameList = ['cold', 'hot', 'cal']
+        dataSelectionList = [('PreCalOff', {'RX_ON_F': False, 'ND_ON_F': False, 'VALID_F': True}, False), \
+                             ('PreCalOn', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False), \
+                             ('PreCalOnND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)]
+        preCalDict = fitsReaderPreCal.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+        
+        print "PreCalibration data blocks:  ", preCalDict.keys()
+        
+        #..................................................................................................
+        # Extract the initial part, which is assumed to be of a piece of empty sky preceding the source
+        #..................................................................................................
+        if fitBaseline:
+            try:
+                fitsReaderPreScan = fitsIter.next()
+            except StopIteration:
+                break
+            
+            dataIdNameList = ['scan']
+            dataSelectionList = [('PreBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
+            preScanDict = fitsReaderPreScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+            
+            preScanData = preScanDict.values()[0]
+            
+            print "PreBaselineScan data blocks: ", preScanDict.keys()
+        
+        #..................................................................................................
+        # This is the main part of the scan, which contains the calibrator source
+        #..................................................................................................
+        try:
+            fitsReaderScan = fitsIter.next()
+        except StopIteration:
+            break
+        
+        dataIdNameList = ['scan']
+        dataSelectionList = [('MainScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
+        mainScanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+        
+        mainScanData = mainScanDict.values()[0]
+        # Get the source name and position from the main scan, as well as the antenna beamwidth
+        stdScan.sourceName = fitsReaderScan.get_primary_header()['Target']
+        stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth', mask=None)[0]
+        
+        print "MainScan data blocks:        ", mainScanDict.keys()
+        print "Source name:", stdScan.sourceName
+        print "Scan start coordinate [az, el] = [%5.3f, %5.3f]" \
+              % (rad_to_deg(mainScanData.azAng_rad[0]), rad_to_deg(mainScanData.elAng_rad[0]))
+        print "Scan stop coordinate  [az, el] = [%5.3f, %5.3f]" \
+              % (rad_to_deg(mainScanData.azAng_rad[-1]), rad_to_deg(mainScanData.elAng_rad[-1]))
+        
+        #..................................................................................................
+        # Extract the final part, which is assumed to be of a piece of empty sky following the source
+        #..................................................................................................
+        if fitBaseline:
+            try:
+                fitsReaderPostScan = fitsIter.next()
+            except StopIteration:
+                break
+            
+            dataIdNameList = ['scan']
+            dataSelectionList = [('PostBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
+            postScanDict = fitsReaderPostScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+            
+            postScanData = postScanDict.values()[0]
+            
+            print "PostBaselineScan data blocks:", postScanDict.keys()
+            
+        #..................................................................................................
+        # Now extract the second gain calibration chunks
+        #..................................................................................................
+        try:
+            fitsReaderPostCal = fitsIter.next()
+        except StopIteration:
+            break
+        
+        dataIdNameList = ['cold', 'hot', 'cal']
+        dataSelectionList = [('PostCalOff', {'RX_ON_F': False, 'ND_ON_F': False, 'VALID_F': True}, False), \
+                             ('PostCalOn', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False), \
+                             ('PostCalOnND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)]
+        postCalDict = fitsReaderPostCal.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+        
+        print "PostCalibration data blocks: ", postCalDict.keys()
+        
+        #..................................................................................................
+        # Now package the data in objects
+        #..................................................................................................
+        
+        # Save raw power objects (deep-copying the ones that will be affected by calibration)
+        rawBlocks = []
+        rawLabels = []
+        rawBlocks += preCalDict.values()
+        rawLabels += preCalDict.keys()
+        if fitBaseline:
+            rawBlocks.append(copy.deepcopy(preScanData))
+            rawLabels.append(preScanDict.keys()[0])
+        rawBlocks.append(copy.deepcopy(mainScanData))
+        rawLabels.append(mainScanDict.keys()[0])
+        if fitBaseline:
+            rawBlocks.append(copy.deepcopy(postScanData))
+            rawLabels.append(postScanDict.keys()[0])
+        rawBlocks += postCalDict.values()
+        rawLabels += postCalDict.keys()
+        
+        check_data_consistency(rawBlocks, rawLabels)
+        
+        # Set up standard scan object (rest of members will be filled in during calibration)
+        stdScan.mainData = mainScanData
+        stdScan.noiseDiodeData = noiseDiodeData
+        calDict = {}
+        calDict.update(preCalDict)
+        calDict.update(postCalDict)
+        stdScan.gainCalData = gain_cal_data.GainCalibrationData(calDict)
+        if fitBaseline:
+            stdScan.baselineDataList = [preScanData, postScanData]
+        
+        # Successful standard scan finally gets added to lists here - this ensures lists are in sync
+        rawPowerScanList.append(rawBlocks)
+        stdScanList.append(stdScan)
+        
     return stdScanList, rawPowerScanList
 
 
@@ -300,14 +312,8 @@ def load_point_source_scan_list(fitsFileName, alpha, fitBaseline=True):
 # @param randomise True if fits should be randomised, as part of a larger Monte Carlo run
 # @return SingleDishData object containing calibrated main scan
 def calibrate_scan(stdScan, randomise):
-    # Set up power-to-temp conversion factors (optionally randomising it)
-    p2tFactors = stdScan.powerToTempFactors
-    if randomise:
-        p2tFactors = p2tFactors.mu + p2tFactors.sigma * random.standard_normal(p2tFactors.shape)
-    # Power-to-temp conversion factor is inverse of gain, which is assumed to change linearly over time
-    stdScan.powerToTempFunc = fitting.Independent1DFit(fitting.ReciprocalFit( \
-                              fitting.Polynomial1DFit(maxDegree=1)), axis=1)
-    stdScan.powerToTempFunc.fit(stdScan.powerToTempTimes, p2tFactors)
+    # Set up power-to-temp conversion function (optionally randomising it)
+    stdScan.powerToTempFunc = stdScan.gainCalData.power_to_temp_func(stdScan.noiseDiodeData, randomise=randomise)
     # Convert the main segment of scan to temperature, and make a copy to preserve original data
     calibratedScan = copy.deepcopy(stdScan.mainData.convert_power_to_temp(stdScan.powerToTempFunc))
     # Without baseline data segments, the calibration is done
