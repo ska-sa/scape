@@ -10,7 +10,6 @@ import xdmsbe.xdmsbelib.fitting as fitting
 import xdmsbe.xdmsbelib.stats as stats
 import xdmsbe.xdmsbelib.single_dish_data as sdd
 from conradmisclib.transforms import deg_to_rad
-import scipy.interpolate as interpolate
 import numpy as np
 import logging
 
@@ -80,11 +79,13 @@ class NoiseDiodeData(object):
         ## @var couplingInterpX
         # Interpolation function for coupling strength between noise diode and X input of feed, as a function
         # of frequency and rotator angle
-        self.couplingInterpX = interpolate.RectBivariateSpline(couplingFreqs_Hz, couplingRotAngs_rad, couplingGainX_dB)
+        self.couplingInterpX = fitting.Spline2DGridFit()
+        self.couplingInterpX.fit((couplingFreqs_Hz, couplingRotAngs_rad), couplingGainX_dB)
         ## @var couplingInterpY
         # Interpolation function for coupling strength between noise diode and Y input of feed, as a function
         # of frequency and rotator angle
-        self.couplingInterpY = interpolate.RectBivariateSpline(couplingFreqs_Hz, couplingRotAngs_rad, couplingGainY_dB)
+        self.couplingInterpY = fitting.Spline2DGridFit()
+        self.couplingInterpY.fit((couplingFreqs_Hz, couplingRotAngs_rad), couplingGainY_dB)
     
     ## Obtain noise diode temperature.
     # Obtain interpolated noise diode temperature at desired frequencies and rotator angles. Optionally, randomise
@@ -106,7 +107,8 @@ class NoiseDiodeData(object):
         # Evaluate the smoothed spectrum at the desired frequencies
         smoothSpectrum = spectrumInterp(freqs_Hz)
         # Evaluate the coupling strength on the grid of frequency and angle values, and convert from dB to linear
-        coupling = np.array([self.couplingInterpX(freqs_Hz, rotAng_rad), self.couplingInterpY(freqs_Hz, rotAng_rad)])
+        coupling = np.array([self.couplingInterpX((freqs_Hz, rotAng_rad)), \
+                             self.couplingInterpY((freqs_Hz, rotAng_rad))])
         coupling = np.power(10.0, coupling / 10.0)
         # Combine spectrum with coupling strengths, for each input port (X and Y)
         return smoothSpectrum[np.newaxis, :, np.newaxis] * coupling
