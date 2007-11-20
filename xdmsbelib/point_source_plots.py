@@ -312,7 +312,7 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
         # Show the locations of the scan samples themselves
         axis.plot(azScans_deg.ravel(), elScans_deg.ravel(), '.b', alpha=0.5)
         # Interpolate the power values onto a (jittered) 2-D az-el grid for a smoother contour plot
-        gridder = fitting.Delaunay2DFit(defaultVal = power.min(), jitter=True)
+        gridder = fitting.Delaunay2DScatterFit(defaultVal = power.min(), jitter=True)
         gridder.fit(np.vstack((azScans_deg.ravel(), elScans_deg.ravel())), power.ravel())
         meshPower = gridder(meshCoords).reshape(targetY.size, targetX.size)
         # Choose contour levels as fractions of the peak power
