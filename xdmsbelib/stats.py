@@ -393,7 +393,7 @@ def mu_sigma(data, axis=0):
 #
 #     y = f(x) + n
 #
-# Here f() is an arbitray function (specified as input parameter) and n is additive Gaussian (normal) noise
+# Here f() is an arbitrary function (specified as input parameter) and n is additive Gaussian (normal) noise
 # with zero mean and specified standard deviation.
 #
 # @param      xMu               input random variable dataset (mean)
