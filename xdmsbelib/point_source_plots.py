@@ -17,6 +17,7 @@
 import xdmsbe.xdmsbelib.fitting as fitting
 import xdmsbe.xdmsbelib.vis as vis
 import xdmsbe.xdmsbelib.misc as misc
+import xdmsbe.xdmsbelib.stats as stats
 from conradmisclib.transforms import rad_to_deg
 import matplotlib.axes3d as mplot3d
 import numpy as np
@@ -37,36 +38,190 @@ logger = logging.getLogger('xdmsbe.plots.point_source_plots')
 
 ## Plot raw power data of multiple scans through a point source.
 # @param figColor         Matplotlib Figure object to contain plots
-# @param rawPowerScanList List of SingleDishData objects, containing copies of all raw data blocks
+# @param rawPowerDictList List of dicts of SingleDishData objects, containing copies of all raw data blocks
 # @param expName          Title of experiment
 # @return axesColorList   List of matplotlib Axes objects, one per plot
 # pylint: disable-msg=R0914
-def plot_raw_power(figColor, rawPowerScanList, expName):
+def plot_raw_power(figColor, rawPowerDictList, expName):
     # Set up axes
     axesColorList = []
-    numScans = len(rawPowerScanList)
+    numScans = len(rawPowerDictList)
     for sub in range(numScans):
         axesColorList.append(figColor.add_subplot(numScans, 1, sub+1))
     
     # Use relative time axis
     timeRef = np.double(np.inf)
-    for rawList in rawPowerScanList:
-        for data in rawList:
+    for rawDict in rawPowerDictList:
+        for data in rawDict.itervalues():
             timeRef = min(timeRef, data.timeSamples.min())
     
     # Plot of (continuum) raw XX power
     minY = maxY = []
-    for scanInd, rawList in enumerate(rawPowerScanList):
+    for scanInd, rawDict in enumerate(rawPowerDictList):
         axis = axesColorList[scanInd]
-        for block in rawList:
+        for block in rawDict.itervalues():
             timeLine = block.timeSamples - timeRef
             contPower = block.powerData[0, :, 0]
             axis.plot(timeLine, contPower, lw=2, color='b')
+        if (scanInd != numScans-1) and (numScans > 6):
+            axis.set_xticklabels([])
+        if (scanInd != numScans-1) and (numScans > 6):
+            axis.set_yticklabels([])
         if scanInd == numScans-1:
-            axis.set_xlabel('Time [s], since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
+            axis.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
         axis.set_ylabel('Raw power')
         if scanInd == 0:
             axis.set_title(expName + ' : raw power for band 0 (XX)')
+        minY.append(axis.get_ylim()[0])
+        maxY.append(axis.get_ylim()[1])
+    
+    # Set equal y-axis limits
+    for axis in axesColorList:
+        axis.set_ylim((np.array(minY).min(), np.array(maxY).max()))
+    
+    return axesColorList
+
+
+## Plot Tsys as a function of frequency, for a single pointing.
+# @param figColor       Matplotlib Figure object to contain plots
+# @param resultList     List of results, of form (bandFreqs, Tsys, timeStamps, elAng_deg, confIntervals, channelFreqs)
+# @param expName        Title of experiment
+# @return axesColorList List of matplotlib Axes objects, one per plot
+def plot_tsys(figColor, resultList, expName):
+    # Set up axes
+    axesColorList = []
+    bandFreqs, tsys = resultList[:2]
+    plotFreqs = bandFreqs / 1e9   # Hz to GHz
+    # One figure, 2 subfigures
+    axesColorList.append(figColor.add_subplot(2, 1, 1))
+    axesColorList.append(figColor.add_subplot(2, 1, 2))
+    
+    polName = {0 : 'X', 1 : 'Y'}
+    minY = maxY = []
+    # Iterate through polarisation channels (X and Y)
+    for polInd in range(2):
+        axis = axesColorList[polInd]
+        # Extract Tsys values of current polarisation of first pointing
+        tsysPol = tsys[0, polInd, :]
+        try:
+            vis.draw_std_corridor(axis, plotFreqs, tsysPol.mu, tsysPol.sigma, \
+                                  muLineType='bo', sigmaFillColor='b', sigmaAlpha=0.1)
+        except AttributeError:
+            axis.plot(plotFreqs, tsysPol, 'bo')
+        axis.grid()
+        axis.set_title(expName + ' : Tsys for polarisation ' + polName[polInd])
+        axis.set_ylabel('Temperature (K)')
+        if polInd == 0:
+            axis.set_xticklabels([])
+        else:
+            axis.set_xlabel('Band frequency (GHz)')
+        minY.append(axis.get_ylim()[0])
+        maxY.append(axis.get_ylim()[1])
+    
+    # Set equal y-axis limits
+    for axis in axesColorList:
+        axis.set_ylim((np.array(minY).min(), np.array(maxY).max()))
+    
+    return axesColorList
+
+
+## Plot Tsys as a function of time or elevation angle, for multiple pointings.
+# @param figColorList   List of matplotlib Figure objects to contain plots
+# @param resultList     List of results, of form (bandFreqs, Tsys, timeStamps, elAng_deg, confIntervals, channelFreqs)
+# @param expName        Title of experiment
+# @return axesColorList List of matplotlib Axes objects, one per plot
+def plot_tsys_curve(figColorList, resultList, expName):
+    # Set up axes
+    axesColorList = []
+    bandFreqs, tsys, timeStamps, elAng_deg = resultList[:4]
+    plotFreqs = bandFreqs / 1e9   # Hz to GHz
+    numBands = len(plotFreqs)
+    # Determine which x axis to plot against
+    if timeStamps == None:
+        xVals = elAng_deg
+        xLabel = 'Elevation angle (degrees)'
+    else:
+        timeRef = timeStamps.min()
+        xVals = timeStamps - timeRef
+        xLabel = 'Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef))
+    # One figure per frequency band
+    for band in range(numBands):
+        # 2 subfigures
+        axesColorList.append(figColorList[band].add_subplot(2, 1, 1))
+        axesColorList.append(figColorList[band].add_subplot(2, 1, 2))
+    
+    polName = {0 : 'X', 1 : 'Y'}
+    minY = maxY = []
+    # Plot one figure per frequency band
+    for band in range(numBands):
+        # Iterate through polarisation channels (X and Y)
+        for polInd in range(2):
+            axesInd = band*2 + polInd
+            axis = axesColorList[axesInd]
+            # Extract Tsys values of current polarisation for the current band
+            tsysPol = tsys[:, polInd, band]
+            try:
+                vis.draw_std_corridor(axis, xVals, tsysPol.mu, tsysPol.sigma, \
+                                      muLineType='b-o', sigmaFillColor='b', sigmaAlpha=0.1)
+            except AttributeError:
+                axis.plot(xVals, tsysPol, 'b-o')
+            axis.grid()
+            axis.set_title(expName + ' : Tsys (' + polName[polInd] + \
+                           ') in band %d : %3.3f GHz' % (band, plotFreqs[band]))
+            axis.set_ylabel('Temperature (K)')
+            if polInd == 0:
+                axis.set_xticklabels([])
+            else:
+                axis.set_xlabel(xLabel)
+            minY.append(axis.get_ylim()[0])
+            maxY.append(axis.get_ylim()[1])
+    
+    # Set equal y-axis limits
+    for axis in axesColorList:
+        axis.set_ylim((np.array(minY).min(), np.array(maxY).max()))
+    
+    return axesColorList
+
+
+## Plot linearity test results.
+# @param figColor       Matplotlib Figure object to contain plots
+# @param resultList     List of results, of form (bandFreqs, Tsys, timeStamps, elAng_deg, confIntervals, channelFreqs)
+# @param expName        Title of experiment
+# @return axesColorList List of matplotlib Axes objects, one per plot
+def plot_linearity_test(figColor, resultList, expName):
+    # Set up axes
+    axesColorList = []
+    confIntervals, channelFreqs = resultList[4:6]
+    plotFreqs = channelFreqs / 1e9   # Hz to GHz
+    # One figure, 2 subfigures
+    axesColorList.append(figColor.add_subplot(2, 1, 1))
+    axesColorList.append(figColor.add_subplot(2, 1, 2))
+    
+    # Check linearity
+    isLinear = stats.check_equality_of_means(confIntervals)
+    polName = {0 : 'X', 1 : 'Y'}
+    minY = maxY = []
+    # Iterate through polarisation channels (X and Y)
+    for polInd in range(2):
+        axis = axesColorList[polInd]
+        linearInts = confIntervals[:, polInd, isLinear[polInd]]
+        linearFreqs = plotFreqs[isLinear[polInd]]
+        linearInts = np.vstack((linearInts, np.tile(np.nan, linearFreqs.shape))).transpose().ravel()
+        linearFreqs = np.vstack((linearFreqs, linearFreqs, np.tile(np.nan, linearFreqs.shape))).transpose().ravel()
+        nonLinInts = confIntervals[:, polInd, np.invert(isLinear[polInd])]
+        nonLinFreqs = plotFreqs[np.invert(isLinear[polInd])]
+        nonLinInts = np.vstack((nonLinInts, np.tile(np.nan, nonLinFreqs.shape))).transpose().ravel()
+        nonLinFreqs = np.vstack((nonLinFreqs, nonLinFreqs, np.tile(np.nan, nonLinFreqs.shape))).transpose().ravel()
+        axis.plot(linearFreqs, 100.0*linearInts, linewidth=2, color='g')
+        axis.plot(nonLinFreqs, 100.0*nonLinInts, linewidth=2, color='r')
+        axis.plot([plotFreqs[0], plotFreqs[-1]], [0, 0], linewidth=3, color='k')
+        axis.grid()
+        axis.set_title(expName + ' : Linearity test for polarisation ' + polName[polInd])
+        axis.set_ylabel('(Hot - cold) delta, as % of cold delta')
+        if polInd == 0:
+            axis.set_xticklabels([])
+        else:
+            axis.set_xlabel('Channel frequency (GHz)')
         minY.append(axis.get_ylim()[0])
         maxY.append(axis.get_ylim()[1])
     
@@ -117,7 +272,7 @@ def plot_baseline_fit(figColor, stdScanList, expName):
                     baseline = stdScan.baselineFunc(block.azAng_rad)[0].mean(axis=1)
                 axis.plot(timeLine, baseline, lw=2, color='r')
         if scanInd == numScans-1:
-            axis.set_xlabel('Time [s], since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
+            axis.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
         axis.set_ylabel('Power (K)')
         if scanInd == 0:
             axis.set_title(expName + ' : baseline fits on XX (all bands)')
@@ -172,7 +327,7 @@ def plot_calib_scans(figColorList, calibScanList, beamFuncList, expName):
                     beamColor = 'y'
                 axis.plot(timeLine, beamFuncList[band][0](block.targetCoords[:, 0:2]), color=beamColor, lw=2)
             if scanInd == numScans-1:
-                axis.set_xlabel('Time [s], since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
+                axis.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
             axis.set_ylabel('Power (K)')
             if scanInd == 0:
                 axis.set_title(expName + ' : calibrated total power in band %d : %3.3f GHz' % (band, plotFreqs[band]))

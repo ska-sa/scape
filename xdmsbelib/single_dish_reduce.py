@@ -12,6 +12,7 @@
 import xdmsbe.xdmsbelib.fitsreader as fitsreader
 import xdmsbe.xdmsbelib.fitting as fitting
 import xdmsbe.xdmsbelib.gain_cal_data as gain_cal_data
+import xdmsbe.xdmsbelib.single_dish_data as sdd
 from xdmsbe.xdmsbelib import stats
 import xdmsbe.xdmsbelib.misc as misc
 from conradmisclib.transforms import rad_to_deg, deg_to_rad
@@ -29,9 +30,9 @@ logger = logging.getLogger("xdmsbe.xdmsbelib.single_dish_reduce")
 #----------------------------------------------------------------------------------------------------------------------
 
 
-## Container for the components of a standard scan across a source.
+## Container for the components of a standard scan across a source (or measurement of a fixed pointing).
 # This struct contains all the parts that make up a standard scan:
-# - information about the source (name)
+# - information about the source or pointing location (name)
 # - information about the antenna (beamwidth)
 # - the main scan segment to be calibrated
 # - a summary of gain cal data recorded at the start and end of the scan, and noise diode characteristics
@@ -75,9 +76,9 @@ class StandardSourceScan(object):
 
 
 ## Converter which converts target to "instantaneous" mount coordinates, for a set of scans through a single target.
-# This simplifies the conversion of coordinates for a set of scans through a single target. It assumes that all 
+# This simplifies the conversion of coordinates for a set of scans through a single target. It assumes that all
 # measurements in the target coordinate space happen simultaneously, at the median time of the scan list.
-# The target is therefore assumed to move very little during the scan process.The class provides a callable object 
+# The target is therefore assumed to move very little during the scan process.The class provides a callable object
 # that does the transformation, and can be passed around to functions (the reason for its existence).
 class TargetToInstantMountTransform(object):
     ## Initialiser.
@@ -97,7 +98,7 @@ class TargetToInstantMountTransform(object):
         ## @var timeStamp
         # Time instant at which target is deemed to be observed - all measurements are assumed to be simultaneous
         self.timeStamp = np.median(allTimes)
-
+    
     ## Convert coordinates from target space to "instantaneous" mount space.
     # This currently assumes that the mount has a horizontal coordinate system, and it discards any rotator angle.
     # The output vector is therefore (az, el) in degrees.
@@ -130,40 +131,100 @@ class TargetToInstantMountTransform(object):
 
 
 ## Checks consistency of data blocks loaded from a set of FITS files.
-# This checks that all the data blocks that make up a standard source scan have consistent parameters.
-# @param dataBlocks List of SingleDishData objects containing raw power data of a standard scan
-# @param dataLabels List of block labels (or ID strings), identifying each block
-def check_data_consistency(dataBlocks, dataLabels):
+# This checks that all the data blocks that make up a standard source scan have consistent parameters. The dictionary
+# contains SingleDishData objects for each data block, indexed by string labels indicating the block ID.
+# @param dataDict Dictionary of SingleDishData objects containing raw power data of a standard scan
+def check_data_consistency(dataDict):
     # Nothing to check
-    if len(dataBlocks) == 0:
+    if len(dataDict) == 0:
         return
-    referenceBlock = dataBlocks[0]
-    for block in dataBlocks[1:]:
+    referenceBlock = dataDict.values()[0]
+    for block in dataDict.values()[1:]:
         if np.any(block.bandFreqs != referenceBlock.bandFreqs):
             message = "Channel frequencies of two blocks in standard scan differ: " + str(block.bandFreqs) + \
                       " vs. " + str(referenceBlock.bandFreqs)
             logger.error(message)
             raise ValueError, message
     # Skip 'esn' and convert everything up to first '_' as experiment sequence number
-    expSeqNums = [int(label[3:label.find('_')]) for label in dataLabels]
+    expSeqNums = [int(label[3:label.find('_')]) for label in dataDict.iterkeys()]
     if len(set(expSeqNums)) != 1:
         message = "Different experiment sequence numbers found within a standard scan: " + str(expSeqNums)
         logger.error(message)
         raise ValueError, message
 
 
+## Loads a list of standard scans used for Tsys measurements from a chain of FITS files.
+# The power data is loaded in coherency form, as this is easier to calibrate (keeping X and Y separate).
+# @param fitsFileName      Name of initial file in FITS chain
+# @return stdScanList      List of StandardSourceScan objects, one per pointing
+# @return rawPowerDictList List of dictionaries containing SingleDishData objects representing all raw data blocks
+def load_tsys_pointing_list(fitsFileName):
+    stdScanList = []
+    rawPowerDictList = []
+    noiseDiodeData = None
+    print "               **** Loading pointing data from FITS files ****\n"
+    # Iterate through multiple experiment sequences
+    for fitsExpIter in fitsreader.ExperimentIterator(fitsFileName):
+        print "===========================================================================================\n"
+        print "                           **** POINTING %d ****\n" % len(stdScanList)
+        stdScan = StandardSourceScan()
+        rawPowerDict = {}
+        # Iterate through a single experiment sequence
+        for fitsReaderScan in fitsExpIter:
+            # Load noise diode characteristics from first FITS file
+            if noiseDiodeData == None:
+                noiseDiodeData = gain_cal_data.NoiseDiodeData(fitsReaderScan)
+            
+            dataIdNameList = ['cold', 'hot', 'cal']
+            dataSelectionList = [('Off', {'RX_ON_F': False, 'ND_ON_F': False, 'VALID_F': True}, False), \
+                                 ('On', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False), \
+                                 ('OnND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)]
+            mainScanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+            
+            # Get the source name and position from the main scan, as well as the antenna beamwidth
+            stdScan.sourceName = fitsReaderScan.get_primary_header()['Target']
+            stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth', mask=None)[0]
+            
+            print "Loading file: ", fitsReaderScan.fitsFilename
+            print "Data blocks:  ", mainScanDict.keys()
+            print "Pointing name:", stdScan.sourceName
+            
+            rawPowerDict.update(mainScanDict)
+        
+        check_data_consistency(rawPowerDict)
+        
+        # Set up standard scan object (rest of members will be filled in during calibration)
+        onBlocks = [key for key in rawPowerDict.iterkeys() if key.endswith('On')]
+        coldOnBlocks = [key for key in onBlocks if key.find('_cold') >= 0]
+        # If there are no "cold" "on" blocks in set, discard the data, as both Tsys measurements and 
+        # linearity checks would be impossible (any use cases without "cold" "on" blocks?)
+        if len(coldOnBlocks) == 0:
+            print "Experiment sequence discarded, as it doesn't contain 'cold' 'on' blocks."
+            continue
+        # First 'cold' 'on' block is used for Tsys measurement
+        stdScan.mainData = rawPowerDict[coldOnBlocks[0]]
+        stdScan.noiseDiodeData = noiseDiodeData
+        stdScan.gainCalData = gain_cal_data.GainCalibrationData(rawPowerDict)
+        # Successful standard scan finally gets added to lists here - this ensures lists are in sync
+        stdScanList.append(stdScan)
+        rawPowerDictList.append(rawPowerDict)
+    
+    return stdScanList, rawPowerDictList
+
+
 ## Loads a list of standard scans across various point sources from a chain of FITS files.
+# The power data is loaded in coherency form, as this is easier to calibrate (keeping X and Y separate).
 # @param fitsFileName      Name of initial file in FITS chain
 # @param fitBaseline       True if baseline fitting is required [True]
 # @return stdScanList      List of StandardSourceScan objects, one per scan through a source
-# @return rawPowerScanList List of SingleDishData objects, containing copies of all raw data blocks
+# @return rawPowerDictList List of dicts of SingleDishData objects, containing copies of all raw data blocks
 # pylint: disable-msg=R0912,R0914,R0915
 def load_point_source_scan_list(fitsFileName, fitBaseline=True):
     fitsIter = fitsreader.FitsIterator(fitsFileName)
     stdScanList = []
-    rawPowerScanList = []
+    rawPowerDictList = []
     noiseDiodeData = None
-    print "                 **** Loading scan data from FITS files ****\n"
+    print "           **** Loading point source scan data from FITS files ****\n"
     # Iterate through multiple standard scans
     while True:
         stdScan = StandardSourceScan()
@@ -173,7 +234,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         except StopIteration:
             break
         
-        print "==============================================================================================\n"
+        print "===========================================================================================\n"
         print "                             **** SCAN %d ****\n" % len(stdScanList)
         
         #..................................................................................................
@@ -189,6 +250,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
                              ('PreCalOnND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)]
         preCalDict = fitsReaderPreCal.extract_data(dataIdNameList, dataSelectionList, perBand=True)
         
+        print "Loading file:                ", fitsReaderPreCal.fitsFilename
         print "PreCalibration data blocks:  ", preCalDict.keys()
         
         #..................................................................................................
@@ -204,8 +266,9 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
             dataSelectionList = [('PreBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
             preScanDict = fitsReaderPreScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
             
-            preScanData = preScanDict.values()[0]
+            preScanData = copy.deepcopy(preScanDict.values()[0])
             
+            print "Loading file:                ", fitsReaderPreScan.fitsFilename
             print "PreBaselineScan data blocks: ", preScanDict.keys()
         
         #..................................................................................................
@@ -220,11 +283,12 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         dataSelectionList = [('MainScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
         mainScanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
         
-        mainScanData = mainScanDict.values()[0]
+        mainScanData = copy.deepcopy(mainScanDict.values()[0])
         # Get the source name and position from the main scan, as well as the antenna beamwidth
         stdScan.sourceName = fitsReaderScan.get_primary_header()['Target']
         stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth', mask=None)[0]
         
+        print "Loading file:                ", fitsReaderScan.fitsFilename
         print "MainScan data blocks:        ", mainScanDict.keys()
         print "Source name:", stdScan.sourceName
         print "Scan start coordinate [az, el] = [%5.3f, %5.3f]" \
@@ -245,10 +309,11 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
             dataSelectionList = [('PostBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
             postScanDict = fitsReaderPostScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
             
-            postScanData = postScanDict.values()[0]
+            postScanData = copy.deepcopy(postScanDict.values()[0])
             
+            print "Loading file:                ", fitsReaderPostScan.fitsFilename
             print "PostBaselineScan data blocks:", postScanDict.keys()
-            
+        
         #..................................................................................................
         # Now extract the second gain calibration chunks
         #..................................................................................................
@@ -263,29 +328,22 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
                              ('PostCalOnND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)]
         postCalDict = fitsReaderPostCal.extract_data(dataIdNameList, dataSelectionList, perBand=True)
         
+        print "Loading file:                ", fitsReaderPostCal.fitsFilename
         print "PostCalibration data blocks: ", postCalDict.keys()
         
         #..................................................................................................
         # Now package the data in objects
         #..................................................................................................
         
-        # Save raw power objects (deep-copying the ones that will be affected by calibration)
-        rawBlocks = []
-        rawLabels = []
-        rawBlocks += preCalDict.values()
-        rawLabels += preCalDict.keys()
-        if fitBaseline:
-            rawBlocks.append(copy.deepcopy(preScanData))
-            rawLabels.append(preScanDict.keys()[0])
-        rawBlocks.append(copy.deepcopy(mainScanData))
-        rawLabels.append(mainScanDict.keys()[0])
-        if fitBaseline:
-            rawBlocks.append(copy.deepcopy(postScanData))
-            rawLabels.append(postScanDict.keys()[0])
-        rawBlocks += postCalDict.values()
-        rawLabels += postCalDict.keys()
+        # Save raw power objects
+        rawPowerDict = {}
+        rawPowerDict.update(preCalDict)
+        rawPowerDict.update(preScanDict)
+        rawPowerDict.update(mainScanDict)
+        rawPowerDict.update(postScanDict)
+        rawPowerDict.update(postCalDict)
         
-        check_data_consistency(rawBlocks, rawLabels)
+        check_data_consistency(rawPowerDict)
         
         # Set up standard scan object (rest of members will be filled in during calibration)
         stdScan.mainData = mainScanData
@@ -298,10 +356,10 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
             stdScan.baselineDataList = [preScanData, postScanData]
         
         # Successful standard scan finally gets added to lists here - this ensures lists are in sync
-        rawPowerScanList.append(rawBlocks)
+        rawPowerDictList.append(rawPowerDict)
         stdScanList.append(stdScan)
-        
-    return stdScanList, rawPowerScanList
+    
+    return stdScanList, rawPowerDictList
 
 
 ## Calibrate a single scan, by correcting gain drifts and subtracting a baseline.
@@ -393,13 +451,13 @@ def fit_beam_pattern_old(targetCoords, totalPower, randomise):
 
 
 ## Fit a beam pattern to total power data in 2-D target coordinate space.
-# This fits a Gaussian shape to power data, with the peak location as initial mean, and an initial standard 
-# deviation based on the expected beamwidth. It uses all power values in the fitting process, instead of only the 
-# points within the half-power beamwidth of the peak as suggested in [1]. This seems to be more robust for weak 
+# This fits a Gaussian shape to power data, with the peak location as initial mean, and an initial standard
+# deviation based on the expected beamwidth. It uses all power values in the fitting process, instead of only the
+# points within the half-power beamwidth of the peak as suggested in [1]. This seems to be more robust for weak
 # sources, but with more samples close to the peak, things might change again. The fitting currently only uses
 # the first two values of the target coordinate system (typically ignoring rotator angle).
 #
-# [1] "Reduction and Analysis Techniques", Ronald J. Maddalena, in Single-Dish Radio Astronomy: Techniques and 
+# [1] "Reduction and Analysis Techniques", Ronald J. Maddalena, in Single-Dish Radio Astronomy: Techniques and
 #     Applications, ASP Conference Series, Vol. 278, 2002
 #
 # @param targetCoords 2-D coordinates in target space, as an (N,2)-shaped numpy array
@@ -461,11 +519,11 @@ def calibrate_and_fit_beam_pattern(stdScanList, randomise):
 
 ## Extract all information from an unresolved point source scan.
 # This reduces the power data obtained from multiple scans across a point source. In the process, the data is
-# calibrated to remove receiver gain drifts, baselines are removed, and a beam pattern is fitted to the combined 
-# scans, which allows the source position and strength to be estimated. For general (unnamed) sources, the 
-# estimated source position is returned as target coordinates. This is effectively the pointing error, as the target 
-# is at the origin of the target coordinate system. Additionally, for known calibrator sources, the antenna gain 
-# and effective area can be estimated from the known source flux density. If either the gain or pointing estimation 
+# calibrated to remove receiver gain drifts, baselines are removed, and a beam pattern is fitted to the combined
+# scans, which allows the source position and strength to be estimated. For general (unnamed) sources, the
+# estimated source position is returned as target coordinates. This is effectively the pointing error, as the target
+# is at the origin of the target coordinate system. Additionally, for known calibrator sources, the antenna gain
+# and effective area can be estimated from the known source flux density. If either the gain or pointing estimation
 # did not succeed, the corresponding result is returned as None.
 # @param stdScanList      List of StandardSourceScan objects, describing scans across a single point source
 #                         (modified by call - converted from power to temp)
@@ -519,7 +577,7 @@ def reduce_point_source_scan(stdScanList, randomise=False):
         targetCoords[:meanBeamCoords.size] = meanBeamCoords
         mountCoords = transform(targetCoords)
         pointingResults = targetCoords, mountCoords.tolist()
-        
+    
     return gainResults, pointingResults, beamFuncList, calibScanList
 
 
@@ -559,7 +617,7 @@ def reduce_point_source_scan_with_stats(stdScanList, method='resample', numSampl
         gainList = [gainRes for gainRes in gainList if gainRes != None]
         pointingList = [pointRes for pointRes in pointingList if pointRes != None]
         if len(pointingList) < numSamples:
-            logger.warning("Failed to fit Gaussian beam to source '" + stdScanList[0].sourceName + "' in " + 
+            logger.warning("Failed to fit Gaussian beam to source '" + stdScanList[0].sourceName + "' in " +
                            str(numSamples - len(pointingList)) + " of " + str(numSamples) + " resampled cases.")
         # Obtain statistics and save in combined data structure
         if len(gainList) > 0:
@@ -575,7 +633,7 @@ def reduce_point_source_scan_with_stats(stdScanList, method='resample', numSampl
             pointArrM = np.array([pointRes[1] for pointRes in pointingList])
             pointingResults = stats.MuSigmaArray(pointArrT.mean(axis=0), pointArrT.std(axis=0)), \
                               stats.MuSigmaArray(pointArrM.mean(axis=0), pointArrM.std(axis=0))
-        
+    
     # Sigma-point technique for estimating standard deviations
     elif method == 'sigma-point':
         raise NotImplementedError, 'Currently broken, see @todo...'
@@ -626,3 +684,150 @@ def reduce_point_source_scan_with_stats(stdScanList, method='resample', numSampl
         raise ValueError, "Unknown stats method '" + method + "'."
     
     return gainResults, pointingResults, beamFuncList, calibScanList, tempScanList
+
+
+## Extract Tsys information from multiple pointings.
+# This reduces the power data obtained from multiple pointings at cold sky patches. In the process, the data is
+# calibrated to remove receiver gain drifts, and converted from channels to bands. It returns an array of
+# Tsys measurements, of shape (numPointings, 2, numBands) (2 => X and Y input ports), and the median times
+# and elevation angles of each pointing.
+# @param stdScanList      List of StandardSourceScan objects, containing multiple pointing measurements
+#                         (modified by call - converted from power to temp, and possibly randomised mainData)
+# @param randomise        True if data should be randomised, as part of a larger Monte Carlo run [False]
+# @return tsysResults     List of results, of form (tsys, timeStamps, elAngs_deg)
+def reduce_tsys_pointings(stdScanList, randomise=False):
+    tsys = []
+    timeStamps = []
+    elAngs_deg = []
+    coherency = sdd.power_index_dict(False)
+    for stdScan in stdScanList:
+        # Randomise cold power data itself (assumes power has Gaussian distribution...)
+        if randomise:
+            powerStats = stats.mu_sigma(stdScan.mainData.powerData, axis=1)
+            stdScan.mainData.powerData = powerStats.mu[:, np.newaxis, :] + \
+                powerStats.sigma[:, np.newaxis, :] * np.random.standard_normal(stdScan.mainData.powerData.shape)
+        # Calibrate scan (power-to-temp and channel-to-band conversion)
+        calibratedScan = calibrate_scan(stdScan, randomise)
+        # Save results
+        tsys.append(calibratedScan.powerData.mean(axis=1)[[coherency['XX'], coherency['YY']]].real)
+        midPoint = len(calibratedScan.timeSamples) // 2
+        timeStamps.append(calibratedScan.timeSamples[midPoint])
+        elAngs_deg.append(rad_to_deg(calibratedScan.elAng_rad[midPoint]))
+    return (np.array(tsys), np.array(timeStamps), np.array(elAngs_deg))
+
+
+## Extract Tsys information from multiple pointings, with quantified statistical uncertainty.
+# This reduces the power data obtained from multiple pointings at cold sky patches. In the process, the data is
+# calibrated to remove receiver gain drifts, and converted from channels to bands. The Tsys results are provided 
+# with standard deviations, which are estimated from the data set itself via resampling.
+# @param stdScanList      List of StandardSourceScan objects, containing multiple pointing measurements
+# @param numSamples       Number of samples in resampling process (more is better but slower) [10]
+# @return tsysResults     List of results, of form (tsys, timeStamps, elAngs_deg)
+# @return tempScanList    List of modified scan objects, after power-to-temp conversion
+def reduce_tsys_pointings_with_stats(stdScanList, numSamples=10):
+    # Do the reduction without any variations first, to obtain scan lists and other constant outputs
+    tempScanList = copy.deepcopy(stdScanList)
+    tsys, timeStamps, elAngs_deg = reduce_tsys_pointings(tempScanList, randomise=False)
+
+    tsysList = [tsys]
+    # Re-run the reduction routine, which randomises itself internally each time
+    for n in xrange(numSamples-1):
+        results = reduce_tsys_pointings(copy.deepcopy(stdScanList), randomise=True)
+        tsysList.append(results[0])
+    # Obtain statistics
+    tsysResults = (stats.mu_sigma(np.array(tsysList), axis=0), timeStamps, elAngs_deg)
+    return tsysResults, tempScanList
+
+
+## Do linearity test on raw power blocks containing noise diode on/off segments at different power levels.
+# This checks whether the switching of the noise diode causes the same increase in power at low ("cold") and 
+# high ("hot") power levels, using a statistical test. If this is not the case, it may reveal non-linearities
+# in the amplifiers. The input dictionary of power data blocks should contain at least "cold_On", "cold_OnND",
+# "hot_On" and "hot_OnND" blocks (all in raw uncalibrated form). The input data blocks should be in coherency form.
+# The output arrays are typically of shape (2, numChannels), where 2 refers to the X and Y polarisations.
+# @param powerBlockDict Dictionary of SingleDishData objects, containing uncalibrated coherencies
+# @param alpha          Student-T test alpha value [0.05]
+# @return isLinear      Array of shape (2, numChannels) of linearity test result flags (True/False)
+# @return confIntervals Array of shape (2, 2, numChannels), where confInterval[0] is the start and confInterval[1]
+#                       is the end of the linearity confidence interval for each polarisation and channel
+# @return degsFreedom   Number of degrees of freedom of the Student-t distribution, in (2, numChannels) array
+def linearity_test(powerBlockDict, alpha=0.05):
+    # Obtain labels for the required blocks
+    offLabels = [key for key in powerBlockDict.iterkeys() if key.endswith('On')]
+    onLabels = [key for key in powerBlockDict.iterkeys() if key.endswith('OnND')]
+    coldOffLabels = [key for key in offLabels if key.find('_cold') >= 0]
+    coldOnLabels = [key for key in onLabels if key.find('_cold') >= 0]
+    hotOffLabels = [key for key in offLabels if key.find('_hot') >= 0]
+    hotOnLabels = [key for key in onLabels if key.find('_hot') >= 0]
+    # Bail if some of the required blocks are missing
+    if (len(coldOffLabels) == 0) or (len(coldOnLabels) == 0) or (len(hotOffLabels) == 0) or (len(hotOnLabels) == 0):
+        return None, None, None
+    # Find a common set of labels with the same esn number
+    coherency = sdd.power_index_dict(False)
+    blockSets = [{'coldOff' : powerBlockDict[coldOff].powerData[[coherency['XX'], coherency['YY']]].real, \
+                  'coldOn'  : powerBlockDict[coldOn].powerData[[coherency['XX'], coherency['YY']]].real, \
+                  'hotOff'  : powerBlockDict[hotOff].powerData[[coherency['XX'], coherency['YY']]].real, \
+                  'hotOn'   : powerBlockDict[hotOn].powerData[[coherency['XX'], coherency['YY']]].real} \
+                  for coldOff in coldOffLabels for coldOn in coldOnLabels \
+                  for hotOff in hotOffLabels for hotOn in hotOnLabels \
+                  if coldOff.split('_')[0] == coldOn.split('_')[0] == hotOff.split('_')[0] == hotOn.split('_')[0]]
+    # Bail if there is no common set
+    if len(blockSets) == 0:
+        return None, None, None
+    # Obtain stats of first common set
+    # pylint: disable-msg=W0232
+    class Struct:
+        pass
+    coldOff = Struct()
+    coldOff.mean = blockSets[0]['coldOff'].mean(axis=1)
+    coldOff.var = blockSets[0]['coldOff'].var(axis=1)
+    coldOff.num = blockSets[0]['coldOff'].shape[1]
+    coldOff.shape = coldOff.mean.shape
+    coldOn = Struct()
+    coldOn.mean = blockSets[0]['coldOn'].mean(axis=1)
+    coldOn.var = blockSets[0]['coldOn'].var(axis=1)
+    coldOn.num = blockSets[0]['coldOn'].shape[1]
+    coldOn.shape = coldOn.mean.shape
+    hotOff = Struct()
+    hotOff.mean = blockSets[0]['hotOff'].mean(axis=1)
+    hotOff.var = blockSets[0]['hotOff'].var(axis=1)
+    hotOff.num = blockSets[0]['hotOff'].shape[1]
+    hotOff.shape = hotOff.mean.shape
+    hotOn = Struct()
+    hotOn.mean = blockSets[0]['hotOn'].mean(axis=1)
+    hotOn.var = blockSets[0]['hotOn'].var(axis=1)
+    hotOn.num = blockSets[0]['hotOn'].shape[1]
+    hotOn.shape = hotOn.mean.shape
+    # Do statistical test
+    confIntervals, degsFreedom = stats.calc_conf_interval_diff_diff2means(coldOff, coldOn, hotOff, hotOn, alpha)
+    isLinear = stats.check_equality_of_means(confIntervals)
+    # Normalise confidence intervals to be the ratio of (hot delta - cold delta) to cold delta
+    coldDelta = coldOn.mean - coldOff.mean
+    confIntervals /= np.array([coldDelta, coldDelta])
+    return isLinear, confIntervals, degsFreedom
+
+
+## Check if Tsys measurements are stable over time.
+# Check the Tsys measurements in each polarisation and frequency band to see if it is normally distributed around
+# the mean of the measurements. This is done with a D'Agostino-Pearson "Goodness-of-Fit" test.
+# @param tsys      Tsys measurement array of shape (numMeasurements, 2, numBands) (2 => X and Y input ports)
+# @param alpha     Chi-squared alpha value for acceptance of null hypothesis [0.05]
+# @return isStable Array of shape (2, numBands) of stability test result flags (True/False)
+# @todo Check, review and fix expected residual std!!! Currently, this is not included in test.
+#       Use Hogg & Tanis ( http://tinyurl.com/2h3uea ) as reference for the statistical tests used here.
+def stability_test(tsys, alpha=0.05):
+    numBands = tsys.shape[2]
+    isStable = np.ndarray((2, numBands), dtype=bool)
+    # Loop over frequency bands
+    for band in range(numBands):
+        # Check X polarisation stability
+        tsysX = tsys[:, 0, band]
+        fitG, pVal, k_2, chiSqThreshold, muC = stats.check_model_fit_agn(xMu = tsysX, y = tsysX.mean(),
+                                                                         func = lambda x: x, alpha=alpha)
+        isStable[0, band] = fitG and muC
+        # Check Y polarisation stability
+        tsysY = tsys[:, 1, band]
+        fitG, pVal, k_2, chiSqThreshold, muC = stats.check_model_fit_agn(xMu = tsysY, y = tsysY.mean(),
+                                                                         func = lambda x: x, alpha=alpha)
+        isStable[1, band] = fitG and muC
+    return isStable
