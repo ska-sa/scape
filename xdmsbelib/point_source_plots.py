@@ -71,7 +71,7 @@ def plot_raw_power(figColor, rawPowerDictList, expName):
             axis.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
         axis.set_ylabel('Raw power')
         if scanInd == 0:
-            axis.set_title(expName + ' : raw power for band 0 (XX)')
+            axis.set_title(expName + ' : raw power for channel 0 (XX)')
         minY.append(axis.get_ylim()[0])
         maxY.append(axis.get_ylim()[1])
     
@@ -84,7 +84,7 @@ def plot_raw_power(figColor, rawPowerDictList, expName):
 
 ## Plot Tsys as a function of frequency, for a single pointing.
 # @param figColor       Matplotlib Figure object to contain plots
-# @param resultList     List of results, of form (bandFreqs, Tsys, timeStamps, elAng_deg, confIntervals, channelFreqs)
+# @param resultList     List of results, of form (bandFreqs, Tsys, timeStamps, elAng_deg, channelFreqs, confIntervals)
 # @param expName        Title of experiment
 # @return axesColorList List of matplotlib Axes objects, one per plot
 def plot_tsys(figColor, resultList, expName):
@@ -92,6 +92,18 @@ def plot_tsys(figColor, resultList, expName):
     axesColorList = []
     bandFreqs, tsys = resultList[:2]
     plotFreqs = bandFreqs / 1e9   # Hz to GHz
+    # Determine appropriate frequency range and whisker width
+    channelFreqs = resultList[4] / 1e9
+    if len(channelFreqs) > 0:
+        channelSpacing = np.median(np.diff(channelFreqs))
+    else:
+        channelSpacing = channelFreqs[0]
+    freqRange = [min(channelFreqs.min(), plotFreqs.min()) - channelSpacing, \
+                 max(channelFreqs.max(), plotFreqs.max()) + channelSpacing]
+    if len(plotFreqs) > 1:
+        whiskWidth = np.median(np.diff(channelFreqs)) / 2.0
+    else:
+        whiskWidth = (freqRange[1] - freqRange[0]) / 50.0
     # One figure, 2 subfigures
     axesColorList.append(figColor.add_subplot(2, 1, 1))
     axesColorList.append(figColor.add_subplot(2, 1, 2))
@@ -101,13 +113,9 @@ def plot_tsys(figColor, resultList, expName):
     # Iterate through polarisation channels (X and Y)
     for polInd in range(2):
         axis = axesColorList[polInd]
-        # Extract Tsys values of current polarisation of first pointing
-        tsysPol = tsys[0, polInd, :]
-        try:
-            vis.draw_std_corridor(axis, plotFreqs, tsysPol.mu, tsysPol.sigma, \
-                                  muLineType='bo', sigmaFillColor='b', sigmaAlpha=0.1)
-        except AttributeError:
-            axis.plot(plotFreqs, tsysPol, 'bo')
+        # Extract Tsys values of current polarisation of first pointing, and plot
+        vis.mu_sigma_plot(axis, plotFreqs, tsys[0, polInd, :], whiskWidth=whiskWidth, linewidth=2, color='b')
+        axis.set_xlim(freqRange)
         axis.grid()
         axis.set_title(expName + ' : Tsys for polarisation ' + polName[polInd])
         axis.set_ylabel('Temperature (K)')
@@ -127,7 +135,7 @@ def plot_tsys(figColor, resultList, expName):
 
 ## Plot Tsys as a function of time or elevation angle, for multiple pointings.
 # @param figColorList   List of matplotlib Figure objects to contain plots
-# @param resultList     List of results, of form (bandFreqs, Tsys, timeStamps, elAng_deg, confIntervals, channelFreqs)
+# @param resultList     List of results, of form (bandFreqs, Tsys, timeStamps, elAng_deg, channelFreqs, confIntervals)
 # @param expName        Title of experiment
 # @return axesColorList List of matplotlib Axes objects, one per plot
 def plot_tsys_curve(figColorList, resultList, expName):
@@ -158,13 +166,9 @@ def plot_tsys_curve(figColorList, resultList, expName):
         for polInd in range(2):
             axesInd = band*2 + polInd
             axis = axesColorList[axesInd]
-            # Extract Tsys values of current polarisation for the current band
-            tsysPol = tsys[:, polInd, band]
-            try:
-                vis.draw_std_corridor(axis, xVals, tsysPol.mu, tsysPol.sigma, \
-                                      muLineType='b-o', sigmaFillColor='b', sigmaAlpha=0.1)
-            except AttributeError:
-                axis.plot(xVals, tsysPol, 'b-o')
+            # Extract Tsys values of current polarisation for the current band, and plot
+            vis.mu_sigma_plot(axis, xVals, tsys[:, polInd, band], linewidth=2, color='b')
+            axis.plot(xVals, tsys.mu[:, polInd, band], '--b')
             axis.grid()
             axis.set_title(expName + ' : Tsys (' + polName[polInd] + \
                            ') in band %d : %3.3f GHz' % (band, plotFreqs[band]))
@@ -185,13 +189,13 @@ def plot_tsys_curve(figColorList, resultList, expName):
 
 ## Plot linearity test results.
 # @param figColor       Matplotlib Figure object to contain plots
-# @param resultList     List of results, of form (bandFreqs, Tsys, timeStamps, elAng_deg, confIntervals, channelFreqs)
+# @param resultList     List of results, of form (bandFreqs, Tsys, timeStamps, elAng_deg, channelFreqs, confIntervals)
 # @param expName        Title of experiment
 # @return axesColorList List of matplotlib Axes objects, one per plot
 def plot_linearity_test(figColor, resultList, expName):
     # Set up axes
     axesColorList = []
-    confIntervals, channelFreqs = resultList[4:6]
+    channelFreqs, confIntervals = resultList[4:6]
     plotFreqs = channelFreqs / 1e9   # Hz to GHz
     # One figure, 2 subfigures
     axesColorList.append(figColor.add_subplot(2, 1, 1))
@@ -201,19 +205,21 @@ def plot_linearity_test(figColor, resultList, expName):
     isLinear = stats.check_equality_of_means(confIntervals)
     polName = {0 : 'X', 1 : 'Y'}
     minY = maxY = []
+    freqSpacing = np.diff(plotFreqs).mean() / 2.0
     # Iterate through polarisation channels (X and Y)
     for polInd in range(2):
         axis = axesColorList[polInd]
-        linearInts = confIntervals[:, polInd, isLinear[polInd]]
+        # Split data into two lines - one for linear channels, and one for non-linear channels
+        linearInts = 100.0 * confIntervals[:, polInd, isLinear[polInd]]
         linearFreqs = plotFreqs[isLinear[polInd]]
-        linearInts = np.vstack((linearInts, np.tile(np.nan, linearFreqs.shape))).transpose().ravel()
-        linearFreqs = np.vstack((linearFreqs, linearFreqs, np.tile(np.nan, linearFreqs.shape))).transpose().ravel()
-        nonLinInts = confIntervals[:, polInd, np.invert(isLinear[polInd])]
+        vis.mu_sigma_plot(axis, linearFreqs, \
+                          stats.MuSigmaArray(linearInts.mean(axis=0), 0.5*np.diff(linearInts, axis=0)[0]), \
+                          whiskWidth=freqSpacing, linewidth=2, color='g', marker='')
+        nonLinInts = 100.0 * confIntervals[:, polInd, np.invert(isLinear[polInd])]
         nonLinFreqs = plotFreqs[np.invert(isLinear[polInd])]
-        nonLinInts = np.vstack((nonLinInts, np.tile(np.nan, nonLinFreqs.shape))).transpose().ravel()
-        nonLinFreqs = np.vstack((nonLinFreqs, nonLinFreqs, np.tile(np.nan, nonLinFreqs.shape))).transpose().ravel()
-        axis.plot(linearFreqs, 100.0*linearInts, linewidth=2, color='g')
-        axis.plot(nonLinFreqs, 100.0*nonLinInts, linewidth=2, color='r')
+        vis.mu_sigma_plot(axis, nonLinFreqs, \
+                          stats.MuSigmaArray(nonLinInts.mean(axis=0), 0.5*np.diff(nonLinInts, axis=0)[0]), \
+                          whiskWidth=freqSpacing, linewidth=2, color='r', marker='')
         axis.plot([plotFreqs[0], plotFreqs[-1]], [0, 0], linewidth=3, color='k')
         axis.grid()
         axis.set_title(expName + ' : Linearity test for polarisation ' + polName[polInd])
@@ -234,7 +240,8 @@ def plot_linearity_test(figColor, resultList, expName):
 
 ## Plot baseline fits of multiple scans through a point source.
 # @param figColor       Matplotlib Figure object to contain plots
-# @param stdScanList    List of StandardSourceScan objects, after power-to-temp conversion, with fitted baselines
+# @param stdScanList    List of StandardSourceScan objects, after power-to-temp and channel-to-band conversion,
+#                       with fitted baselines
 # @param expName        Title of experiment
 # @return axesColorList List of matplotlib Axes objects, one per plot
 # pylint: disable-msg=R0912,R0914
@@ -296,7 +303,7 @@ def plot_baseline_fit(figColor, stdScanList, expName):
 def plot_calib_scans(figColorList, calibScanList, beamFuncList, expName):
     # Set up axes
     axesColorList = []
-    plotFreqs = calibScanList[0].bandFreqs / 1e9   # Hz to GHz
+    plotFreqs = calibScanList[0].freqs_Hz / 1e9   # Hz to GHz
     numBands = len(plotFreqs)
     numScans = len(calibScanList)
     # One figure per frequency band
@@ -355,7 +362,7 @@ def plot_beam_pattern_target(figColorList, calibScanList, beamFuncList, expName)
     # Set up axes
     axesColorList = []
     # Use the frequency bands of the first scan as reference for the rest
-    plotFreqs = calibScanList[0].bandFreqs / 1e9   # Hz to GHz
+    plotFreqs = calibScanList[0].freqs_Hz / 1e9   # Hz to GHz
     numBands = len(plotFreqs)
     # One figure per frequency band
     for band in range(numBands):
@@ -421,7 +428,7 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
     # Set up axes
     axesColorList = []
     # Use the frequency bands of the first scan as reference for the rest
-    plotFreqs = calibScanList[0].bandFreqs / 1e9   # Hz to GHz
+    plotFreqs = calibScanList[0].freqs_Hz / 1e9   # Hz to GHz
     numBands = len(plotFreqs)
     # Two figures per frequency band
     for band in range(numBands):
@@ -514,7 +521,7 @@ def plot_beam_patterns_mount(figColorList, calibListList, beamListList, transfor
     # Set up axes
     axesColorList = []
     # Use the frequency bands of the first scan of the first source as reference for the rest
-    plotFreqs = calibListList[0][0].bandFreqs / 1e9   # Hz to GHz
+    plotFreqs = calibListList[0][0].freqs_Hz / 1e9   # Hz to GHz
     numBands = len(plotFreqs)
     numSources = len(calibListList)
     # Number of points in each Gaussian ellipse
@@ -615,24 +622,33 @@ def plot_beam_patterns_mount(figColorList, calibListList, beamListList, transfor
 
 ## Plot antenna gain info derived from multiple scans through a point source.
 # @param figColor       Matplotlib Figure object to contain plots
-# @param resultList     List of results, of form (bandFreqs, pointSourceSensitivity, effArea, antGain)
+# @param resultList     List of results, of form (channelFreqs, bandFreqs, pointSourceSensitivity, effArea, antGain)
 # @param expName        Title of experiment
 # @return axesColorList List of matplotlib Axes objects, one per plot
 def plot_antenna_gain(figColor, resultList, expName):
     # Set up axes
     axesColorList = []
-    bandFreqs, pointSourceSensitivity, effArea, antGain = resultList
+    channelFreqs, bandFreqs, pointSourceSensitivity, effArea, antGain = resultList
     plotFreqs = bandFreqs / 1e9   # Hz to GHz
+    # Determine appropriate frequency range and whisker width
+    channelFreqs /= 1e9
+    if len(channelFreqs) > 0:
+        channelSpacing = np.median(np.diff(channelFreqs))
+    else:
+        channelSpacing = channelFreqs[0]
+    freqRange = [min(channelFreqs.min(), plotFreqs.min()) - channelSpacing, \
+                 max(channelFreqs.max(), plotFreqs.max()) + channelSpacing]
+    if len(plotFreqs) > 1:
+        whiskWidth = np.median(np.diff(channelFreqs)) / 2.0
+    else:
+        whiskWidth = (freqRange[1] - freqRange[0]) / 20.0
     # One figure, 3 subfigures
     for sub in range(3):
         axesColorList.append(figColor.add_subplot(3, 1, sub+1))
     
     axis = axesColorList[0]
-    try:
-        vis.draw_std_corridor(axis, plotFreqs, pointSourceSensitivity.mu, pointSourceSensitivity.sigma, \
-                              muLineType='b-o')
-    except AttributeError:
-        axis.plot(plotFreqs, pointSourceSensitivity, '-ob')
+    vis.mu_sigma_plot(axis, plotFreqs, pointSourceSensitivity, whiskWidth=whiskWidth, linewidth=2, color='b')
+    axis.set_xlim(freqRange)
     axis.set_ylim(min(0.95*pointSourceSensitivity.min(), axis.get_ylim()[0]),
                   max(1.05*pointSourceSensitivity.max(), axis.get_ylim()[1]))
     axis.grid()
@@ -640,21 +656,17 @@ def plot_antenna_gain(figColor, resultList, expName):
     axis.set_ylabel('Sensitivity (Jy/K)')
     axis.set_title(expName + ' : Point source sensitivity')
     axis = axesColorList[1]
-    try:
-        vis.draw_std_corridor(axis, plotFreqs, effArea.mu, effArea.sigma, muLineType='b-o')
-    except AttributeError:
-        axis.plot(plotFreqs, effArea, '-ob')
+    vis.mu_sigma_plot(axis, plotFreqs, effArea, whiskWidth=whiskWidth, linewidth=2, color='b')
     axis.set_ylim(min(0.95*effArea.min(), axis.get_ylim()[0]), max(1.05*effArea.max(), axis.get_ylim()[1]))
+    axis.set_xlim(freqRange)
     axis.grid()
     axis.set_xticklabels([])
     axis.set_ylabel('Area (m^2)')
     axis.set_title(expName + ' : Antenna effective area')
     axis = axesColorList[2]
-    try:
-        vis.draw_std_corridor(axis, plotFreqs, antGain.mu, antGain.sigma, muLineType='b-o')
-    except AttributeError:
-        axis.plot(plotFreqs, antGain, '-ob')
+    vis.mu_sigma_plot(axis, plotFreqs, antGain, whiskWidth=whiskWidth, linewidth=2, color='b')
     axis.set_ylim(min(0.98*antGain.min(), axis.get_ylim()[0]), max(1.02*antGain.max(), axis.get_ylim()[1]))
+    axis.set_xlim(freqRange)
     axis.grid()
     axis.set_xlabel('Frequency (GHz)')
     axis.set_ylabel('Gain (dB)')
@@ -687,11 +699,7 @@ def plot_gain_curve(figColorList, resultList, expName):
         axesInd = band*3
         axis = axesColorList[axesInd]
         pointSourceSensitivity = pssBlock[:, band]
-        try:
-            vis.draw_std_corridor(axis, sourceElAng_deg, pointSourceSensitivity.mu, pointSourceSensitivity.sigma, \
-                                  muLineType='b-o')
-        except AttributeError:
-            axis.plot(sourceElAng_deg, pointSourceSensitivity, '-ob')
+        vis.mu_sigma_plot(axis, sourceElAng_deg, pointSourceSensitivity, linewidth=2, color='b')
         axis.set_ylim(min(0.95*pointSourceSensitivity.min(), axis.get_ylim()[0]),
                       max(1.05*pointSourceSensitivity.max(), axis.get_ylim()[1]))
         axis.grid()
@@ -702,10 +710,7 @@ def plot_gain_curve(figColorList, resultList, expName):
         axesInd = band*3 + 1
         axis = axesColorList[axesInd]
         effArea = effAreaBlock[:, band]
-        try:
-            vis.draw_std_corridor(axis, sourceElAng_deg, effArea.mu, effArea.sigma, muLineType='b-o')
-        except AttributeError:
-            axis.plot(sourceElAng_deg, effArea, '-ob')
+        vis.mu_sigma_plot(axis, sourceElAng_deg, effArea, linewidth=2, color='b')
         axis.set_ylim(min(0.95*effArea.min(), axis.get_ylim()[0]), max(1.05*effArea.max(), axis.get_ylim()[1]))
         axis.grid()
         axis.set_xticklabels([])
@@ -715,10 +720,7 @@ def plot_gain_curve(figColorList, resultList, expName):
         axesInd = band*3 + 2
         axis = axesColorList[axesInd]
         antGain = antGainBlock[:, band]
-        try:
-            vis.draw_std_corridor(axis, sourceElAng_deg, antGain.mu, antGain.sigma, muLineType='b-o')
-        except AttributeError:
-            axis.plot(sourceElAng_deg, antGain, '-ob')
+        vis.mu_sigma_plot(axis, sourceElAng_deg, antGain, linewidth=2, color='b')
         axis.set_ylim(min(0.98*antGain.min(), axis.get_ylim()[0]), max(1.02*antGain.max(), axis.get_ylim()[1]))
         axis.grid()
         axis.set_xlabel('Elevation angle (degrees)')

@@ -143,7 +143,6 @@ def figure_to_svg(fig, dpi=100):
     return svgData
 
 
-
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  draw_std_corridor
 #---------------------------------------------------------------------------------------------------------
@@ -206,11 +205,51 @@ def draw_std_corridor(axis, xVals, mu, sigma, muLabel = None, sigmaLabel = None,
     muHandle = axis.plot(xVals, mu, muLineType, label = muLabel, lw = 2)
     
     if sigmaLineType:
-        sigmaPosHandle = axis.plot(xVals, y1, sigmaLineType)
-        sigmaNegHandle = axis.plot(xVals, y2, sigmaLineType)
+        sigmaPosHandle = axis.plot(xVals, y1, sigmaLineType, markersize=10)
+        sigmaNegHandle = axis.plot(xVals, y2, sigmaLineType, markersize=10)
         return muHandle, sigmaCorHandles, sigmaPosHandle, sigmaNegHandle
     else:
         return muHandle, sigmaCorHandles
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  mu_sigma_plot
+#---------------------------------------------------------------------------------------------------------
+
+## Whisker plot that displays mean and standard deviation of data.
+# The whiskers are drawn vertically, at the locations specified in x.
+# @param axis       Matplotlib axes object associated with a matplotlib Figure
+# @param x          Array of shape (N,) of x coordinates of whiskers (whisker locations)
+# @param muSigma    MuSigmaArray of shape (N,), containing mean and standard deviation values to be plotted
+# @param whiskSigma Whisker length (above and below mean) as a factor of the standard deviation [1.0]
+# @param whiskWidth Whisker width (automatically set by default)
+# @param kwargs     Dictionary containing extra keyword arguments, passed to whisker and dot plot()s
+# @return Handle of asterisk line object, or list of circle patches
+# pylint: disable-msg=W0142
+def mu_sigma_plot(axis, x, muSigma, whiskSigma=1.0, whiskWidth=None, **kwargs):
+    # Check array dimensions
+    x = np.atleast_1d(np.asarray(x))
+    mu = np.atleast_1d(np.asarray(muSigma.mu))
+    sigma = np.atleast_1d(np.asarray(muSigma.sigma))
+    if not (mu.shape == sigma.shape == x.shape):
+        raise ValueError, "The following arrays should have the same shape: mu=" + str(mu.shape) + \
+                          ", sigma=" + str(sigma.shape) + ", x=" + str(x.shape)
+    # The default whisk width is half the minimum separation between x values (make another plan for 1 or 0 points)
+    if whiskWidth == None:
+        if len(x) >= 2:
+            whiskWidth = np.diff(sorted(x)).min() / 2.0
+        elif len(x) == 1:
+            whiskWidth = np.abs(x) / 10.0
+        else:
+            whiskWidth = 1.0
+    # Form stacks of x and y coordinates for whisker mega-line
+    xx = x + 0.5 * whiskWidth * np.outer([0, -1, 1, 0, 0, -1, 1, 0, np.nan], np.ones(sigma.shape))
+    yy = mu + whiskSigma * np.outer([1, 1, 1, 1, -1, -1, -1, -1, np.nan], sigma)
+    handleWhisk = axis.plot(xx.transpose().ravel(), yy.transpose().ravel(), **kwargs)
+    # Remove any markers from whisker line (which could be specified in kwargs for the dot plot)
+    pylab.setp(handleWhisk, 'marker', '')
+    handleDot = axis.plot(x, mu, 'o', markersize=10, **kwargs)
+    return handleWhisk, handleDot
 
 
 #---------------------------------------------------------------------------------------------------------
@@ -231,7 +270,7 @@ def draw_std_corridor(axis, xVals, mu, sigma, muLabel = None, sigmaLabel = None,
 # @param minSize    The radius of the smallest marker, relative to the average spacing between markers
 # @param markerType Type of marker ('circle' [default], or 'asterisk')
 # @param numLines   Number of lines in asterisk [8]
-# @param kwargs     Dictionary containing extra keyword arguments
+# @param kwargs     Dictionary containing extra keyword arguments, which are passed on to plot() or add_patch()
 # @return Handle of asterisk line object, or list of circle patches
 # pylint: disable-msg=W0142
 def plot_marker_3d(axis, x, y, z, maxSize=0.75, minSize=0.05, markerType='circle', numLines=8, **kwargs):

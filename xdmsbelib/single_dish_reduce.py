@@ -59,6 +59,12 @@ class StandardSourceScan(object):
     ## @var powerToTempFunc
     # Interpolated power-to-temperature conversion function (Fpt as a function of time)
     powerToTempFunc = None
+    ## @var rfiChannels
+    # A sequence of channel indices, indicating RFI-corrupted frequency channels to be removed
+    rfiChannels = None
+    ## @var channelsPerBand
+    # A sequence of lists of channel indices, indicating which frequency channels belong to each band
+    channelsPerBand = None
     ## @var baselineDataList
     # List of SingleDishData objects that contain empty sky around a source and will be used for baseline fitting
     baselineDataList = None
@@ -140,9 +146,9 @@ def check_data_consistency(dataDict):
         return
     referenceBlock = dataDict.values()[0]
     for block in dataDict.values()[1:]:
-        if np.any(block.bandFreqs != referenceBlock.bandFreqs):
-            message = "Channel frequencies of two blocks in standard scan differ: " + str(block.bandFreqs) + \
-                      " vs. " + str(referenceBlock.bandFreqs)
+        if np.any(block.freqs_Hz != referenceBlock.freqs_Hz):
+            message = "Channel frequencies of two blocks in standard scan differ: " + str(block.freqs_Hz) + \
+                      " vs. " + str(referenceBlock.freqs_Hz)
             logger.error(message)
             raise ValueError, message
     # Skip 'esn' and convert everything up to first '_' as experiment sequence number
@@ -179,15 +185,19 @@ def load_tsys_pointing_list(fitsFileName):
             dataSelectionList = [('Off', {'RX_ON_F': False, 'ND_ON_F': False, 'VALID_F': True}, False), \
                                  ('On', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False), \
                                  ('OnND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)]
-            mainScanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+            mainScanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList)
             
-            # Get the source name and position from the main scan, as well as the antenna beamwidth
+            # Load various parameters (the last file in experiment sequence determines the final values)
             stdScan.sourceName = fitsReaderScan.get_primary_header()['Target']
-            stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth', mask=None)[0]
+            stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth')[0]
+            stdScan.rfiChannels = fitsReaderScan.get_rfi_channels()
+            stdScan.channelsPerBand = [x.tolist() for x in fitsReaderScan.select_masked_column('BANDS', 'Channels')]
             
             print "Loading file: ", fitsReaderScan.fitsFilename
             print "Data blocks:  ", mainScanDict.keys()
             print "Pointing name:", stdScan.sourceName
+            print "Found", len(stdScan.channelsPerBand), "band(s) before RFI removal, and", \
+                           len(stdScan.rfiChannels), "RFI-flagged channel(s)"
             
             rawPowerDict.update(mainScanDict)
         
@@ -248,7 +258,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         dataSelectionList = [('PreCalOff', {'RX_ON_F': False, 'ND_ON_F': False, 'VALID_F': True}, False), \
                              ('PreCalOn', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False), \
                              ('PreCalOnND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)]
-        preCalDict = fitsReaderPreCal.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+        preCalDict = fitsReaderPreCal.extract_data(dataIdNameList, dataSelectionList)
         
         print "Loading file:                ", fitsReaderPreCal.fitsFilename
         print "PreCalibration data blocks:  ", preCalDict.keys()
@@ -264,7 +274,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
             
             dataIdNameList = ['scan']
             dataSelectionList = [('PreBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
-            preScanDict = fitsReaderPreScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+            preScanDict = fitsReaderPreScan.extract_data(dataIdNameList, dataSelectionList)
             
             preScanData = copy.deepcopy(preScanDict.values()[0])
             
@@ -281,12 +291,14 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         
         dataIdNameList = ['scan']
         dataSelectionList = [('MainScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
-        mainScanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+        mainScanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList)
         
         mainScanData = copy.deepcopy(mainScanDict.values()[0])
-        # Get the source name and position from the main scan, as well as the antenna beamwidth
+        # Load various parameters from the main scan (these should be the same for other scans as well)
         stdScan.sourceName = fitsReaderScan.get_primary_header()['Target']
-        stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth', mask=None)[0]
+        stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth')[0]
+        stdScan.rfiChannels = fitsReaderScan.get_rfi_channels()
+        stdScan.channelsPerBand = [x.tolist() for x in fitsReaderScan.select_masked_column('BANDS', 'Channels')]
         
         print "Loading file:                ", fitsReaderScan.fitsFilename
         print "MainScan data blocks:        ", mainScanDict.keys()
@@ -295,6 +307,8 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
               % (rad_to_deg(mainScanData.azAng_rad[0]), rad_to_deg(mainScanData.elAng_rad[0]))
         print "Scan stop coordinate  [az, el] = [%5.3f, %5.3f]" \
               % (rad_to_deg(mainScanData.azAng_rad[-1]), rad_to_deg(mainScanData.elAng_rad[-1]))
+        print "Found", len(stdScan.channelsPerBand), "band(s) before RFI removal, and", \
+                       len(stdScan.rfiChannels), "RFI-flagged channel(s)"
         
         #..................................................................................................
         # Extract the final part, which is assumed to be of a piece of empty sky following the source
@@ -307,7 +321,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
             
             dataIdNameList = ['scan']
             dataSelectionList = [('PostBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
-            postScanDict = fitsReaderPostScan.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+            postScanDict = fitsReaderPostScan.extract_data(dataIdNameList, dataSelectionList)
             
             postScanData = copy.deepcopy(postScanDict.values()[0])
             
@@ -326,7 +340,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         dataSelectionList = [('PostCalOff', {'RX_ON_F': False, 'ND_ON_F': False, 'VALID_F': True}, False), \
                              ('PostCalOn', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False), \
                              ('PostCalOnND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)]
-        postCalDict = fitsReaderPostCal.extract_data(dataIdNameList, dataSelectionList, perBand=True)
+        postCalDict = fitsReaderPostCal.extract_data(dataIdNameList, dataSelectionList)
         
         print "Loading file:                ", fitsReaderPostCal.fitsFilename
         print "PostCalibration data blocks: ", postCalDict.keys()
@@ -362,24 +376,27 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
     return stdScanList, rawPowerDictList
 
 
-## Calibrate a single scan, by correcting gain drifts and subtracting a baseline.
-# This also modifies the stdScan object, by converting its data from raw power to temperature values. If this
-# is not desired, use deepcopy on stdScan before calling this function. The baseline is only subtracted from
-# the main scan (which is returned).
+## Calibrate a single scan, by correcting gain drifts, combining channels into bands, and subtracting a baseline.
+# This also modifies the stdScan object, by converting its data from raw power to temperature values, and combining
+# its channels into bands. If this is not desired, use deepcopy on stdScan before calling this function. The baseline
+# is only subtracted from the main scan (which is returned).
 # @param stdScan   StandardSourceScan object containing scan and all auxiliary scans and info for calibration
 # @param randomise True if fits should be randomised, as part of a larger Monte Carlo run
 # @return SingleDishData object containing calibrated main scan
 def calibrate_scan(stdScan, randomise):
     # Set up power-to-temp conversion function (optionally randomising it)
     stdScan.powerToTempFunc = stdScan.gainCalData.power_to_temp_func(stdScan.noiseDiodeData, randomise=randomise)
-    # Convert the main segment of scan to temperature, and make a copy to preserve original data
-    calibratedScan = copy.deepcopy(stdScan.mainData.convert_power_to_temp(stdScan.powerToTempFunc))
+    # Convert the main segment of scan to temperature and bands, and make a copy to preserve original data
+    stdScan.mainData.convert_power_to_temp(stdScan.powerToTempFunc)
+    stdScan.mainData.convert_non_rfi_channels_to_bands(stdScan.channelsPerBand, stdScan.rfiChannels)
+    calibratedScan = copy.deepcopy(stdScan.mainData)
     # Without baseline data segments, the calibration is done
     if stdScan.baselineDataList == None:
         return calibratedScan
-    # Convert baseline data to temperature, and concatenate them into a single structure
+    # Convert baseline data to temperature and bands, and concatenate them into a single structure
     for ind, baselineData in enumerate(stdScan.baselineDataList):
         baselineData.convert_power_to_temp(stdScan.powerToTempFunc)
+        baselineData.convert_non_rfi_channels_to_bands(stdScan.channelsPerBand, stdScan.rfiChannels)
         if ind == 0:
             allBaselineData = copy.deepcopy(baselineData)
         else:
@@ -496,7 +513,7 @@ def fit_beam_pattern(targetCoords, totalPower, beamwidth, randomise):
 
 
 ## Fit a beam pattern to multiple scans of a single calibrator source, after first calibrating the scans.
-# @param stdScanList     List of StandardSourceScan objects (modified by call - converted from power to temp)
+# @param stdScanList     List of StandardSourceScan objects (modified by call - power converted to temp, and bands)
 # @param randomise       True if fits should be randomised, as part of a larger Monte Carlo run
 # @return beamFuncList   List of Gaussian beam functions and valid flags, one per band
 # @return calibScanList  List of data objects containing the fully calibrated main segments of each scan
@@ -519,14 +536,14 @@ def calibrate_and_fit_beam_pattern(stdScanList, randomise):
 
 ## Extract all information from an unresolved point source scan.
 # This reduces the power data obtained from multiple scans across a point source. In the process, the data is
-# calibrated to remove receiver gain drifts, baselines are removed, and a beam pattern is fitted to the combined
-# scans, which allows the source position and strength to be estimated. For general (unnamed) sources, the
-# estimated source position is returned as target coordinates. This is effectively the pointing error, as the target
-# is at the origin of the target coordinate system. Additionally, for known calibrator sources, the antenna gain
-# and effective area can be estimated from the known source flux density. If either the gain or pointing estimation
-# did not succeed, the corresponding result is returned as None.
+# calibrated to remove receiver gain drifts, channels are combined into bands, baselines are removed, and a beam 
+# pattern is fitted to the combined scans, which allows the source position and strength to be estimated. 
+# For general (unnamed) sources, the estimated source position is returned as target coordinates. This is
+# effectively the pointing error, as the target is at the origin of the target coordinate system. Additionally, 
+# for known calibrator sources, the antenna gain and effective area can be estimated from the known source flux 
+# density. If either the gain or pointing estimation did not succeed, the corresponding result is returned as None.
 # @param stdScanList      List of StandardSourceScan objects, describing scans across a single point source
-#                         (modified by call - converted from power to temp)
+#                         (modified by call - power converted to temp, and channels combined into bands)
 # @param randomise        True if fits should be randomised, as part of a larger Monte Carlo run [False]
 # @return gainResults     List of gain-based results, of form (sourcePfd, deltaT, sensitivity, effArea, antGain)
 # @return pointingResults Estimated point source position in target coordinates, and mount coordinates
@@ -541,7 +558,7 @@ def reduce_point_source_scan(stdScanList, randomise=False):
     
     # Get source power flux density for each frequency band, if it is known for the target object
     refTarget = stdScanList[0].mainData.targetObject.get_reference_target()
-    bandFreqs = calibScanList[0].bandFreqs
+    bandFreqs = calibScanList[0].freqs_Hz
     sourcePowerFluxDensity = np.tile(np.nan, (len(bandFreqs)))
     for ind in xrange(len(bandFreqs)):
         try:
@@ -583,11 +600,11 @@ def reduce_point_source_scan(stdScanList, randomise=False):
 
 ## Extract point source information, with quantified statistical uncertainty.
 # This reduces the power data obtained from multiple scans across a point source. In the process, the data is
-# calibrated to remove receiver gain drifts, baselines are removed, and a beam pattern is fitted to the combined
-# scans. For general (unnamed) sources, the estimated source position is returned as target coordinates.
-# Additionally, for known calibrator sources, the antenna gain and effective area can be estimated from the
-# known source flux density. All final results are provided with standard deviations, which are estimated from
-# the data set itself via resampling or sigma-point techniques.
+# calibrated to remove receiver gain drifts, channels are combined into bands, baselines are removed, and a beam 
+# pattern is fitted to the combined scans. For general (unnamed) sources, the estimated source position is returned
+# as target coordinates. Additionally, for known calibrator sources, the antenna gain and effective area can be
+# estimated from the known source flux density. All final results are provided with standard deviations, which are
+# estimated from the data set itself via resampling or sigma-point techniques.
 # @param stdScanList      List of StandardSourceScan objects, describing scans across a single point source
 # @param method           Technique used to obtain statistics ('resample' (recommended default) or 'sigma-point')
 # @param numSamples       Number of samples in resampling process (more is better but slower) [10]
@@ -660,7 +677,7 @@ def reduce_point_source_scan_with_stats(stdScanList, method='resample', numSampl
             results = reduce_point_source_scan(scanListCopy, False)
             # Make sure the output has the correct shape in case the gain/pointing estimation failed, by adding NaNs
             if results[0] == None:
-                numBands = len(stdScanList[0].mainData.bandFreqs)
+                numBands = len(stdScanList[0].mainData.freqs_Hz)
                 results[0] = np.tile(np.nan, (5, numBands)).tolist()
             if results[1] == None:
                 results[1] = [[np.nan, np.nan, np.nan], [np.nan, np.nan]]
@@ -670,7 +687,7 @@ def reduce_point_source_scan_with_stats(stdScanList, method='resample', numSampl
         resMuSigma = stats.sp_uncorrelated_stats(wrapper_func, fptMuSigma)
         
         # Re-assemble results
-        numBands = len(stdScanList[0].mainData.bandFreqs)
+        numBands = len(stdScanList[0].mainData.freqs_Hz)
         if np.all(np.isnan(resMuSigma[numBands:2*numBands].mu)):
             gainResults = None
         else:
@@ -688,11 +705,11 @@ def reduce_point_source_scan_with_stats(stdScanList, method='resample', numSampl
 
 ## Extract Tsys information from multiple pointings.
 # This reduces the power data obtained from multiple pointings at cold sky patches. In the process, the data is
-# calibrated to remove receiver gain drifts, and converted from channels to bands. It returns an array of
+# calibrated to remove receiver gain drifts, and channels are combined into bands. It returns an array of
 # Tsys measurements, of shape (numPointings, 2, numBands) (2 => X and Y input ports), and the median times
 # and elevation angles of each pointing.
 # @param stdScanList      List of StandardSourceScan objects, containing multiple pointing measurements
-#                         (modified by call - converted from power to temp, and possibly randomised mainData)
+#                         (modified by call - power converted to temp and bands, and possibly randomised mainData)
 # @param randomise        True if data should be randomised, as part of a larger Monte Carlo run [False]
 # @return tsysResults     List of results, of form (tsys, timeStamps, elAngs_deg)
 def reduce_tsys_pointings(stdScanList, randomise=False):
@@ -718,7 +735,7 @@ def reduce_tsys_pointings(stdScanList, randomise=False):
 
 ## Extract Tsys information from multiple pointings, with quantified statistical uncertainty.
 # This reduces the power data obtained from multiple pointings at cold sky patches. In the process, the data is
-# calibrated to remove receiver gain drifts, and converted from channels to bands. The Tsys results are provided 
+# calibrated to remove receiver gain drifts, and channels are combined into bands. The Tsys results are provided 
 # with standard deviations, which are estimated from the data set itself via resampling.
 # @param stdScanList      List of StandardSourceScan objects, containing multiple pointing measurements
 # @param numSamples       Number of samples in resampling process (more is better but slower) [10]
@@ -750,6 +767,7 @@ def reduce_tsys_pointings_with_stats(stdScanList, numSamples=10):
 # @return isLinear      Array of shape (2, numChannels) of linearity test result flags (True/False)
 # @return confIntervals Array of shape (2, 2, numChannels), where confInterval[0] is the start and confInterval[1]
 #                       is the end of the linearity confidence interval for each polarisation and channel
+#                       The interval is normalised as a fraction of the "cold" power delta
 # @return degsFreedom   Number of degrees of freedom of the Student-t distribution, in (2, numChannels) array
 def linearity_test(powerBlockDict, alpha=0.05):
     # Obtain labels for the required blocks
@@ -774,7 +792,7 @@ def linearity_test(powerBlockDict, alpha=0.05):
     # Bail if there is no common set
     if len(blockSets) == 0:
         return None, None, None
-    # Obtain stats of first common set
+    # Obtain stats of first common set, to satisfy interface of calc_conf_interval_diff_diff2means
     # pylint: disable-msg=W0232
     class Struct:
         pass

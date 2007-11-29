@@ -161,7 +161,7 @@ class GainCalibrationData(object):
                            for pair in deltaPairs]
         ## @var freqs_Hz
         # List of channel frequencies where power is measured, in Hz
-        self.freqs_Hz = deltaPairs[0]['off'].bandFreqs
+        self.freqs_Hz = deltaPairs[0]['off'].freqs_Hz
     
     ## Obtain power-to-temperature conversion function.
     # Calculate a power-to-temperature conversion factor (Fpt) for each stored noise-diode-on-off pair,

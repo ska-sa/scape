@@ -21,7 +21,7 @@ logger = logging.getLogger("xdmsbe.xdmsbelib.single_dish_data")
 #--- FUNCTIONS
 #----------------------------------------------------------------------------------------------------------------------
 
-## Dictionary that maps polarisation channel names to power data matrix indices.
+## Dictionary that maps polarisation type names to power data matrix indices.
 # This allows the use of symbolic names, which are clearer than numeric indices.
 # @param stokes Boolean indicating wether Stokes IQUV (True) or cross power / coherency (False) is required
 # @return Dictionary mapping names to indices
@@ -37,27 +37,28 @@ def power_index_dict(stokes):
 
 ## A container for single-dish data consisting of polarised power measurements combined with pointing information.
 # The main data member of this class is the 3-D powerData array, which stores power (autocorrelation) measurements as a
-# function of polarisation index, time and frequency band. This array can take one of two forms:
+# function of polarisation index, time and frequency channel/band. This array can take one of two forms:
 # - Stokes [I,Q,U,V] parameters, which are always real in the case of a single dish (I = the non-negative total power)
 # - Coherencies [XX,YY,XY,YX], where XX and YY are real and non-negative polarisation powers, and XY and YX can be
 #   complex in the general case (this makes powerData a potentially complex-valued array).
-# Additional information contained in the class is the pointing data (azimuth/elevation/rotator angles) and timestamps.
+# The class also stores pointing data (azimuth/elevation/rotator angles), timestamps, a list of frequencies, and
+# the mount coordinate system and target object, which permits the calculation of any relevant coordinates.
 class SingleDishData(object):
     ## Initialiser/constructor
     #
     # @param    self              The current object
-    # @param    powerData         3-D array, of shape (4, number of time samples, number of frequency bands)
-    #                             This can be interpreted as 4 data blocks of dimension time x bands
-    # @param    stokesFlag        True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
+    # @param    powerData         3-D array, of shape (4, number of time samples, number of frequency channels/bands)
+    #                             This can be interpreted as 4 data blocks of dimension time x channels/bands
+    # @param    stokesFlag        True if power data  is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
     # @param    timeSamples       Sequence of timestamps for each data block (in seconds since epoch)
     # @param    azAng_rad         Azimuth angle sequence for each data block (in radians)
     # @param    elAng_rad         Elevation angle sequence for each data block (in radians)
     # @param    rotAng_rad        Rotator stage angle sequence for each data block (in radians)
-    # @param    bandFreqs         List of band centre frequencies (in Hz)
+    # @param    freqs_Hz          List of channel/band centre frequencies (in Hz)
     # @param    mountCoordSystem  Mount coordinate system object (see acsm.coordinatesystem module)
     # @param    targetObject      Target object (see acsm.targets module)
     # pylint: disable-msg=R0913
-    def __init__(self, powerData, stokesFlag, timeSamples, azAng_rad, elAng_rad, rotAng_rad, bandFreqs, \
+    def __init__(self, powerData, stokesFlag, timeSamples, azAng_rad, elAng_rad, rotAng_rad, freqs_Hz, \
                  mountCoordSystem=None, targetObject=None):
         ## @var stokesFlag
         # True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
@@ -74,16 +75,9 @@ class SingleDishData(object):
         ## @var rotAng_rad
         # Rotator stage angle for data block, in radians
         self.rotAng_rad = rotAng_rad
-        ## @var bandFreqs
-        # List of band centre frequencies, in Hz
-        self.bandFreqs = bandFreqs
-        
-        ## @var stokesData
-        # Look up Stokes visibility values by name
-        self.stokesData = {}
-        ## @var coherencyData
-        # Look up coherency / cross-power data by name
-        self.coherencyData = {}
+        ## @var freqs_Hz
+        # List of channel/band centre frequencies, in Hz (keep doubles to prevent precision issues)
+        self.freqs_Hz = np.asarray(freqs_Hz, dtype='double')
         
         ## @var mountCoordSystem
         # Coordinate system for mount (azimuth/evelation/rotation angles)
@@ -96,7 +90,18 @@ class SingleDishData(object):
         self.targetCoords = None
         self.update_target_coords()
         
+        ## @var originalChannels
+        # List of original channel indices associated with each frequency channel/band in powerData
+        self.originalChannels = range(len(self.freqs_Hz))
+        ## @var stokesData
+        # Look up Stokes visibility values by name
+        self.stokesData = {}
+        ## @var coherencyData
+        # Look up coherency / cross-power data by name
+        self.coherencyData = {}
+        
         self._powerConvertedToTemp = False
+        self._nonRfiChannelsConvertedToBands = False
         self._baselineSubtracted = False
         
         ## @var _powerData
@@ -175,14 +180,15 @@ class SingleDishData(object):
             logger.error(message)
             raise ValueError, message
         # Ensure objects are in the same state
-        if (self._powerConvertedToTemp != other._powerConvertedToTemp) or \
-           (self._baselineSubtracted != other._baselineSubtracted):
-            message = "Data objects are not in the same state (power conversion or baseline subtraction flags differ)."
+        if (self._powerConvertedToTemp           != other._powerConvertedToTemp) or \
+           (self._nonRfiChannelsConvertedToBands != other._nonRfiChannelsConvertedToBands) or \
+           (self._baselineSubtracted             != other._baselineSubtracted):
+            message = "Data objects are not in the same state, as their flags differ."
             logger.error(message)
             raise ValueError, message
-        # Ensure frequency bands are the same
-        if np.any(self.bandFreqs != other.bandFreqs):
-            message = "Cannot concatenate data objects with different frequency bands."
+        # Ensure list of frequencies and original channel indices are the same
+        if np.any(self.freqs_Hz != other.freqs_Hz) or (self.originalChannels != other.originalChannels):
+            message = "Cannot concatenate data objects with different frequency channels/bands."
             logger.error(message)
             raise ValueError, message
         # Convert power data to appropriate format if it differs for the two objects
@@ -246,6 +252,42 @@ class SingleDishData(object):
         self._powerConvertedToTemp = True
         return self
     
+    ## Convert frequency channels to bands, while optionally removing RFI-corrupted channels.
+    # The frequency channels are grouped into bands, and the power data is merged and averaged within each band.
+    # Each band contains the average power of its constituent channels. The average power is simpler to use
+    # than the total power in each band, as total power is dependent on the bandwidth of each band.
+    # The channelsPerBand mapping contains a list of lists of channel indices, indicating which channels belong 
+    # to each band. Some channels can also be marked as corrupted by RFI, which will remove them from any band.
+    # The resulting number of bands might be less than what was requested (or even 0), due to this removal.
+    # @param self            The current object
+    # @param channelsPerBand A sequence of lists of channel indices, indicating which channels belong to each band
+    # @param rfiChannels     A sequence of channel indices, indicating channels to remove [None]
+    # @return self           The current object
+    def convert_non_rfi_channels_to_bands(self, channelsPerBand, rfiChannels = None):
+        # Already done, so don't do it again
+        if self._nonRfiChannelsConvertedToBands:
+            return self
+        if not self._powerConvertedToTemp:
+            message = "First convert raw power measurements to temperatures before combining channels into bands."
+            logger.error(message)
+            raise RuntimeError, message
+        # Convert "safer" default value of None to intended empty list
+        if rfiChannels == None:
+            rfiChannels = []
+        # Remove RFI channels from band channel lists, and delete any resulting empty bands
+        channelsPerBand = [list(set.difference(set(x), set(rfiChannels))) for x in channelsPerBand]
+        channelsPerBand = [x for x in channelsPerBand if len(x) > 0]
+        # Merge and average power data into new array (keep same type as original data, which may be complex)
+        bandPowerData = np.zeros(list(self.powerData.shape[0:2]) + [len(channelsPerBand)], dtype=self.powerData.dtype)
+        for bandIndex, bandChannels in enumerate(channelsPerBand):
+            bandPowerData[:, :, bandIndex] = self.powerData[:, :, bandChannels].mean(axis=2)
+        self.powerData = bandPowerData
+        # Each band centre frequency is the mean of the corresponding channel centre frequencies
+        self.freqs_Hz = np.array([self.freqs_Hz[chans].mean() for chans in channelsPerBand], dtype='double')
+        self.originalChannels = channelsPerBand
+        self._nonRfiChannelsConvertedToBands = True
+        return self
+    
     ## Subtract a baseline function from the scan data.
     # The main argument is a callable object with the signature 'temp = func(ang)', which provides 
     # an interpolated baseline function based on either elevation or azimuth angle.
@@ -260,7 +302,11 @@ class SingleDishData(object):
         if not self._powerConvertedToTemp:
             message = "Cannot subtract baseline from unconverted (raw) power measurements."
             logger.error(message)
-            raise ValueError, message
+            raise RuntimeError, message
+        if not self._nonRfiChannelsConvertedToBands:
+            message = "Baseline should only be subtracted after frequency channels are converted to bands."
+            logger.error(message)
+            raise RuntimeError, message
         # Obtain baseline
         if useElevation:
             baselineData = func(self.elAng_rad)

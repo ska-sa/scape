@@ -114,23 +114,9 @@ class FitsReader(object):
         # The experiment sequence number associated with this FITS file
         self.expSeqNum = self._primHdr['ExpSeqN']
         
-        ## @var rfiChannelList
-        # List of rfi channel indexes
-        self.rfiChannelList = None
-        
-        ## @var bandChannelList
-        # List of channels per band
-        self.bandChannelList = None
-        
-        ## @var bandNoRfiChannelList
-        # List of non-rfi channels per band
-        self.bandNoRfiChannelList = None
-        self._extract_channel_mappings()
-        
-        ## @var bandNoRfiFrequencies
-        # List of band centre frequencies in Hz (after RFI channels are removed)
-        self.bandNoRfiFrequencies = None
-        self._calc_band_frequencies()
+        ## @var channelFreqs
+        # List of channel centre frequencies, in Hz
+        self.channelFreqs_Hz = self._hduL['CHANNELS'].data.field('Freq')
         
         ## @var polIdxDict
         # Dictionary with the mappings from polarisation names to indexes
@@ -222,23 +208,6 @@ class FitsReader(object):
     def close(self):
         self._hduL.close()
     
-    ## Extract list of frequency channels for each frequency band, while discarding RFI-marked channels.
-    # @param self The current object
-    def _extract_channel_mappings(self):
-        self.rfiChannelList = [x[0] for x in self._hduL['RFI'].data.field('Channels')]
-        self.bandChannelList = [x.tolist() for x in self._hduL['BANDS'].data.field('Channels')]
-        rfiCSet = set(self.rfiChannelList)
-        # Remove rfi channels from bandChannelList, and delete any resulting empty bands
-        tempBandNoRfiChannelList = [list(set.difference(set(x), rfiCSet)) for x in self.bandChannelList]
-        self.bandNoRfiChannelList = [x for x in tempBandNoRfiChannelList if len(x) > 0]
-    
-    ## Calculate the centre frequency for each band, as the mean of the frequencies of its channels.
-    # @param self The current object
-    def _calc_band_frequencies(self):
-        channelFreqs = self._hduL['CHANNELS'].data.field('Freq')
-        self.bandNoRfiFrequencies = np.array([(channelFreqs[x]).mean() for x in self.bandNoRfiChannelList], \
-                                             dtype='double')
-    
     ## Extract mapping of polarisation type to a corresponding index from FITS file header
     # @param self The current object
     def _extract_polarisation_mappings(self):
@@ -312,56 +281,49 @@ class FitsReader(object):
     # @return numarray of column values passed by the mask
     def select_masked_column(self, hduName, colName, mask=None):
         data = self.get_hdu_data(hduName)
-        if (mask == None):
+        if mask == None:
             return data.field(colName)
         else:
             return data.field(colName)[mask]
     
+    ## Get list of RFI-flagged channels from FITS file.
+    # @param self       The current object
+    # @return A list of channel indices, indicating channels containing RFI
+    def get_rfi_channels(self):
+        rfiChannels = [x[0] for x in self._hduL['RFI'].data.field('Channels')]
+        # The FITS file doesn't like empty lists, so an empty list is represented by [-1] (an invalid index)
+        # Therefore, remove any invalid indices, as a further safeguard
+        rfiChannels = [x for x in rfiChannels if (x >= 0) and (x < len(self.channelFreqs_Hz))]
+        return rfiChannels
+    
     ## Create a SingleDishData object containing power and pointing info, based on a mask.
     # The mask determines which segments of the FITS file are returned. Use stokesType to determine whether
-    # the results are returned in IQUV or cross-power/coherency form. The power data is either per channel
-    # or per band (minus RFI channels), depending on the perBand flag.
+    # the results are returned in IQUV or cross-power/coherency form. The power data is always per channel.
     # @param self       The current object
     # @param mask       The mask (typically created using _get_select_mask() - Boolean numarray object)
-    # @param perBand    True for power per band (minus RFI), False for power per channel
     # @param stokesType True for IQUV, False for cross power
     # @return SingleDishData object combining power and pointing info
     # pylint: disable-msg=R0912,R0914
-    def _extract_single_dish_data(self, mask=None, perBand=True, stokesType=True):
-        ## Integrate per-channel power data according to frequency bands, while excluding RFI-corrupted channels.
-        # Each band contains the average power of its constituent channels. The average power is simpler to use
-        # than the total power in each band, as total power is dependent on the bandwidth of each band.
-        # @param power 2-D array of power values, with dimensions: time x channels
-        # @return 2-D array of power values, with dimensions: time x bands
-        def power_channels_to_bands_ex_rfi(power):
-            bandPower = np.zeros((power.shape[0], len(self.bandNoRfiChannelList)), dtype='double')
-            for b, bandChannels in enumerate(self.bandNoRfiChannelList):
-                bandPower[:, b] = power[:, bandChannels].mean(axis=1)
-            return bandPower
-        ## Obtain array of power values from FITS file, with optional mask and conversion to frequency bands.
+    def _extract_single_dish_data(self, mask=None, stokesType=True):
+        ## Obtain array of power values from FITS file, with optional mask.
         # @param name    Name of data column in FITS file
         # @param mask    Mask for selecting various power segments
-        # @param perBand True if per-channel data is to be converted to per-band data
         # @return Array of power values
-        def get_masked_power_col(name, mask, perBand):
-            chanPower = np.array(self.select_masked_column('MSDATA', name, mask))
-            if perBand:
-                return power_channels_to_bands_ex_rfi(chanPower)
-            else:
-                return chanPower
+        def get_masked_power_col(name, mask):
+            return np.array(self.select_masked_column('MSDATA', name, mask))
         
-        def get_stokes_power(mask, perBand):
-            I = get_masked_power_col('I', mask, perBand)
-            Q = get_masked_power_col('Q', mask, perBand)
-            U = get_masked_power_col('U', mask, perBand)
-            V = get_masked_power_col('V', mask, perBand)
+        def get_stokes_power(mask):
+            I = get_masked_power_col('I', mask)
+            Q = get_masked_power_col('Q', mask)
+            U = get_masked_power_col('U', mask)
+            V = get_masked_power_col('V', mask)
             return I, Q, U, V
         
-        def get_cross_power(mask, perBand):
-            XX = get_masked_power_col('XX', mask, perBand)
-            XY = get_masked_power_col('XY', mask, perBand)
-            YX = get_masked_power_col('YX', mask, perBand)
-            YY = get_masked_power_col('YY', mask, perBand)
+        def get_cross_power(mask):
+            XX = get_masked_power_col('XX', mask)
+            XY = get_masked_power_col('XY', mask)
+            YX = get_masked_power_col('YX', mask)
+            YY = get_masked_power_col('YY', mask)
             return XX, XY, YX, YY
         
         if mask == None:
@@ -374,15 +336,10 @@ class FitsReader(object):
         elAng_rad = deg_to_rad(self.select_masked_column('MSDATA', 'ElAng', mask))
         rotAng_rad = deg_to_rad(self.select_masked_column('MSDATA', 'RotAng', mask))
         
-        if perBand:
-            freqList = self.bandNoRfiFrequencies
-        else:
-            freqList = self._hduL['CHANNELS'].data.field('Freq')
-        
         try:
             # Attempt to read Stokes visibilities from FITS file
-            data = sdd.SingleDishData(get_stokes_power(mask, perBand), True, \
-                                      timeSamples, azAng_rad, elAng_rad, rotAng_rad, freqList, \
+            data = sdd.SingleDishData(get_stokes_power(mask), True, \
+                                      timeSamples, azAng_rad, elAng_rad, rotAng_rad, self.channelFreqs_Hz, \
                                       mountCoordSystem=self._mountCoordSys, targetObject=self._targetObject)
             if not stokesType:
                 data.convert_to_coherency()
@@ -390,8 +347,8 @@ class FitsReader(object):
         except KeyError:
             try:
                 # Attempt to read cross power / coherencies from FITS file
-                data = sdd.SingleDishData(get_cross_power(mask, perBand), False, \
-                                          timeSamples, azAng_rad, elAng_rad, rotAng_rad, freqList, \
+                data = sdd.SingleDishData(get_cross_power(mask), False, \
+                                          timeSamples, azAng_rad, elAng_rad, rotAng_rad, self.channelFreqs_Hz, \
                                           mountCoordSystem=self._mountCoordSys, targetObject=self._targetObject)
                 if stokesType:
                     data.convert_to_stokes()
@@ -457,7 +414,6 @@ class FitsReader(object):
     #    @param   dataSelectionList List of data selection 3-tuples of the following form:
     #                                (selectionIdentifierString, selectionDictionary, stokesTypeFlag) , e.g.,
     #                                ('onND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)
-    #    @param   perBand           True for power per band (minus RFI), False for power per channel
     #
     #    @return  dataDict    Data dictionary containing a SingleDishData object for each of the selection
     #                         products of dataIdNameList[i] X dataSelectionList[j]
@@ -465,7 +421,7 @@ class FitsReader(object):
     
     # pylint: disable-msg=R0912,R0915
     
-    def extract_data(self, dataIdNameList, dataSelectionList, perBand=True):
+    def extract_data(self, dataIdNameList, dataSelectionList):
         
         dataDict = {}
         
@@ -482,7 +438,7 @@ class FitsReader(object):
                         selectDict['ID'] = self.dataIdNameToNumDict[dataIdName]
                         selectDict['ID_SeqN'] = dataIdSeqNum
                         mask = self._get_select_mask('MSDATA', selectDict)
-                        dataDict[dataIdStr + '_' + tagStr] = self._extract_single_dish_data(mask, perBand, stokes)
+                        dataDict[dataIdStr + '_' + tagStr] = self._extract_single_dish_data(mask, stokes)
         return dataDict
 
 
