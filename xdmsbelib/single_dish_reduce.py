@@ -553,8 +553,9 @@ def calibrate_and_fit_beam_pattern(stdScanList, randomise):
 def reduce_point_source_scan(stdScanList, randomise=False):
     # Calibrate across all scans, and fit a beam pattern to estimate source position and strength
     beamFuncList, calibScanList = calibrate_and_fit_beam_pattern(stdScanList, randomise)
-    # List of valid beam functions
+    # List of valid and invalid beam functions
     validBeamFuncList = [beamFuncList[ind][0] for ind in range(len(beamFuncList)) if beamFuncList[ind][1]]
+    invalidBeamFuncInds = [ind for ind in range(len(beamFuncList)) if not beamFuncList[ind][1]]
     
     # Get source power flux density for each frequency band, if it is known for the target object
     refTarget = stdScanList[0].mainData.targetObject.get_reference_target()
@@ -576,13 +577,13 @@ def reduce_point_source_scan(stdScanList, randomise=False):
         # Calculate antenna effective area and gain, per band
         deltaT = np.array([beamFuncPair[0].height for beamFuncPair in beamFuncList])
         # Replace bad bands with NaNs - better than discarding them, as this preserves the array shape
-        invalidBeamFuncInds = [ind for ind in range(len(beamFuncList)) if not beamFuncList[ind][1]]
         deltaT[invalidBeamFuncInds] = np.nan
         pointSourceSensitivity = sourcePowerFluxDensity / deltaT
         effArea, antGain = misc.calc_ant_eff_area_and_gain(pointSourceSensitivity, bandFreqs)
         gainResults = sourcePowerFluxDensity, deltaT, pointSourceSensitivity, effArea, antGain
     
     # For general point sources, it is still possible to estimate pointing error (if beam fitting succeeded)
+    # The peak temperature of the beam is also useful, for checking the source you are looking at
     if len(validBeamFuncList) == 0:
         pointingResults = None
     else:
@@ -593,7 +594,10 @@ def reduce_point_source_scan(stdScanList, randomise=False):
         # The first few dimensions (typically 2) of target coordinate vector are loaded with mean beam position
         targetCoords[:meanBeamCoords.size] = meanBeamCoords
         mountCoords = transform(targetCoords)
-        pointingResults = targetCoords, mountCoords.tolist()
+        # Obtain peak beam temperature per band (assumed to be due to point source) - invalid beams replaced with NaNs
+        deltaT = np.array([beamFuncPair[0].height for beamFuncPair in beamFuncList])
+        deltaT[invalidBeamFuncInds] = np.nan
+        pointingResults = targetCoords, mountCoords.tolist(), deltaT
     
     return gainResults, pointingResults, beamFuncList, calibScanList
 
@@ -648,8 +652,11 @@ def reduce_point_source_scan_with_stats(stdScanList, method='resample', numSampl
             # Two arrays of numSamples x D, containing pointing results in target and mount coordinates
             pointArrT = np.array([pointRes[0] for pointRes in pointingList])
             pointArrM = np.array([pointRes[1] for pointRes in pointingList])
+            # Array of numSamples x numBands, containing peak beam temperature per band
+            pointArrD = np.array([pointRes[2] for pointRes in pointingList])
             pointingResults = stats.MuSigmaArray(pointArrT.mean(axis=0), pointArrT.std(axis=0)), \
-                              stats.MuSigmaArray(pointArrM.mean(axis=0), pointArrM.std(axis=0))
+                              stats.MuSigmaArray(pointArrM.mean(axis=0), pointArrM.std(axis=0)), \
+                              stats.MuSigmaArray(pointArrD.mean(axis=0), pointArrD.std(axis=0))
     
     # Sigma-point technique for estimating standard deviations
     elif method == 'sigma-point':
@@ -680,7 +687,7 @@ def reduce_point_source_scan_with_stats(stdScanList, method='resample', numSampl
                 numBands = len(stdScanList[0].mainData.freqs_Hz)
                 results[0] = np.tile(np.nan, (5, numBands)).tolist()
             if results[1] == None:
-                results[1] = [[np.nan, np.nan, np.nan], [np.nan, np.nan]]
+                results[1] = [[np.nan, np.nan, np.nan], [np.nan, np.nan], np.tile(np.nan, (numBands)).tolist()]
             return np.concatenate(results[0] + results[1])
         
         # Do sigma-point evaluation, and extract relevant outputs
@@ -694,7 +701,8 @@ def reduce_point_source_scan_with_stats(stdScanList, method='resample', numSampl
             gainResults = resMuSigma[0:numBands].mu, resMuSigma[numBands:2*numBands], \
                           resMuSigma[2*numBands:3*numBands], resMuSigma[3*numBands:4*numBands], \
                           resMuSigma[4*numBands:5*numBands]
-        pointingResults = resMuSigma[5*numBands:5*numBands+3], resMuSigma[5*numBands+3:5*numBands+5]
+        pointingResults = resMuSigma[5*numBands:5*numBands+3], resMuSigma[5*numBands+3:5*numBands+5], \
+                          resMuSigma[5*numBands+5:6*numBands+5]
         if np.all(np.isnan(pointingResults.mu)):
             pointingResults = None
     else:
