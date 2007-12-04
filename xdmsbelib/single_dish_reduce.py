@@ -644,19 +644,15 @@ def reduce_point_source_scan_with_stats(stdScanList, method='resample', numSampl
         if len(gainList) > 0:
             # Array of numSamples x 5 x numBands, containing gain results
             gainArr = np.array(gainList)
-            gainResults = gainArr[0, 0], stats.MuSigmaArray(gainArr[:, 1].mean(axis=0), gainArr[:, 1].std(axis=0)), \
-                          stats.MuSigmaArray(gainArr[:, 2].mean(axis=0), gainArr[:, 2].std(axis=0)), \
-                          stats.MuSigmaArray(gainArr[:, 3].mean(axis=0), gainArr[:, 3].std(axis=0)), \
-                          stats.MuSigmaArray(gainArr[:, 4].mean(axis=0), gainArr[:, 4].std(axis=0))
+            gainResults = gainArr[0, 0], stats.mu_sigma(gainArr[:, 1]), stats.mu_sigma(gainArr[:, 2]), \
+                                         stats.mu_sigma(gainArr[:, 3]), stats.mu_sigma(gainArr[:, 4])
         if len(pointingList) > 0:
             # Two arrays of numSamples x D, containing pointing results in target and mount coordinates
             pointArrT = np.array([pointRes[0] for pointRes in pointingList])
             pointArrM = np.array([pointRes[1] for pointRes in pointingList])
             # Array of numSamples x numBands, containing peak beam temperature per band
             pointArrD = np.array([pointRes[2] for pointRes in pointingList])
-            pointingResults = stats.MuSigmaArray(pointArrT.mean(axis=0), pointArrT.std(axis=0)), \
-                              stats.MuSigmaArray(pointArrM.mean(axis=0), pointArrM.std(axis=0)), \
-                              stats.MuSigmaArray(pointArrD.mean(axis=0), pointArrD.std(axis=0))
+            pointingResults = stats.mu_sigma(pointArrT), stats.mu_sigma(pointArrM), stats.mu_sigma(pointArrD)
     
     # Sigma-point technique for estimating standard deviations
     elif method == 'sigma-point':

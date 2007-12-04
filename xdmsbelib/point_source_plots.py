@@ -100,10 +100,9 @@ def plot_tsys(figColor, resultList, expName):
         channelSpacing = channelFreqs[0]
     freqRange = [min(channelFreqs.min(), plotFreqs.min()) - channelSpacing, \
                  max(channelFreqs.max(), plotFreqs.max()) + channelSpacing]
+    whiskWidth = (freqRange[1] - freqRange[0]) / 50.0
     if len(plotFreqs) > 1:
-        whiskWidth = np.median(np.diff(channelFreqs)) / 2.0
-    else:
-        whiskWidth = (freqRange[1] - freqRange[0]) / 50.0
+        whiskWidth = min(whiskWidth, np.median(np.diff(channelFreqs)) / 2.0)
     # One figure, 2 subfigures
     axesColorList.append(figColor.add_subplot(2, 1, 1))
     axesColorList.append(figColor.add_subplot(2, 1, 2))
@@ -638,10 +637,9 @@ def plot_antenna_gain(figColor, resultList, expName):
         channelSpacing = channelFreqs[0]
     freqRange = [min(channelFreqs.min(), plotFreqs.min()) - channelSpacing, \
                  max(channelFreqs.max(), plotFreqs.max()) + channelSpacing]
+    whiskWidth = (freqRange[1] - freqRange[0]) / 50.0
     if len(plotFreqs) > 1:
-        whiskWidth = np.median(np.diff(channelFreqs)) / 2.0
-    else:
-        whiskWidth = (freqRange[1] - freqRange[0]) / 20.0
+        whiskWidth = min(whiskWidth, np.median(np.diff(channelFreqs)) / 2.0)
     # One figure, 3 subfigures
     for sub in range(3):
         axesColorList.append(figColor.add_subplot(3, 1, sub+1))

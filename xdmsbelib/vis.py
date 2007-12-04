@@ -235,9 +235,10 @@ def mu_sigma_plot(axis, x, muSigma, whiskSigma=1.0, whiskWidth=None, **kwargs):
         raise ValueError, "The following arrays should have the same shape: mu=" + str(mu.shape) + \
                           ", sigma=" + str(sigma.shape) + ", x=" + str(x.shape)
     # The default whisk width is half the minimum separation between x values (make another plan for 1 or 0 points)
+    # Also limit the whisk width to a fraction of the x range, to avoid ugly wide whisks
     if whiskWidth == None:
         if len(x) >= 2:
-            whiskWidth = np.diff(sorted(x)).min() / 2.0
+            whiskWidth = min(np.diff(sorted(x)).min() / 2.0, (x.max() - x.min()) / 50.0)
         elif len(x) == 1:
             whiskWidth = np.abs(x) / 10.0
         else:
@@ -248,7 +249,7 @@ def mu_sigma_plot(axis, x, muSigma, whiskSigma=1.0, whiskWidth=None, **kwargs):
     handleWhisk = axis.plot(xx.transpose().ravel(), yy.transpose().ravel(), **kwargs)
     # Remove any markers from whisker line (which could be specified in kwargs for the dot plot)
     pylab.setp(handleWhisk, 'marker', '')
-    handleDot = axis.plot(x, mu, 'o', markersize=10, **kwargs)
+    handleDot = axis.plot(x, mu, 'o', markersize=6, **kwargs)
     return handleWhisk, handleDot
 
 
