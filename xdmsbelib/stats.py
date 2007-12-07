@@ -378,6 +378,28 @@ def ms_vstack(msaList):
 def mu_sigma(data, axis=0):
     return MuSigmaArray(data.mean(axis=axis), data.std(axis=axis))
 
+## Determine second-order statistics from data, using more robust order statistics.
+# Convenience function to return second-order statistics of data along given axis as a MuSigmaArray.
+# These are determined via the median and interquartile range.
+# @param data Numpy data array of arbitrary shape
+# @param axis Index of axis along which stats are calculated (will be averaged away in the process) [0]
+# @return MuSigmaArray containing data stats, of same dimension as data, but without given axis
+def robust_mu_sigma(data, axis=0):
+    data = np.asarray(data)
+    # Create sequence of axis indices with specified axis at the front, and the rest following it
+    moveAxisToFront = range(len(data.shape))
+    moveAxisToFront.remove(axis)
+    moveAxisToFront = [axis] + moveAxisToFront
+    # Create copy of data sorted along specified axis, and reshape so that the specified axis becomes the first one
+    sortedData = np.sort(data, axis=axis).transpose(moveAxisToFront)
+    # Obtain quartiles
+    perc25 = sortedData[int(0.25 * len(sortedData))]
+    perc50 = sortedData[int(0.50 * len(sortedData))]
+    perc75 = sortedData[int(0.75 * len(sortedData))]
+    # Conversion factor from interquartile range to standard deviation (based on normal pdf)
+    iqrToStd = 0.741301109253
+    return MuSigmaArray(perc50, iqrToStd * (perc75 - perc25))
+
 #=========================================================================================================
 #=== FUNCTIONS                                                                                         ===
 #=========================================================================================================
