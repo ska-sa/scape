@@ -114,7 +114,7 @@ class FitsReader(object):
         # The experiment sequence number associated with this FITS file
         self.expSeqNum = self._primHdr['ExpSeqN']
         
-        ## @var channelFreqs
+        ## @var channelFreqs_Hz
         # List of channel centre frequencies, in Hz
         self.channelFreqs_Hz = self._hduL['CHANNELS'].data.field('Freq')
         

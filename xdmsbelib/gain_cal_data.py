@@ -7,7 +7,6 @@
 # @date 2007-11-12
 
 import xdmsbe.xdmsbelib.fitting as fitting
-import xdmsbe.xdmsbelib.stats as stats
 import xdmsbe.xdmsbelib.single_dish_data as sdd
 from conradmisclib.transforms import deg_to_rad
 import numpy as np
@@ -119,7 +118,7 @@ class NoiseDiodeData(object):
 
 ## A container for gain calibration data obtained from power measurements.
 # This allows the (randomised) calculation of the power-to-temperature conversion function.
-# pylint: disable-msg=R0903
+# pylint: disable-msg=R0902,R0903
 class GainCalibrationData(object):
     ## Initialiser/constructor
     # Extract adjacent "noise diode on" and "noise diode off" power data blocks from given list. Make sure data

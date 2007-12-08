@@ -164,6 +164,7 @@ def check_data_consistency(dataDict):
 # @param fitsFileName      Name of initial file in FITS chain
 # @return stdScanList      List of StandardSourceScan objects, one per pointing
 # @return rawPowerDictList List of dictionaries containing SingleDishData objects representing all raw data blocks
+# pylint: disable-msg=R0914
 def load_tsys_pointing_list(fitsFileName):
     stdScanList = []
     rawPowerDictList = []

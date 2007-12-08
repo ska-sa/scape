@@ -10,6 +10,7 @@ import xdmsbe.xdmpyfits as pyfits
 from optparse import OptionParser
 import numpy as np
 import numpy.linalg as linalg
+import scipy as sp
 import logging
 import logging.config
 import os.path
@@ -386,23 +387,19 @@ def dict_regex_select(inDict, regexStr):
 #--- FUNCTION :  randn_complex
 #---------------------------------------------------------------------------------------------------------
 
-## Return a new array of zeros mean, complex Gaussian random variables of a given shape
-# specified by tuple shape and a given power level (per dim)
+## Generates a 2-D matrix of independent zero-mean, complex Gaussian random variables.
 #
-# @param    dim           dimension of random variables
-# @param    numSamples    number of samples
+# @param    numSamples    Number of samples (number of rows in output)
+# @param    dim           Dimension of random variables (number of columns in output)
 # @param    complexType   Data type of samples (default = 'complex128')
-# @param    power         total signal power
-# @param    whiten        flag indicating whether data should be whitened by its sample covariance matrix
-# @return   sigBuf        data sample buffer
-def randn_complex(dim, numSamples, complexType='complex128', power=1, whiten=True):
-    shapeTuple = (dim, numSamples)
-    sigBuf = np.ndarray(shapeTuple, dtype=complexType)
-    powerPerDim = power / dim
-    scaleFact = np.sqrt(powerPerDim / 2)
-    for d in np.arange(dim):
-        (sigBuf[d, :]).real = np.random.normal(0.0, scale=scaleFact, size=(numSamples))
-        (sigBuf[d, :]).imag = np.random.normal(0.0, scale=scaleFact, size=(numSamples))
+# @param    power         Total signal power (default = 1.0)
+# @param    whiten        Flag indicating whether data should be whitened by its sample covariance matrix
+# @return   data          Generated samples, as an array of shape (numSamples, dim)
+def randn_complex(numSamples, dim, complexType='complex128', power=1.0, whiten=True):
+    data = np.ndarray((numSamples, dim), dtype=complexType)
+    scaleFact = np.sqrt(power / dim / 2.0)
+    data.real = np.random.normal(0.0, scale=scaleFact, size=(numSamples, dim))
+    data.imag = np.random.normal(0.0, scale=scaleFact, size=(numSamples, dim))
     #P = np.zeros((dim, dim), dtype='complex128')
     if whiten:
         pass
@@ -412,7 +409,94 @@ def randn_complex(dim, numSamples, complexType='complex128', power=1, whiten=Tru
         # A = np.linalg.inv(np.linalg.cholesky(P)) # Whiten the data
         # sigBuf = np.dot(A, sigBuf)
     #sigBuf *= scale
-    return sigBuf
+    return data
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  rand_complex_wishart
+#---------------------------------------------------------------------------------------------------------
+
+
+## Generates a sequence of random matrices from the complex Wishart distribution.
+# The complex Wishart distribution is the distribution of the scatter matrix of a sequence of "degsFreedom"
+# independent zero-mean complex Gaussian RVs with dimension "dim" and covariance matrix "covMat". It is
+# therefore also the distribution of the estimate of the covariance matrix of the underlying multivariate 
+# Gaussian RV. It is a multivariate version of the chi-squared distribution. The function generates a
+# sequence of "numSamples" square (dim x dim) nonnegative-definite Hermitian matrices. If covMat is None,
+# a standard underlying Gaussian RV is assumed. If it is required that the Wishart RVs have a mean of
+# exactly covMat, divide the output by (2.0 * degsFreedom).
+#  
+# References (taken from Matlab function wishrnd):
+# Krzanowski, W.J. (1990), Principles of Multivariate Analysis, Oxford.
+# Smith, W.B., and R.R. Hocking (1972), "Wishart variate generator,"
+#  Applied Statistics, v. 21, p. 341.  (Algorithm AS 53)
+#  Available in Fortran at http://lib.stat.cmu.edu/apstat/53
+#
+# @param    numSamples    Number of samples
+# @param    dim           Dimension of square random matrices
+# @param    degsFreedom   Wishart degrees of freedom (number of Gaussians added together)
+# @param    covMat        Covariance matrix of underlying Gaussian RVs (proportional to Wishart mean)
+# @param    complexType   Data type of samples (default = 'complex128')
+# @return   data          Generated samples, as an array of shape (numSamples, dim, dim)
+def rand_complex_wishart(numSamples, dim, degsFreedom, covMat=None, complexType='complex128'):
+    # First create a standardised central Wishart RV
+    data = np.zeros((numSamples, dim, dim), dtype=complexType)
+    # For small degrees of freedom, follow the direct (quadratic form) approach
+    if (degsFreedom <= 81 + dim) and (degsFreedom == int(degsFreedom)):
+        for sampleInd in xrange(numSamples):
+            stdWishartSqrt = randn_complex(degsFreedom, dim, complexType=complexType, power=2.0*dim)
+            data[sampleInd] = np.dot(stdWishartSqrt.transpose(), stdWishartSqrt.conj())
+    # Otherwise use the Smith & Hocking method (also known as Algorithm AS 53 from apstat)
+    else:
+        # Load diagonal elements with square root of chi-square variates
+        for d in xrange(dim):
+            data[:, d, d] = sp.stats.chi.rvs(2*degsFreedom - 2*d, size=numSamples)
+        # Obtain all lower triangle indices, and load them with standard complex Gaussian RVs
+        for sampleInd in xrange(numSamples):
+            lower = np.tri(dim, k=-1).ravel() > 0
+            data[sampleInd].ravel()[lower] = randn_complex(dim*(dim-1)//2, 1, complexType=complexType, power=2.0*dim)
+            data[sampleInd] = np.dot(data[sampleInd], data[sampleInd].conj().transpose())
+           
+    # Apply desired underlying covariance matrix
+    if covMat != None:
+        sqrtCovMat = np.linalg.cholesky(np.asarray(covMat))
+        for sampleInd in xrange(numSamples):
+            data[sampleInd] = np.dot(sqrtCovMat, np.dot(data[sampleInd], sqrtCovMat.conj().transpose()))
+    # Clean up diagonals
+    for d in xrange(dim):
+        data[:, d, d].imag = 0.0
+        
+    return data
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  stokes_to_sqrt_coherency
+#---------------------------------------------------------------------------------------------------------
+
+## Convert Stokes vector to the (lower triangular) square root of its corresponding coherency matrix.
+# Useful for generating vectors with specified Stokes properties. This contains some sanity checks.
+#
+# @param stokesVec 4-dimensional Stokes vector
+# @return sqrtCohMat 2x2 matrix that is (lower triangular) square root of corresponding coherency matrix
+def stokes_to_sqrt_coherency(stokesVec):
+    # First obtain coherency vector
+    cohVec = np.dot(stokes2coherencyMatrix, np.asarray(stokesVec))
+    rxx = cohVec[0]
+    rxy = cohVec[1]
+    ryx = cohVec[2]
+    ryy = cohVec[3]
+    # Pack into coherency matrix
+    cohMat = np.array([[rxx, rxy], [ryx, ryy]], 'complex128')
+    
+    # Have to check for matrices which are non-positive definite (cholesky bombs otherwise)
+    if ((cohMat[0, 1]==0) and (cohMat[1, 0]==0)) and ((cohMat[0, 0]==0) or (cohMat[1, 1]==0)):
+        sqrtCohMat = np.sqrt(cohMat)
+    else:
+        cohMat[0, 0] += 1e-12
+        cohMat[1, 1] += 1e-12
+        sqrtCohMat = np.linalg.cholesky(cohMat)
+    
+    return sqrtCohMat
 
 
 #---------------------------------------------------------------------------------------------------------
