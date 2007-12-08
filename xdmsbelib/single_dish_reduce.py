@@ -59,9 +59,9 @@ class StandardSourceScan(object):
     ## @var powerToTempFunc
     # Interpolated power-to-temperature conversion function (Fpt as a function of time)
     powerToTempFunc = None
-    ## @var rfiChannels
+    ## @var badChannels
     # A sequence of channel indices, indicating RFI-corrupted frequency channels to be removed
-    rfiChannels = None
+    badChannels = None
     ## @var channelsPerBand
     # A sequence of lists of channel indices, indicating which frequency channels belong to each band
     channelsPerBand = None
@@ -190,14 +190,11 @@ def load_tsys_pointing_list(fitsFileName):
             # Load various parameters (the last file in experiment sequence determines the final values)
             stdScan.sourceName = fitsReaderScan.get_primary_header()['Target']
             stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth')[0]
-            stdScan.rfiChannels = fitsReaderScan.get_rfi_channels()
+            rfiChannels = fitsReaderScan.get_rfi_channels()
             stdScan.channelsPerBand = [x.tolist() for x in fitsReaderScan.select_masked_column('BANDS', 'Channels')]
             
             print "Loading file: ", fitsReaderScan.fitsFilename
             print "Data blocks:  ", mainScanDict.keys()
-            print "Pointing name:", stdScan.sourceName
-            print "Found", len(stdScan.channelsPerBand), "band(s) before RFI removal, and", \
-                           len(stdScan.rfiChannels), "RFI-flagged channel(s)"
             
             rawPowerDict.update(mainScanDict)
         
@@ -215,10 +212,19 @@ def load_tsys_pointing_list(fitsFileName):
         stdScan.mainData = rawPowerDict[coldOnBlocks[0]]
         stdScan.noiseDiodeData = noiseDiodeData
         stdScan.gainCalData = gain_cal_data.GainCalibrationData(rawPowerDict)
+        # Merge bad channels due to RFI and those due to untrustworthy noise diode data
+        stdScan.badChannels = list(set.union(set(rfiChannels), set(stdScan.gainCalData.badChannels)))
         # Successful standard scan finally gets added to lists here - this ensures lists are in sync
         stdScanList.append(stdScan)
         rawPowerDictList.append(rawPowerDict)
-    
+        
+        print
+        print "Pointing name:", stdScan.sourceName
+        print "Number of frequency bands:", len(stdScan.channelsPerBand), "(may still decrease due to bad channels)"
+        print "Number of channels:", len(stdScan.mainData.freqs_Hz), \
+              "of which", len(stdScan.badChannels), "are bad (", len(rfiChannels), "RFI-flagged and", \
+              len(stdScan.gainCalData.badChannels), "with insufficient variation between noise diode on/off blocks)"
+        
     return stdScanList, rawPowerDictList
 
 
@@ -297,18 +303,11 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         # Load various parameters from the main scan (these should be the same for other scans as well)
         stdScan.sourceName = fitsReaderScan.get_primary_header()['Target']
         stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth')[0]
-        stdScan.rfiChannels = fitsReaderScan.get_rfi_channels()
+        rfiChannels = fitsReaderScan.get_rfi_channels()
         stdScan.channelsPerBand = [x.tolist() for x in fitsReaderScan.select_masked_column('BANDS', 'Channels')]
         
         print "Loading file:                ", fitsReaderScan.fitsFilename
         print "MainScan data blocks:        ", mainScanDict.keys()
-        print "Source name:", stdScan.sourceName
-        print "Scan start coordinate [az, el] = [%5.3f, %5.3f]" \
-              % (rad_to_deg(mainScanData.azAng_rad[0]), rad_to_deg(mainScanData.elAng_rad[0]))
-        print "Scan stop coordinate  [az, el] = [%5.3f, %5.3f]" \
-              % (rad_to_deg(mainScanData.azAng_rad[-1]), rad_to_deg(mainScanData.elAng_rad[-1]))
-        print "Found", len(stdScan.channelsPerBand), "band(s) before RFI removal, and", \
-                       len(stdScan.rfiChannels), "RFI-flagged channel(s)"
         
         #..................................................................................................
         # Extract the final part, which is assumed to be of a piece of empty sky following the source
@@ -366,13 +365,26 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         calDict.update(preCalDict)
         calDict.update(postCalDict)
         stdScan.gainCalData = gain_cal_data.GainCalibrationData(calDict)
+        # Merge bad channels due to RFI and those due to untrustworthy noise diode data
+        stdScan.badChannels = list(set.union(set(rfiChannels), set(stdScan.gainCalData.badChannels)))
         if fitBaseline:
             stdScan.baselineDataList = [preScanData, postScanData]
         
         # Successful standard scan finally gets added to lists here - this ensures lists are in sync
         rawPowerDictList.append(rawPowerDict)
         stdScanList.append(stdScan)
-    
+        
+        print
+        print "Source name:", stdScan.sourceName
+        print "Scan start coordinate [az, el] = [%5.3f, %5.3f]" \
+              % (rad_to_deg(mainScanData.azAng_rad[0]), rad_to_deg(mainScanData.elAng_rad[0]))
+        print "Scan stop coordinate  [az, el] = [%5.3f, %5.3f]" \
+              % (rad_to_deg(mainScanData.azAng_rad[-1]), rad_to_deg(mainScanData.elAng_rad[-1]))
+        print "Number of frequency bands:", len(stdScan.channelsPerBand), "(may still decrease due to bad channels)"
+        print "Number of channels:", len(stdScan.mainData.freqs_Hz), \
+              "of which", len(stdScan.badChannels), "are bad (", len(rfiChannels), "RFI-flagged and", \
+              len(stdScan.gainCalData.badChannels), "with insufficient variation between noise diode on/off blocks)"
+        
     return stdScanList, rawPowerDictList
 
 
@@ -388,7 +400,7 @@ def calibrate_scan(stdScan, randomise):
     stdScan.powerToTempFunc = stdScan.gainCalData.power_to_temp_func(stdScan.noiseDiodeData, randomise=randomise)
     # Convert the main segment of scan to temperature and bands, and make a copy to preserve original data
     stdScan.mainData.convert_power_to_temp(stdScan.powerToTempFunc)
-    stdScan.mainData.convert_non_rfi_channels_to_bands(stdScan.channelsPerBand, stdScan.rfiChannels)
+    stdScan.mainData.merge_channels_into_bands(stdScan.channelsPerBand, stdScan.badChannels)
     calibratedScan = copy.deepcopy(stdScan.mainData)
     # Without baseline data segments, the calibration is done
     if stdScan.baselineDataList == None:
@@ -396,7 +408,7 @@ def calibrate_scan(stdScan, randomise):
     # Convert baseline data to temperature and bands, and concatenate them into a single structure
     for ind, baselineData in enumerate(stdScan.baselineDataList):
         baselineData.convert_power_to_temp(stdScan.powerToTempFunc)
-        baselineData.convert_non_rfi_channels_to_bands(stdScan.channelsPerBand, stdScan.rfiChannels)
+        baselineData.merge_channels_into_bands(stdScan.channelsPerBand, stdScan.badChannels)
         if ind == 0:
             allBaselineData = copy.deepcopy(baselineData)
         else:

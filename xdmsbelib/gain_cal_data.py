@@ -135,22 +135,10 @@ class GainCalibrationData(object):
         deltaPairs = [{'off' : powerBlockDict[off].convert_to_coherency(), \
                        'on' : powerBlockDict[on].convert_to_coherency()} \
                       for off in noiseDiodeOffLabels for on in noiseDiodeOnLabels if on[:-2] == off]
-        
         if len(deltaPairs) == 0:
             logger.error('No noise diode on+off pairs found - cannot do gain calibration!')
             raise RuntimeError
-        ## @var diodeOffStatsList
-        # Mean and standard deviation of coherencies when noise diode is off (a list, one per on-off pair)
-        # The shape of each element in the list is (2, numFreqs) (only XX, YY info used for calibration)
-        self.diodeOffStatsList = [stats.mu_sigma(np.array([pair['off'].coherencyData['XX'], \
-                                                           pair['off'].coherencyData['YY']]), axis=1) \
-                                  for pair in deltaPairs]
-        ## @var diodeOnStatsList
-        # Mean and standard deviation of coherencies when noise diode is on (a list, one per on-off pair)
-        # The shape of each element in the list is (2, numFreqs) (only XX, YY info used for calibration)
-        self.diodeOnStatsList = [stats.mu_sigma(np.array([pair['on'].coherencyData['XX'], \
-                                                          pair['on'].coherencyData['YY']]), axis=1) \
-                                  for pair in deltaPairs]
+        
         ## @var timeSamples
         # List of averaged time instants, close to the centre of each on-off pair
         self.timeSamples = [np.mean((np.median(pair['off'].timeSamples), np.median(pair['on'].timeSamples))) \
@@ -162,6 +150,39 @@ class GainCalibrationData(object):
         ## @var freqs_Hz
         # List of channel frequencies where power is measured, in Hz
         self.freqs_Hz = deltaPairs[0]['off'].freqs_Hz
+        
+        # Only XX and YY info are used for calibration, as this is all that is known about noise diode
+        diodeOffData = [np.array([pair['off'].coherencyData['XX'], pair['off'].coherencyData['YY']]) \
+                        for pair in deltaPairs]
+        diodeOnData = [np.array([pair['on'].coherencyData['XX'], pair['on'].coherencyData['YY']]) \
+                       for pair in deltaPairs]
+        ## @var diodeOffMean
+        # Mean of coherencies when noise diode is off, as an array of shape (numOnOffPairs, 2, numFreqs)
+        self.diodeOffMean = np.array([x.mean(axis=1) for x in diodeOffData])
+        ## @var diodeOnMean
+        # Mean of coherencies when noise diode is on, as an array of shape (numOnOffPairs, 2, numFreqs)
+        self.diodeOnMean = np.array([x.mean(axis=1) for x in diodeOnData])
+        ## @var diodeOffSigma
+        # Standard deviation of estimated mean coherencies when noise diode is off, as an array of shape 
+        # (numOnOffPairs, 2, numFreqs). This is the spread on the final result of the "off" block - the
+        # the estimated mean power in the block. Since the estimated mean of data is less variable than
+        # the data itself, we have to divide the data sigma by sqrt(N).
+        self.diodeOffSigma = np.array([(x.std(axis=1) / np.sqrt(x.shape[1])) for x in diodeOffData])
+        ## @var diodeOnSigma
+        # Standard deviation of estimated mean coherencies when noise diode is on, as an array of shape 
+        # (numOnOffPairs, 2, numFreqs). This is the spread on the final result of the "on" block - the
+        # the estimated mean power in the block. Since the estimated mean of data is less variable than
+        # the data itself, we have to divide the data sigma by sqrt(N).
+        self.diodeOnSigma = np.array([(x.std(axis=1) / np.sqrt(x.shape[1])) for x in diodeOnData])
+        
+        ## @var badChannels
+        # List of channel indices of channels than are "uncalibratable", because the noise diode data is
+        # suspect on either polarisation or in any on-off pair. The noise diode data is disregarded if the
+        # lowest power values with the noise diode switched on is conceivably lower than the highest values
+        # with the diode switched off.
+        self.badChannels = [ind for ind in range(self.diodeOnMean.shape[2]) \
+                            if np.any(self.diodeOnMean[:, :, ind] - 3.0*self.diodeOnSigma[:, :, ind] < \
+                                      self.diodeOffMean[:, :, ind] + 3.0*self.diodeOffSigma[:, :, ind])]
     
     ## Obtain power-to-temperature conversion function.
     # Calculate a power-to-temperature conversion factor (Fpt) for each stored noise-diode-on-off pair,
@@ -175,26 +196,16 @@ class GainCalibrationData(object):
     # (4, numTimes, numFreqs)-shaped array (polarisation type by time by frequency) for a sequence of time instants
     # pylint: disable-msg=R0914
     def power_to_temp_func(self, noiseDiode, maxDegree=1, randomise=False):
-        # Obtain mean power in each block, which forms a (numBlocks, 2, numFreqs) array
-        diodeOffPower = np.array([x.mu for x in self.diodeOffStatsList])
-        diodeOnPower = np.array([x.mu for x in self.diodeOnStatsList])
-        # Some sanity checks
-        if not np.all(diodeOnPower > diodeOffPower):
-            logger.error("Average power with noise diode switched on is not higher " + \
-                         "than when the diode is switched off...")
-            raise RuntimeError
-        diodeOffSigma = np.array([x.sigma for x in self.diodeOffStatsList])
-        diodeOnSigma = np.array([x.sigma for x in self.diodeOnStatsList])
-        if not np.all(diodeOnPower - 3.0*diodeOnSigma > diodeOffPower + 3.0*diodeOffSigma):
-            logger.warning("Lowest power values with noise diode switched on may be lower " + \
-                           "than highest values with diode switched off...")
+        diodeOffPower = self.diodeOffMean.copy()
+        diodeOnPower = self.diodeOnMean.copy()
         # Perturb it if required
         if randomise:
-            diodeOffPower += diodeOffSigma * np.random.standard_normal(diodeOffPower.shape)
-            diodeOnPower += diodeOnSigma * np.random.standard_normal(diodeOnPower.shape)
+            diodeOffPower += self.diodeOffSigma * np.random.standard_normal(diodeOffPower.shape)
+            diodeOnPower += self.diodeOnSigma * np.random.standard_normal(diodeOnPower.shape)
         deltaPower = diodeOnPower - diodeOffPower
         # Force delta power to be positive, otherwise nonsensical negative (or infinite) temperatures may result
-        if np.any(deltaPower <= 0.0):
+        goodChannels = list(set.difference(set(range(len(self.freqs_Hz))), set(self.badChannels)))
+        if np.any(deltaPower[:, :, goodChannels] <= 0.0):
             logger.warning('Some delta power values are negative or zero during gain calibration, reset to 1e-20...')
         deltaPower[deltaPower <= 0.0] = 1e-20
         # Obtain noise diode temperature for each channel frequency and the rotator angle of each on-off block

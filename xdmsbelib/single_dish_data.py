@@ -101,7 +101,7 @@ class SingleDishData(object):
         self.coherencyData = {}
         
         self._powerConvertedToTemp = False
-        self._nonRfiChannelsConvertedToBands = False
+        self._channelsMergedIntoBands = False
         self._baselineSubtracted = False
         
         ## @var _powerData
@@ -180,9 +180,9 @@ class SingleDishData(object):
             logger.error(message)
             raise ValueError, message
         # Ensure objects are in the same state
-        if (self._powerConvertedToTemp           != other._powerConvertedToTemp) or \
-           (self._nonRfiChannelsConvertedToBands != other._nonRfiChannelsConvertedToBands) or \
-           (self._baselineSubtracted             != other._baselineSubtracted):
+        if (self._powerConvertedToTemp    != other._powerConvertedToTemp) or \
+           (self._channelsMergedIntoBands != other._channelsMergedIntoBands) or \
+           (self._baselineSubtracted      != other._baselineSubtracted):
             message = "Data objects are not in the same state, as their flags differ."
             logger.error(message)
             raise ValueError, message
@@ -252,30 +252,30 @@ class SingleDishData(object):
         self._powerConvertedToTemp = True
         return self
     
-    ## Convert frequency channels to bands, while optionally removing RFI-corrupted channels.
+    ## Merge frequency channels into bands, while optionally removing (RFI-)corrupted channels.
     # The frequency channels are grouped into bands, and the power data is merged and averaged within each band.
     # Each band contains the average power of its constituent channels. The average power is simpler to use
     # than the total power in each band, as total power is dependent on the bandwidth of each band.
     # The channelsPerBand mapping contains a list of lists of channel indices, indicating which channels belong 
-    # to each band. Some channels can also be marked as corrupted by RFI, which will remove them from any band.
+    # to each band. Some channels can also be marked as corrupted (e.g. by RFI), which will remove them from any band.
     # The resulting number of bands might be less than what was requested (or even 0), due to this removal.
     # @param self            The current object
     # @param channelsPerBand A sequence of lists of channel indices, indicating which channels belong to each band
-    # @param rfiChannels     A sequence of channel indices, indicating channels to remove [None]
+    # @param badChannels     A sequence of channel indices, indicating channels to remove [None]
     # @return self           The current object
-    def convert_non_rfi_channels_to_bands(self, channelsPerBand, rfiChannels = None):
+    def merge_channels_into_bands(self, channelsPerBand, badChannels = None):
         # Already done, so don't do it again
-        if self._nonRfiChannelsConvertedToBands:
+        if self._channelsMergedIntoBands:
             return self
         if not self._powerConvertedToTemp:
-            message = "First convert raw power measurements to temperatures before combining channels into bands."
+            message = "First convert raw power measurements to temperatures before merging channels into bands."
             logger.error(message)
             raise RuntimeError, message
         # Convert "safer" default value of None to intended empty list
-        if rfiChannels == None:
-            rfiChannels = []
+        if badChannels == None:
+            badChannels = []
         # Remove RFI channels from band channel lists, and delete any resulting empty bands
-        channelsPerBand = [list(set.difference(set(x), set(rfiChannels))) for x in channelsPerBand]
+        channelsPerBand = [list(set.difference(set(x), set(badChannels))) for x in channelsPerBand]
         channelsPerBand = [x for x in channelsPerBand if len(x) > 0]
         # Merge and average power data into new array (keep same type as original data, which may be complex)
         bandPowerData = np.zeros(list(self.powerData.shape[0:2]) + [len(channelsPerBand)], dtype=self.powerData.dtype)
@@ -285,7 +285,7 @@ class SingleDishData(object):
         # Each band centre frequency is the mean of the corresponding channel centre frequencies
         self.freqs_Hz = np.array([self.freqs_Hz[chans].mean() for chans in channelsPerBand], dtype='double')
         self.originalChannels = channelsPerBand
-        self._nonRfiChannelsConvertedToBands = True
+        self._channelsMergedIntoBands = True
         return self
     
     ## Subtract a baseline function from the scan data.
@@ -303,8 +303,8 @@ class SingleDishData(object):
             message = "Cannot subtract baseline from unconverted (raw) power measurements."
             logger.error(message)
             raise RuntimeError, message
-        if not self._nonRfiChannelsConvertedToBands:
-            message = "Baseline should only be subtracted after frequency channels are converted to bands."
+        if not self._channelsMergedIntoBands:
+            message = "Baseline should only be subtracted after frequency channels are merged into bands."
             logger.error(message)
             raise RuntimeError, message
         # Obtain baseline
