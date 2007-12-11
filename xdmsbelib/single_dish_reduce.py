@@ -352,10 +352,11 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         # Save raw power objects
         rawPowerDict = {}
         rawPowerDict.update(preCalDict)
-        rawPowerDict.update(preScanDict)
         rawPowerDict.update(mainScanDict)
-        rawPowerDict.update(postScanDict)
         rawPowerDict.update(postCalDict)
+        if fitBaseline:
+            rawPowerDict.update(preScanDict)
+            rawPowerDict.update(postScanDict)
         
         check_data_consistency(rawPowerDict)
         
