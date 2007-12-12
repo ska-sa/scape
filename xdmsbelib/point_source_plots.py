@@ -114,7 +114,8 @@ def plot_tsys(figColor, resultList, expName):
         axis = axesColorList[polInd]
         # Extract Tsys values of current polarisation of first pointing, and plot
         vis.mu_sigma_plot(axis, plotFreqs, tsys[0, polInd, :], whiskWidth=whiskWidth, linewidth=2, color='b')
-        axis.set_xlim(freqRange)
+        if not np.any(np.isnan(freqRange)):
+            axis.set_xlim(freqRange)
         axis.grid()
         axis.set_title(expName + ' : Tsys for polarisation ' + polName[polInd])
         axis.set_ylabel('Temperature (K)')
@@ -126,8 +127,10 @@ def plot_tsys(figColor, resultList, expName):
         maxY.append(axis.get_ylim()[1])
     
     # Set equal y-axis limits
-    for axis in axesColorList:
-        axis.set_ylim((np.array(minY).min(), np.array(maxY).max()))
+    yRange = [np.array(minY).min(), np.array(maxY).max()]
+    if not np.any(np.isnan(yRange)):
+        for axis in axesColorList:
+            axis.set_ylim(yRange)
     
     return axesColorList
 
@@ -180,8 +183,10 @@ def plot_tsys_curve(figColorList, resultList, expName):
             maxY.append(axis.get_ylim()[1])
     
     # Set equal y-axis limits
-    for axis in axesColorList:
-        axis.set_ylim((np.array(minY).min(), np.array(maxY).max()))
+    yRange = [np.array(minY).min(), np.array(maxY).max()]
+    if not np.any(np.isnan(yRange)):
+        for axis in axesColorList:
+            axis.set_ylim(yRange)
     
     return axesColorList
 
@@ -231,8 +236,10 @@ def plot_linearity_test(figColor, resultList, expName):
         maxY.append(axis.get_ylim()[1])
     
     # Set equal y-axis limits
-    for axis in axesColorList:
-        axis.set_ylim((np.array(minY).min(), np.array(maxY).max()))
+    yRange = [np.array(minY).min(), np.array(maxY).max()]
+    if not np.any(np.isnan(yRange)):
+        for axis in axesColorList:
+            axis.set_ylim(yRange)
     
     return axesColorList
 
@@ -286,8 +293,10 @@ def plot_baseline_fit(figColor, stdScanList, expName):
         maxY.append(axis.get_ylim()[1])
     
     # Set equal y-axis limits
-    for axis in axesColorList:
-        axis.set_ylim((np.array(minY).min(), np.array(maxY).max()))
+    yRange = [np.array(minY).min(), np.array(maxY).max()]
+    if not np.any(np.isnan(yRange)):
+        for axis in axesColorList:
+            axis.set_ylim(yRange)
     
     return axesColorList
 
@@ -341,8 +350,10 @@ def plot_calib_scans(figColorList, calibScanList, beamFuncList, expName):
             maxY.append(axis.get_ylim()[1])
     
     # Set equal y-axis limits
-    for axis in axesColorList:
-        axis.set_ylim((np.array(minY).min(), np.array(maxY).max()))
+    yRange = [np.array(minY).min(), np.array(maxY).max()]
+    if not np.any(np.isnan(yRange)):
+        for axis in axesColorList:
+            axis.set_ylim(yRange)
     
     return axesColorList
 
@@ -403,8 +414,11 @@ def plot_beam_pattern_target(figColorList, calibScanList, beamFuncList, expName)
     # Axis settings and labels
     for band in range(numBands):
         axis = axesColorList[band]
-        axis.set_xlim(targetCoords[:, 0].min(), targetCoords[:, 0].max())
-        axis.set_ylim(targetCoords[:, 1].min(), targetCoords[:, 1].max())
+        xRange = [targetCoords[:, 0].min(), targetCoords[:, 0].max()]
+        yRange = [targetCoords[:, 1].min(), targetCoords[:, 1].max()]
+        if not np.any(np.isnan(xRange + yRange)):
+            axis.set_xlim(xRange)
+            axis.set_ylim(yRange)
         axis.set_aspect('equal')
         axis.set_xlabel('Target coord 1 (deg)')
         axis.set_ylabel('Target coord 2 (deg)')
@@ -493,8 +507,9 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
     # Axis settings and labels
     for band in range(2*numBands):
         axis = axesColorList[band]
-        axis.set_xlim(targetX[0], targetX[-1])
-        axis.set_ylim(targetY[0], targetY[-1])
+        if not np.any(np.isnan([targetX[0], targetX[-1], targetY[0], targetY[-1]])):
+            axis.set_xlim(targetX[0], targetX[-1])
+            axis.set_ylim(targetY[0], targetY[-1])
         axis.set_aspect('equal')
         axis.set_xlabel('Target coord 1 (deg)')
         axis.set_ylabel('Target coord 2 (deg)')
@@ -602,16 +617,17 @@ def plot_beam_patterns_mount(figColorList, calibListList, beamListList, transfor
                 axis.plot(azEllipse, elEllipse, ellType, lw=2)
             axis.plot([azBeam[band, 0]], [elBeam[band, 0]], centerType, ms=12, aa=False, mew=2)
         
-        # Axis settings and labels
-        axis.set_xlim(azMin_deg, azMax_deg)
-        axis.set_ylim(elMin_deg, elMax_deg)
-        # Only set axis aspect ratio to equal if it is not too extreme
-        if azMin_deg == azMax_deg:
-            aspectRatio = 1e20
-        else:
-            aspectRatio = (elMax_deg - elMin_deg) / (azMax_deg - azMin_deg)
-        if (aspectRatio > 0.1) and (aspectRatio < 10):
-            axis.set_aspect('equal')
+        # Axis settings and labels (watch out for NaNs on axis limits, as it messes up figure output)
+        if not np.any(np.isnan([azMin_deg, azMax_deg, elMin_deg, elMax_deg])):
+            axis.set_xlim(azMin_deg, azMax_deg)
+            axis.set_ylim(elMin_deg, elMax_deg)
+            # Only set axis aspect ratio to equal if it is not too extreme
+            if azMin_deg == azMax_deg:
+                aspectRatio = 1e20
+            else:
+                aspectRatio = (elMax_deg - elMin_deg) / (azMax_deg - azMin_deg)
+            if (aspectRatio > 0.1) and (aspectRatio < 10):
+                axis.set_aspect('equal')
         axis.set_xlabel('Azimuth (deg)')
         axis.set_ylabel('Elevation (deg)')
         axis.set_title(expName + ' : Beams fitted in band %d : %3.3f GHz' % (band, plotFreqs[band]))
@@ -646,25 +662,35 @@ def plot_antenna_gain(figColor, resultList, expName):
     
     axis = axesColorList[0]
     vis.mu_sigma_plot(axis, plotFreqs, pointSourceSensitivity, whiskWidth=whiskWidth, linewidth=2, color='b')
-    axis.set_xlim(freqRange)
-    axis.set_ylim(min(0.95*pointSourceSensitivity.min(), axis.get_ylim()[0]),
-                  max(1.05*pointSourceSensitivity.max(), axis.get_ylim()[1]))
+    if not np.any(np.isnan(freqRange)):
+        axis.set_xlim(freqRange)
+    yRange = [0.95*pointSourceSensitivity.min(), 1.05*pointSourceSensitivity.max()]
+    if not np.any(np.isnan(yRange)):
+        axis.set_ylim(min(yRange[0], axis.get_ylim()[0]), max(yRange[1], axis.get_ylim()[1]))
     axis.grid()
     axis.set_xticklabels([])
     axis.set_ylabel('Sensitivity (Jy/K)')
     axis.set_title(expName + ' : Point source sensitivity')
+    
     axis = axesColorList[1]
     vis.mu_sigma_plot(axis, plotFreqs, effArea, whiskWidth=whiskWidth, linewidth=2, color='b')
-    axis.set_ylim(min(0.95*effArea.min(), axis.get_ylim()[0]), max(1.05*effArea.max(), axis.get_ylim()[1]))
-    axis.set_xlim(freqRange)
+    if not np.any(np.isnan(freqRange)):
+        axis.set_xlim(freqRange)
+    yRange = [0.95*effArea.min(), 1.05*effArea.max()]
+    if not np.any(np.isnan(yRange)):
+        axis.set_ylim(min(yRange[0], axis.get_ylim()[0]), max(yRange[1], axis.get_ylim()[1]))
     axis.grid()
     axis.set_xticklabels([])
     axis.set_ylabel('Area (m^2)')
     axis.set_title(expName + ' : Antenna effective area')
+    
     axis = axesColorList[2]
     vis.mu_sigma_plot(axis, plotFreqs, antGain, whiskWidth=whiskWidth, linewidth=2, color='b')
-    axis.set_ylim(min(0.98*antGain.min(), axis.get_ylim()[0]), max(1.02*antGain.max(), axis.get_ylim()[1]))
-    axis.set_xlim(freqRange)
+    if not np.any(np.isnan(freqRange)):
+        axis.set_xlim(freqRange)
+    yRange = [0.98*antGain.min(), 1.02*antGain.max()]
+    if not np.any(np.isnan(yRange)):
+        axis.set_ylim(min(yRange[0], axis.get_ylim()[0]), max(yRange[1], axis.get_ylim()[1]))
     axis.grid()
     axis.set_xlabel('Frequency (GHz)')
     axis.set_ylabel('Gain (dB)')
@@ -698,8 +724,9 @@ def plot_gain_curve(figColorList, resultList, expName):
         axis = axesColorList[axesInd]
         pointSourceSensitivity = pssBlock[:, band]
         vis.mu_sigma_plot(axis, sourceElAng_deg, pointSourceSensitivity, linewidth=2, color='b')
-        axis.set_ylim(min(0.95*pointSourceSensitivity.min(), axis.get_ylim()[0]),
-                      max(1.05*pointSourceSensitivity.max(), axis.get_ylim()[1]))
+        yRange = [0.95*pointSourceSensitivity.min(), 1.05*pointSourceSensitivity.max()]
+        if not np.any(np.isnan(yRange)):
+            axis.set_ylim(min(yRange[0], axis.get_ylim()[0]), max(yRange[1], axis.get_ylim()[1]))
         axis.grid()
         axis.set_xticklabels([])
         axis.set_ylabel('Sensitivity (Jy/K)')
@@ -709,7 +736,9 @@ def plot_gain_curve(figColorList, resultList, expName):
         axis = axesColorList[axesInd]
         effArea = effAreaBlock[:, band]
         vis.mu_sigma_plot(axis, sourceElAng_deg, effArea, linewidth=2, color='b')
-        axis.set_ylim(min(0.95*effArea.min(), axis.get_ylim()[0]), max(1.05*effArea.max(), axis.get_ylim()[1]))
+        yRange = [0.95*effArea.min(), 1.05*effArea.max()]
+        if not np.any(np.isnan(yRange)):
+            axis.set_ylim(min(yRange[0], axis.get_ylim()[0]), max(yRange[1], axis.get_ylim()[1]))
         axis.grid()
         axis.set_xticklabels([])
         axis.set_ylabel('Area (m^2)')
@@ -719,7 +748,9 @@ def plot_gain_curve(figColorList, resultList, expName):
         axis = axesColorList[axesInd]
         antGain = antGainBlock[:, band]
         vis.mu_sigma_plot(axis, sourceElAng_deg, antGain, linewidth=2, color='b')
-        axis.set_ylim(min(0.98*antGain.min(), axis.get_ylim()[0]), max(1.02*antGain.max(), axis.get_ylim()[1]))
+        yRange = [0.98*antGain.min(), 1.02*antGain.max()]
+        if not np.any(np.isnan(yRange)):
+            axis.set_ylim(min(yRange[0], axis.get_ylim()[0]), max(yRange[1], axis.get_ylim()[1]))
         axis.grid()
         axis.set_xlabel('Elevation angle (degrees)')
         axis.set_ylabel('Gain (dB)')
@@ -772,8 +803,9 @@ def plot_pointing_error(figColor, resultList, expName, scale=1):
     axis.plot(arrowsAz, arrowsEl, 'k')
     # Marker indicating steered position (where the source was thought to be)
     axis.plot(steeredAz, steeredEl, 'sk', markersize=4)
-    axis.set_xlim(axis.get_xlim()[0] - 10, axis.get_xlim()[1] + 10)
-    axis.set_ylim(axis.get_ylim()[0] - 10, axis.get_ylim()[1] + 10)
+    if not np.any(np.isnan(axis.get_xlim())) and not np.any(np.isnan(axis.get_ylim())):
+        axis.set_xlim(axis.get_xlim()[0] - 10, axis.get_xlim()[1] + 10)
+        axis.set_ylim(axis.get_ylim()[0] - 10, axis.get_ylim()[1] + 10)
     axis.set_aspect('equal')
     axis.set_xlabel('Azimuth (deg)')
     axis.set_ylabel('Elevation (deg)')

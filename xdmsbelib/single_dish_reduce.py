@@ -112,6 +112,9 @@ class TargetToInstantMountTransform(object):
     # @param targetCoord Vector of coordinates in target coordinate system
     # @return Vector of coordinates in mount coordinate system, of the form (az, el) in degrees
     def __call__(self, targetCoord):
+        # If any NaNs enter the system here, pass the buck instead of tripping up the coordinate transformer
+        if np.any(np.isnan(targetCoord)):
+            return np.array([np.nan, np.nan])
         targetCoordinate = Coordinate(self.targetSys, targetCoord)
         mountCoordinate = self.targetToInstantMount.transform_coordinate(targetCoordinate, self.timeStamp)
         return rad_to_deg(mountCoordinate.get_vector()[0:2])
@@ -136,9 +139,17 @@ class TargetToInstantMountTransform(object):
 #----------------------------------------------------------------------------------------------------------------------
 
 
+## Pretty print dictionary of power blocks into a string.
+# @param dataDict Dictionary of SingleDishData objects containing raw power data of a standard scan
+# @return String containing summary of dictionary contents
+def print_power_dict(dataDict):
+    return ', '.join(['%s(%d)' % (keyval[0], keyval[1].powerData.shape[1]) for keyval in dataDict.iteritems()])
+
+
 ## Checks consistency of data blocks loaded from a set of FITS files.
 # This checks that all the data blocks that make up a standard source scan have consistent parameters. The dictionary
 # contains SingleDishData objects for each data block, indexed by string labels indicating the block ID.
+# Errors are communicated via ValueError exceptions.
 # @param dataDict Dictionary of SingleDishData objects containing raw power data of a standard scan
 def check_data_consistency(dataDict):
     # Nothing to check
@@ -195,7 +206,7 @@ def load_tsys_pointing_list(fitsFileName):
             stdScan.channelsPerBand = [x.tolist() for x in fitsReaderScan.select_masked_column('BANDS', 'Channels')]
             
             print "Loading file: ", fitsReaderScan.fitsFilename
-            print "Data blocks:  ", mainScanDict.keys()
+            print "Data blocks:  ", print_power_dict(mainScanDict)
             
             rawPowerDict.update(mainScanDict)
         
@@ -268,7 +279,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         preCalDict = fitsReaderPreCal.extract_data(dataIdNameList, dataSelectionList)
         
         print "Loading file:                ", fitsReaderPreCal.fitsFilename
-        print "PreCalibration data blocks:  ", preCalDict.keys()
+        print "PreCalibration data blocks:  ", print_power_dict(preCalDict)
         
         #..................................................................................................
         # Extract the initial part, which is assumed to be of a piece of empty sky preceding the source
@@ -286,7 +297,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
             preScanData = copy.deepcopy(preScanDict.values()[0])
             
             print "Loading file:                ", fitsReaderPreScan.fitsFilename
-            print "PreBaselineScan data blocks: ", preScanDict.keys()
+            print "PreBaselineScan data blocks: ", print_power_dict(preScanDict)
         
         #..................................................................................................
         # This is the main part of the scan, which contains the calibrator source
@@ -308,7 +319,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         stdScan.channelsPerBand = [x.tolist() for x in fitsReaderScan.select_masked_column('BANDS', 'Channels')]
         
         print "Loading file:                ", fitsReaderScan.fitsFilename
-        print "MainScan data blocks:        ", mainScanDict.keys()
+        print "MainScan data blocks:        ", print_power_dict(mainScanDict)
         
         #..................................................................................................
         # Extract the final part, which is assumed to be of a piece of empty sky following the source
@@ -326,7 +337,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
             postScanData = copy.deepcopy(postScanDict.values()[0])
             
             print "Loading file:                ", fitsReaderPostScan.fitsFilename
-            print "PostBaselineScan data blocks:", postScanDict.keys()
+            print "PostBaselineScan data blocks:", print_power_dict(postScanDict)
         
         #..................................................................................................
         # Now extract the second gain calibration chunks
@@ -343,7 +354,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         postCalDict = fitsReaderPostCal.extract_data(dataIdNameList, dataSelectionList)
         
         print "Loading file:                ", fitsReaderPostCal.fitsFilename
-        print "PostCalibration data blocks: ", postCalDict.keys()
+        print "PostCalibration data blocks: ", print_power_dict(postCalDict)
         
         #..................................................................................................
         # Now package the data in objects
