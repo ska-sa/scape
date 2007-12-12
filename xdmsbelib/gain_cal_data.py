@@ -130,9 +130,8 @@ class GainCalibrationData(object):
         # Find pairs of "noise diode off" and "noise diode on" blocks (with same esn and data id)
         noiseDiodeOffLabels = [k for k in powerBlockDict.iterkeys() if k.endswith("On")]
         noiseDiodeOnLabels = [k for k in powerBlockDict.iterkeys() if k.endswith("OnND")]
-        # Collect power data blocks in pairs, and ensure they are in coherency form
-        deltaPairs = [{'off' : powerBlockDict[off].convert_to_coherency(), \
-                       'on' : powerBlockDict[on].convert_to_coherency()} \
+        # Collect power data blocks in pairs
+        deltaPairs = [{'off' : powerBlockDict[off], 'on' : powerBlockDict[on]} \
                       for off in noiseDiodeOffLabels for on in noiseDiodeOnLabels if on[:-2] == off]
         if len(deltaPairs) == 0:
             logger.error('No noise diode on+off pairs found - cannot do gain calibration!')
@@ -151,9 +150,9 @@ class GainCalibrationData(object):
         self.freqs_Hz = deltaPairs[0]['off'].freqs_Hz
         
         # Only XX and YY info are used for calibration, as this is all that is known about noise diode
-        diodeOffData = [np.array([pair['off'].coherencyData['XX'], pair['off'].coherencyData['YY']]) \
+        diodeOffData = [np.array([pair['off'].coherency('XX'), pair['off'].coherency('YY')]) \
                         for pair in deltaPairs]
-        diodeOnData = [np.array([pair['on'].coherencyData['XX'], pair['on'].coherencyData['YY']]) \
+        diodeOnData = [np.array([pair['on'].coherency('XX'), pair['on'].coherency('YY')]) \
                        for pair in deltaPairs]
         ## @var diodeOffMean
         # Mean of coherencies when noise diode is off, as an array of shape (numOnOffPairs, 2, numFreqs)

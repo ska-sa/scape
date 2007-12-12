@@ -333,7 +333,7 @@ def plot_calib_scans(figColorList, calibScanList, beamFuncList, expName):
             axesInd = band*numScans + scanInd
             axis = axesColorList[axesInd]
             # Total power in band
-            axis.plot(timeLine, block.total_power()[:, band], color='b', lw=2)
+            axis.plot(timeLine, block.stokes('I')[:, band], color='b', lw=2)
             if beamFuncList != None:
                 # Slice through fitted beam function along the same coordinates (change colors for invalid beams)
                 if beamFuncList[band][1]:
@@ -382,7 +382,7 @@ def plot_beam_pattern_target(figColorList, calibScanList, beamFuncList, expName)
     totalPower = []
     targetCoords = []
     for scan in calibScanList:
-        totalPower.append(scan.total_power())
+        totalPower.append(scan.stokes('I'))
         targetCoords.append(rad_to_deg(scan.targetCoords))
     # Also extract beam centres, in order to unwrap them with the rest of angle data
     for band in range(numBands):
@@ -461,11 +461,11 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
         if azScan_deg[0] < azScan_deg[-1]:
             azScans_deg.append(azScan_deg)
             elScans_deg.append(misc.unwrap_angles(rad_to_deg(scan.targetCoords[:, 1])))
-            totalPowerScans.append(scan.total_power()[np.newaxis, :, :])
+            totalPowerScans.append(scan.stokes('I')[np.newaxis, :, :])
         else:
             azScans_deg.append(np.flipud(azScan_deg))
             elScans_deg.append(np.flipud(misc.unwrap_angles(rad_to_deg(scan.targetCoords[:, 1]))))
-            totalPowerScans.append(np.flipud(scan.total_power())[np.newaxis, :, :])
+            totalPowerScans.append(np.flipud(scan.stokes('I'))[np.newaxis, :, :])
     azScans_deg = np.vstack(azScans_deg)
     elScans_deg = np.vstack(elScans_deg)
     totalPowerScans = np.concatenate(totalPowerScans, axis=0)
@@ -552,7 +552,7 @@ def plot_beam_patterns_mount(figColorList, calibListList, beamListList, transfor
         # Extract total power and instantaneous mount coordinates of all scans of a specific source
         totalPower, azAng_deg, elAng_deg = [], [], []
         for scan in calibScanList:
-            totalPower.append(scan.total_power())
+            totalPower.append(scan.stokes('I'))
             mountCoords = np.array([targetToInstantMount(targetCoord) for targetCoord in scan.targetCoords])
             azAng_deg.append(mountCoords[:, 0].tolist())
             elAng_deg.append(mountCoords[:, 1].tolist())

@@ -549,7 +549,7 @@ def calibrate_and_fit_beam_pattern(stdScanList, randomise):
     for stdScan in stdScanList:
         calibratedScan = calibrate_scan(stdScan, randomise)
         targetCoords.append(calibratedScan.targetCoords)
-        totalPowerData.append(calibratedScan.total_power())
+        totalPowerData.append(calibratedScan.stokes('I'))
         calibScanList.append(calibratedScan)
     targetCoords = np.concatenate(targetCoords)[:, 0:2]
     totalPowerData = np.concatenate(totalPowerData)

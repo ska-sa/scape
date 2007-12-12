@@ -3,7 +3,7 @@
 # Class that contains single-dish power measurements and related pointing and timestamp data.
 #
 # copyright (c) 2007 SKA/KAT. All rights reserved.
-# @author Ludwig Schwardt <ludwig@ska.ac.za>, Rudolph van der Merwe <rudolph@ska.ac.za>, 
+# @author Ludwig Schwardt <ludwig@ska.ac.za>, Rudolph van der Merwe <rudolph@ska.ac.za>,
 #         Robert Crida <robert.crida@ska.ac.za>
 # @date 2007-08-28
 
@@ -23,10 +23,10 @@ logger = logging.getLogger("xdmsbe.xdmsbelib.single_dish_data")
 
 ## Dictionary that maps polarisation type names to power data matrix indices.
 # This allows the use of symbolic names, which are clearer than numeric indices.
-# @param stokes Boolean indicating wether Stokes IQUV (True) or cross power / coherency (False) is required
+# @param isStokes Boolean indicating whether Stokes IQUV (True) or cross power / coherency (False) is required
 # @return Dictionary mapping names to indices
-def power_index_dict(stokes):
-    if stokes:
+def power_index_dict(isStokes):
+    if isStokes:
         return {'I': 0, 'Q': 1, 'U': 2, 'V': 3}
     else:
         return {'XX': 0, 'XY': 1, 'YX': 2, 'YY': 3}
@@ -49,7 +49,7 @@ class SingleDishData(object):
     # @param    self              The current object
     # @param    powerData         3-D array, of shape (4, number of time samples, number of frequency channels/bands)
     #                             This can be interpreted as 4 data blocks of dimension time x channels/bands
-    # @param    stokesFlag        True if power data  is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
+    # @param    isStokes          True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
     # @param    timeSamples       Sequence of timestamps for each data block (in seconds since epoch)
     # @param    azAng_rad         Azimuth angle sequence for each data block (in radians)
     # @param    elAng_rad         Elevation angle sequence for each data block (in radians)
@@ -58,11 +58,14 @@ class SingleDishData(object):
     # @param    mountCoordSystem  Mount coordinate system object (see acsm.coordinatesystem module)
     # @param    targetObject      Target object (see acsm.targets module)
     # pylint: disable-msg=R0913
-    def __init__(self, powerData, stokesFlag, timeSamples, azAng_rad, elAng_rad, rotAng_rad, freqs_Hz, \
+    def __init__(self, powerData, isStokes, timeSamples, azAng_rad, elAng_rad, rotAng_rad, freqs_Hz, \
                  mountCoordSystem=None, targetObject=None):
-        ## @var stokesFlag
+        ## @var powerData
+        # Power data array, of shape (4, number of time samples, number of frequency channels/bands).
+        self.powerData = None
+        ## @var isStokes
         # True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
-        self.stokesFlag = stokesFlag
+        self.isStokes = isStokes
         ## @var timeSamples
         # Sequence of timestamps for data block, in seconds since epoch
         self.timeSamples = timeSamples
@@ -93,53 +96,16 @@ class SingleDishData(object):
         ## @var originalChannels
         # List of original channel indices associated with each frequency channel/band in powerData
         self.originalChannels = range(len(self.freqs_Hz))
-        ## @var stokesData
-        # Look up Stokes visibility values by name
-        self.stokesData = {}
-        ## @var coherencyData
-        # Look up coherency / cross-power data by name
-        self.coherencyData = {}
         
         self._powerConvertedToTemp = False
         self._channelsMergedIntoBands = False
         self._baselineSubtracted = False
         
-        ## @var _powerData
-        # Power data array (internal variable).
-        self._powerData = None
-
-        ## @var powerData
-        # Power data array (property).
-        # Power data is set via property setter (set this last to ensure prequisite members are available)
-        self.powerData = powerData
-        
-    ## Get powerData member.
-    # @param self  The current object
-    # @return Power data array
-    def get_power_data(self):
-        return self._powerData
-    ## Set powerData member.
-    # This also sets up the dictionary lookups for the data.
-    # It enforces the real nature of I, Q, U, V, XX and YY for single-dish data.
-    # @param self  The current object
-    # @param powerData Power data array
-    def set_power_data(self, powerData):
-        # Make into proper 3-D matrix
-        self._powerData = np.asarray(powerData)
-        # Setup polarisation lookup by name
-        self.stokesData = {}
-        self.coherencyData = {}
-        for k, v in power_index_dict(self.stokesFlag).iteritems():
-            if self.stokesFlag:
-                self.stokesData[k] = self._powerData[v].real
-            else:
-                if (k == 'XX') or (k == 'YY'):
-                    self.coherencyData[k] = self._powerData[v].real
-                else:
-                    self.coherencyData[k] = self._powerData[v]
-    ## @var powerData
-    # Power data array (property).
-    powerData = property(get_power_data, set_power_data, doc='Power data array.')
+        # Set power data to appropriate type, depending on whether it is Stokes or coherency
+        if isStokes:
+            self.powerData = np.array(np.asarray(powerData).real, dtype='double')
+        else:
+            self.powerData = np.asarray(powerData, dtype='complex128')
     
     ## Use mount and target coordinate systems (if given) to calculate target coordinates for scan.
     # @param self The current object
@@ -161,6 +127,72 @@ class SingleDishData(object):
             self.targetCoords[k, :] = targetCoordinate.get_vector()
         return self
     
+    ## Return power data for specified coherency.
+    # Returns coherency data directly, or calculate it if required.
+    # @param self The current object
+    # @param key  String indicating which coherency to return: 'XX', 'XY', 'YX', or 'YY'
+    # @return Matrix of power values, of shape (number of time samples, number of frequency channels/bands)
+    def coherency(self, key):
+        # If data is already in coherency form, just return appropriate row
+        if not self.isStokes:
+            return self.powerData[power_index_dict(self.isStokes)[key]]
+        else:
+            if key == 'XX':
+                return 0.5 * (self.stokes('I') +    self.stokes('Q')).real
+            elif key == 'XY':
+                return 0.5 * (self.stokes('U') + 1j*self.stokes('V'))
+            elif key == 'YX':
+                return 0.5 * (self.stokes('U') - 1j*self.stokes('V'))
+            elif key == 'YY':
+                return 0.5 * (self.stokes('I') -    self.stokes('Q')).real
+            else:
+                raise TypeError, "Invalid coherency key: should be one of XX, XY, YX, or YY"
+    
+    ## Return power data for specified Stokes parameter.
+    # Returns Stokes data directly, or calculate it if required. Stokes 'I' is the total power, for reference.
+    # @param self The current object
+    # @param key  String indicating which Stokes parameter to return: 'I', 'Q', 'U', or 'V'
+    # @return Matrix of power values, of shape (number of time samples, number of frequency channels/bands)
+    def stokes(self, key):
+        # If data is already in Stokes form, just return appropriate row
+        if self.isStokes:
+            return self.powerData[power_index_dict(self.isStokes)[key]]
+        else:
+            if key == 'I':
+                return (self.coherency('XX') + self.coherency('YY')).real
+            elif key == 'Q':
+                return (self.coherency('XX') - self.coherency('YY')).real
+            elif key == 'U':
+                return (self.coherency('XY') + self.coherency('YX')).real
+            elif key == 'V':
+                return (self.coherency('XY') - self.coherency('YX')).imag
+            else:
+                raise TypeError, "Invalid Stokes key: should be one of I, Q, U or V"
+    
+    ## Convert the contained power buffer from Stokes vectors to coherency vectors.
+    # This results in a complex-valued powerData array. If the data is already in coherency form, do nothing.
+    # @param self  The current object
+    # @return self The current object
+    def convert_to_coherency(self):
+        if self.isStokes:
+            lookup = power_index_dict(False)
+            keys = np.array(lookup.keys())[np.argsort(lookup.values())]
+            self.powerData = np.array([self.coherency(k) for k in keys], dtype='complex128')
+            self.isStokes = False
+        return self
+    
+    ## Convert the contained power buffer from coherency vectors to Stokes vectors.
+    # This is forced to result in a real-valued powerData array. If the data is already in Stokes form, do nothing.
+    # @param self  The current object
+    # @return self The current object
+    def convert_to_stokes(self):
+        if not self.isStokes:
+            lookup = power_index_dict(True)
+            keys = np.array(lookup.keys())[np.argsort(lookup.values())]
+            self.powerData = np.array([self.stokes(k) for k in keys], dtype='double')
+            self.isStokes = True
+        return self
+    
     ## Appends another data object to the current one.
     # This appends the data of the second object to the main object (including power data,
     # coordinates, timestamps, etc.). It also ensures the two objects are compatible.
@@ -173,7 +205,7 @@ class SingleDishData(object):
 #        if self.targetObject.get_reference_target() != other.targetObject.get_reference_target():
 #            message = "Cannot concatenate data objects with incompatible reference targets."
 #            logger.error(message)
-#            raise ValueError, message            
+#            raise ValueError, message
         # Ensure mount coordinates (az/el/rot) are compatible
         if self.mountCoordSystem != other.mountCoordSystem:
             message = "Cannot concatenate data objects with incompatible mount coordinate systems."
@@ -192,10 +224,10 @@ class SingleDishData(object):
             logger.error(message)
             raise ValueError, message
         # Convert power data to appropriate format if it differs for the two objects
-        if self.stokesFlag != other.stokesFlag:
+        if self.isStokes != other.isStokes:
             # First make a copy to prevent unexpected mutation of "other" object
             other = copy.deepcopy(other)
-            if self.stokesFlag:
+            if self.isStokes:
                 other.convert_to_stokes()
             else:
                 other.convert_to_coherency()
@@ -207,32 +239,6 @@ class SingleDishData(object):
         self.powerData = np.concatenate((self.powerData, other.powerData), axis=1)
         # Convert all target coordinate data to target coord system of first object
         self.update_target_coords()
-        return self
-    
-    ## Convert the contained power buffer from Stokes vectors to coherency vectors.
-    # This can result in a complex-valued powerData array.
-    # @param self  The current object
-    # @return self The current object
-    def convert_to_coherency(self):
-        if self.stokesFlag:
-            self.stokesFlag = False
-            self.powerData = [0.5*(self.stokesData['I'] + self.stokesData['Q']), \
-                              0.5*(self.stokesData['U'] + 1j*self.stokesData['V']), \
-                              0.5*(self.stokesData['U'] - 1j*self.stokesData['V']), \
-                              0.5*(self.stokesData['I'] - self.stokesData['Q'])]
-        return self
-    
-    ## Convert the contained power buffer from coherency vectors to Stokes vectors.
-    # This is forced to result in a real-valued powerData array.
-    # @param self  The current object
-    # @return self The current object
-    def convert_to_stokes(self):
-        if not(self.stokesFlag):
-            self.stokesFlag = True
-            self.powerData = np.array([self.coherencyData['XX']+self.coherencyData['YY'], \
-                                       self.coherencyData['XX']-self.coherencyData['YY'], \
-                                       self.coherencyData['XY']+self.coherencyData['YX'], \
-                                   1j*(self.coherencyData['YX']-self.coherencyData['XY'])]).real
         return self
     
     ## Convert raw power measurements (W) into temperature (K) using the provided conversion function.
@@ -256,7 +262,7 @@ class SingleDishData(object):
     # The frequency channels are grouped into bands, and the power data is merged and averaged within each band.
     # Each band contains the average power of its constituent channels. The average power is simpler to use
     # than the total power in each band, as total power is dependent on the bandwidth of each band.
-    # The channelsPerBand mapping contains a list of lists of channel indices, indicating which channels belong 
+    # The channelsPerBand mapping contains a list of lists of channel indices, indicating which channels belong
     # to each band. Some channels can also be marked as corrupted (e.g. by RFI), which will remove them from any band.
     # The resulting number of bands might be less than what was requested (or even 0), due to this removal.
     # @param self            The current object
@@ -289,7 +295,7 @@ class SingleDishData(object):
         return self
     
     ## Subtract a baseline function from the scan data.
-    # The main argument is a callable object with the signature 'temp = func(ang)', which provides 
+    # The main argument is a callable object with the signature 'temp = func(ang)', which provides
     # an interpolated baseline function based on either elevation or azimuth angle.
     # @param self         The current object
     # @param func         The baseline function (as a function of elevation or azimuth angle)
@@ -316,13 +322,3 @@ class SingleDishData(object):
         self.powerData -= baselineData
         self._baselineSubtracted = True
         return self
-    
-    ## The total power in the block of power data (as a function of time and frequency band).
-    # This returns a non-negative real-valued array.
-    # @param self The current object
-    # @return The total power value (Stokes I), as a function of time and frequency band
-    def total_power(self):
-        if self.stokesFlag:
-            return self.stokesData['I']
-        else:
-            return self.coherencyData['XX'] + self.coherencyData['YY']
