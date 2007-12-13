@@ -57,7 +57,7 @@ class StandardSourceScan(object):
     # Object storing summary of power measurements made before and after the scan, for gain calibration
     gainCalData = None
     ## @var powerToTempFunc
-    # Interpolated power-to-temperature conversion function (Fpt as a function of time)
+    # Interpolated power-to-temperature conversion function (Fpt as a function of time) - operates on coherencies
     powerToTempFunc = None
     ## @var badChannels
     # A sequence of channel indices, indicating RFI-corrupted frequency channels to be removed
@@ -171,7 +171,7 @@ def check_data_consistency(dataDict):
 
 
 ## Loads a list of standard scans used for Tsys measurements from a chain of FITS files.
-# The power data is loaded in coherency form, as this is easier to calibrate (keeping X and Y separate).
+# The power data is loaded in Stokes form, as this is more compact (real vs complex coherencies).
 # @param fitsFileName      Name of initial file in FITS chain
 # @return stdScanList      List of StandardSourceScan objects, one per pointing
 # @return rawPowerDictList List of dictionaries containing SingleDishData objects representing all raw data blocks
@@ -194,9 +194,9 @@ def load_tsys_pointing_list(fitsFileName):
                 noiseDiodeData = gain_cal_data.NoiseDiodeData(fitsReaderScan)
             
             dataIdNameList = ['cold', 'hot', 'cal']
-            dataSelectionList = [('Off', {'RX_ON_F': False, 'ND_ON_F': False, 'VALID_F': True}, False), \
-                                 ('On', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False), \
-                                 ('OnND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)]
+            dataSelectionList = [('Off', {'RX_ON_F': False, 'ND_ON_F': False, 'VALID_F': True}, True), \
+                                 ('On', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, True), \
+                                 ('OnND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, True)]
             mainScanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList)
             
             # Load various parameters (the last file in experiment sequence determines the final values)
@@ -241,9 +241,10 @@ def load_tsys_pointing_list(fitsFileName):
 
 
 ## Loads a list of standard scans across various point sources from a chain of FITS files.
-# The power data is loaded in coherency form, as this is easier to calibrate (keeping X and Y separate).
-# @param fitsFileName      Name of initial file in FITS chain
-# @param fitBaseline       True if baseline fitting is required [True]
+# The power data is loaded in Stokes form, as this is more compact (real vs complex coherencies), and simplifies
+# things like baseline fitting.
+# @param  fitsFileName     Name of initial file in FITS chain
+# @param  fitBaseline      True if baseline fitting is required [True]
 # @return stdScanList      List of StandardSourceScan objects, one per scan through a source
 # @return rawPowerDictList List of dicts of SingleDishData objects, containing copies of all raw data blocks
 # pylint: disable-msg=R0912,R0914,R0915
@@ -273,9 +274,9 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
             noiseDiodeData = gain_cal_data.NoiseDiodeData(fitsReaderPreCal)
         
         dataIdNameList = ['cold', 'hot', 'cal']
-        dataSelectionList = [('PreCalOff', {'RX_ON_F': False, 'ND_ON_F': False, 'VALID_F': True}, False), \
-                             ('PreCalOn', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False), \
-                             ('PreCalOnND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)]
+        dataSelectionList = [('PreCalOff', {'RX_ON_F': False, 'ND_ON_F': False, 'VALID_F': True}, True), \
+                             ('PreCalOn', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, True), \
+                             ('PreCalOnND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, True)]
         preCalDict = fitsReaderPreCal.extract_data(dataIdNameList, dataSelectionList)
         
         print "Loading file:                ", fitsReaderPreCal.fitsFilename
@@ -291,7 +292,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
                 break
             
             dataIdNameList = ['scan']
-            dataSelectionList = [('PreBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
+            dataSelectionList = [('PreBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, True)]
             preScanDict = fitsReaderPreScan.extract_data(dataIdNameList, dataSelectionList)
             
             preScanData = copy.deepcopy(preScanDict.values()[0])
@@ -308,7 +309,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
             break
         
         dataIdNameList = ['scan']
-        dataSelectionList = [('MainScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
+        dataSelectionList = [('MainScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, True)]
         mainScanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList)
         
         mainScanData = copy.deepcopy(mainScanDict.values()[0])
@@ -331,7 +332,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
                 break
             
             dataIdNameList = ['scan']
-            dataSelectionList = [('PostBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False)]
+            dataSelectionList = [('PostBaselineScan', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, True)]
             postScanDict = fitsReaderPostScan.extract_data(dataIdNameList, dataSelectionList)
             
             postScanData = copy.deepcopy(postScanDict.values()[0])
@@ -348,9 +349,9 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
             break
         
         dataIdNameList = ['cold', 'hot', 'cal']
-        dataSelectionList = [('PostCalOff', {'RX_ON_F': False, 'ND_ON_F': False, 'VALID_F': True}, False), \
-                             ('PostCalOn', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, False), \
-                             ('PostCalOnND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, False)]
+        dataSelectionList = [('PostCalOff', {'RX_ON_F': False, 'ND_ON_F': False, 'VALID_F': True}, True), \
+                             ('PostCalOn', {'RX_ON_F': True, 'ND_ON_F': False, 'VALID_F': True}, True), \
+                             ('PostCalOnND', {'RX_ON_F': True, 'ND_ON_F': True, 'VALID_F': True}, True)]
         postCalDict = fitsReaderPostCal.extract_data(dataIdNameList, dataSelectionList)
         
         print "Loading file:                ", fitsReaderPostCal.fitsFilename
@@ -745,7 +746,6 @@ def reduce_tsys_pointings(stdScanList, randomise=False):
     tsys = []
     timeStamps = []
     elAngs_deg = []
-    coherency = sdd.power_index_dict(False)
     for stdScan in stdScanList:
         # Randomise cold power data itself (assumes power has Gaussian distribution...)
         if randomise:
@@ -754,8 +754,8 @@ def reduce_tsys_pointings(stdScanList, randomise=False):
                 powerStats.sigma[:, np.newaxis, :] * np.random.standard_normal(stdScan.mainData.powerData.shape)
         # Calibrate scan (power-to-temp and channel-to-band conversion)
         calibratedScan = calibrate_scan(stdScan, randomise)
-        # Save results
-        tsys.append(calibratedScan.powerData.mean(axis=1)[[coherency['XX'], coherency['YY']]].real)
+        # Save results in coherency form
+        tsys.append([calibratedScan.coherency('XX').mean(axis=0), calibratedScan.coherency('YY').mean(axis=0)])
         midPoint = len(calibratedScan.timeSamples) // 2
         timeStamps.append(calibratedScan.timeSamples[midPoint])
         elAngs_deg.append(rad_to_deg(calibratedScan.elAng_rad[midPoint]))
@@ -810,11 +810,10 @@ def linearity_test(powerBlockDict, alpha=0.05):
     if (len(coldOffLabels) == 0) or (len(coldOnLabels) == 0) or (len(hotOffLabels) == 0) or (len(hotOnLabels) == 0):
         return None, None, None
     # Find a common set of labels with the same esn number
-    coherency = sdd.power_index_dict(False)
-    blockSets = [{'coldOff' : powerBlockDict[coldOff].powerData[[coherency['XX'], coherency['YY']]].real, \
-                  'coldOn'  : powerBlockDict[coldOn].powerData[[coherency['XX'], coherency['YY']]].real, \
-                  'hotOff'  : powerBlockDict[hotOff].powerData[[coherency['XX'], coherency['YY']]].real, \
-                  'hotOn'   : powerBlockDict[hotOn].powerData[[coherency['XX'], coherency['YY']]].real} \
+    blockSets = [{'coldOff' : [powerBlockDict[coldOff].coherency('XX'), powerBlockDict[coldOff].coherency('YY')], \
+                  'coldOn'  : [powerBlockDict[coldOn].coherency('XX'), powerBlockDict[coldOn].coherency('YY')], \
+                  'hotOff'  : [powerBlockDict[hotOff].coherency('XX'), powerBlockDict[hotOff].coherency('YY')], \
+                  'hotOn'   : [powerBlockDict[hotOn].coherency('XX'), powerBlockDict[hotOn].coherency('YY')]} \
                   for coldOff in coldOffLabels for coldOn in coldOnLabels \
                   for hotOff in hotOffLabels for hotOn in hotOnLabels \
                   if coldOff.split('_')[0] == coldOn.split('_')[0] == hotOff.split('_')[0] == hotOn.split('_')[0]]
@@ -826,24 +825,24 @@ def linearity_test(powerBlockDict, alpha=0.05):
     class Struct:
         pass
     coldOff = Struct()
-    coldOff.mean = blockSets[0]['coldOff'].mean(axis=1)
-    coldOff.var = blockSets[0]['coldOff'].var(axis=1)
-    coldOff.num = blockSets[0]['coldOff'].shape[1]
+    coldOff.mean = np.array(blockSets[0]['coldOff']).mean(axis=1)
+    coldOff.var = np.array(blockSets[0]['coldOff']).var(axis=1)
+    coldOff.num = np.array(blockSets[0]['coldOff']).shape[1]
     coldOff.shape = coldOff.mean.shape
     coldOn = Struct()
-    coldOn.mean = blockSets[0]['coldOn'].mean(axis=1)
-    coldOn.var = blockSets[0]['coldOn'].var(axis=1)
-    coldOn.num = blockSets[0]['coldOn'].shape[1]
+    coldOn.mean = np.array(blockSets[0]['coldOn']).mean(axis=1)
+    coldOn.var = np.array(blockSets[0]['coldOn']).var(axis=1)
+    coldOn.num = np.array(blockSets[0]['coldOn']).shape[1]
     coldOn.shape = coldOn.mean.shape
     hotOff = Struct()
-    hotOff.mean = blockSets[0]['hotOff'].mean(axis=1)
-    hotOff.var = blockSets[0]['hotOff'].var(axis=1)
-    hotOff.num = blockSets[0]['hotOff'].shape[1]
+    hotOff.mean = np.array(blockSets[0]['hotOff']).mean(axis=1)
+    hotOff.var = np.array(blockSets[0]['hotOff']).var(axis=1)
+    hotOff.num = np.array(blockSets[0]['hotOff']).shape[1]
     hotOff.shape = hotOff.mean.shape
     hotOn = Struct()
-    hotOn.mean = blockSets[0]['hotOn'].mean(axis=1)
-    hotOn.var = blockSets[0]['hotOn'].var(axis=1)
-    hotOn.num = blockSets[0]['hotOn'].shape[1]
+    hotOn.mean = np.array(blockSets[0]['hotOn']).mean(axis=1)
+    hotOn.var = np.array(blockSets[0]['hotOn']).var(axis=1)
+    hotOn.num = np.array(blockSets[0]['hotOn']).shape[1]
     hotOn.shape = hotOn.mean.shape
     # Do statistical test
     confIntervals, degsFreedom = stats.calc_conf_interval_diff_diff2means(coldOff, coldOn, hotOff, hotOn, alpha)

@@ -186,6 +186,7 @@ class GainCalibrationData(object):
     # Calculate a power-to-temperature conversion factor (Fpt) for each stored noise-diode-on-off pair,
     # based on temperature of given noise diode. Interpolate these Fpt factors as a function of time
     # (to compensate for amplifier gain drifts), which becomes the power-to-temperature conversion function.
+    # The output of this function should be multiplied with the power data in coherency form to obtain temperatures.
     # @param self       The current object
     # @param noiseDiode Noise diode characteristics
     # @param maxDegree  Maximum polynomial degree for power-to-temperature interpolation [1]

@@ -243,7 +243,9 @@ class SingleDishData(object):
     
     ## Convert raw power measurements (W) into temperature (K) using the provided conversion function.
     # The main argument is a callable object with the signature 'factor = func(time)', which provides
-    # an interpolated conversion factor function.
+    # an interpolated conversion factor function. The conversion factor returned by func should be an array
+    # of shape (4, numTimeSamples, numChannels), which will be multiplied with the power data in coherency
+    # form to obtain temperatures.
     # @param self The current object
     # @param func The power-to-temperature conversion factor as a function of time
     # @return self The current object
@@ -253,8 +255,12 @@ class SingleDishData(object):
             return self
         # Obtain interpolated conversion factor
         powerToTempFactor = func(self.timeSamples)
-        # Convert power to temperature
+        originallyIsStokes = self.isStokes
+        # Convert coherency power to temperature, and restore Stokes/coherency status
+        self.convert_to_coherency()
         self.powerData *= powerToTempFactor
+        if originallyIsStokes:
+            self.convert_to_stokes()
         self._powerConvertedToTemp = True
         return self
     

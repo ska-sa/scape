@@ -61,7 +61,7 @@ def plot_raw_power(figColor, rawPowerDictList, expName):
         axis = axesColorList[scanInd]
         for block in rawDict.itervalues():
             timeLine = block.timeSamples - timeRef
-            contPower = block.powerData[0, :, 0]
+            contPower = block.coherency('XX')[:, 0]
             axis.plot(timeLine, contPower, lw=2, color='b')
         if (scanInd != numScans-1) and (numScans > 6):
             axis.set_xticklabels([])
@@ -288,7 +288,7 @@ def plot_baseline_fit(figColor, stdScanList, expName):
             axis.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
         axis.set_ylabel('Power (K)')
         if scanInd == 0:
-            axis.set_title(expName + ' : baseline fits on XX (all bands)')
+            axis.set_title(expName + ' : baseline fits on I (averaged over bands)')
         minY.append(axis.get_ylim()[0])
         maxY.append(axis.get_ylim()[1])
     
