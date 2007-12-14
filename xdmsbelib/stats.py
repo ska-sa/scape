@@ -400,6 +400,47 @@ def robust_mu_sigma(data, axis=0):
     iqrToStd = 0.741301109253
     return MuSigmaArray(perc50, iqrToStd * (perc75 - perc25))
 
+## Determine second-order statistics of periodic (angular or directional) data.
+# Convenience function to return second-order statistics of data along given axis as a MuSigmaArray.
+# This handles periodic variables, which exhibit the problem of wrap-around and there are unsuited for
+# the normal mu_sigma function. The period with which the values repeat can be explicitly specified,
+# otherwise the data is assumed to be radians.
+# The mean is in the range -period/2 ... period/2, and the maximum standard deviation is about period/4.
+#
+# Reference:
+# Yamartino, R.J. (1984). "A Comparison of Several "Single-Pass" Estimators of the Standard Deviation 
+# of Wind Direction". Journal of Climate and Applied Meteorology 23: 1362-1366.
+# 
+# @param data   Numpy data array of arbitrary shape, containing angles (typically in radians)
+# @param axis   Index of axis along which stats are calculated (will be averaged away in the process) [0]
+# @param period Period with which data values repeat [2.0 * np.pi]
+# @return MuSigmaArray containing data stats, of same dimension as data, but without given axis
+def periodic_mu_sigma(data, axis=0, period=2.0*np.pi):
+    data = np.asarray(data, dtype='double')
+    # Create sequence of axis indices with specified axis at the front, and the rest following it
+    moveAxisToFront = range(len(data.shape))
+    moveAxisToFront.remove(axis)
+    moveAxisToFront = [axis] + moveAxisToFront
+    # Create copy of data, and reshape so that the specified axis becomes the first one
+    data = data.copy().transpose(moveAxisToFront)
+    # Scale data so that one period becomes 2*pi, the natural period for angles
+    scale = 2.0 * np.pi / period
+    print "scale", scale
+    data *= scale
+    print "data scaled", data
+    # Calculate a "safe" mean on the unit circle
+    mu = np.arctan2(np.sin(data).mean(axis=0), np.cos(data).mean(axis=0))
+    deltaAng = data - mu
+    print "delta1", deltaAng
+    # Wrap angles into interval -pi ... pi
+    deltaAng = (deltaAng + np.pi) % (2.0 * np.pi) - np.pi
+    print "delta2", deltaAng
+    # Calculate variance using standard formula with a second correction term
+    sigma2 = (deltaAng ** 2.0).mean(axis=0) - (deltaAng.mean(axis=0) ** 2.0)
+    print "sigma2", sigma2
+    # Scale answers back to original data range
+    return MuSigmaArray(mu / scale, np.sqrt(sigma2) / scale)
+
 #=========================================================================================================
 #=== FUNCTIONS                                                                                         ===
 #=========================================================================================================

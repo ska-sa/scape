@@ -1012,9 +1012,14 @@ def _stokes_func_jacobian(p, x):
 
 
 ## Reduce polarisation calibration data.
+# This fits a Jones feed matrix and the Stokes parameters of a polarised source to observed Stokes vectors.
 # @param stdScanList      List of StandardSourceScan objects, describing pointings tracking a single polarised source
+#                         (modified by call - power converted to temp, and channels combined into bands)
 # @param rawPowerDictList List of dicts of SingleDishData objects, containing copies of all raw data blocks
 # @param randomise        True if fits should be randomised, as part of a larger Monte Carlo run [False]
+# @return polResults      Results of polarisation calibration, as a (numBands, 13) array containing feed matrix
+#                         source Stokes parameters per frequency band
+# @return calibScanList   List of data objects containing the fully calibrated main segments of each scan
 def reduce_pol_scan(stdScanList, rawPowerDictList, randomise=False):
     measuredStokes = funcInput = None
     calibScanList = []
@@ -1101,6 +1106,36 @@ def reduce_pol_scan(stdScanList, rawPowerDictList, randomise=False):
         # Also calculate linear polarisation fraction and position angle, to obtain sigma's on them
         stokesI, stokesQ, stokesU = feedSourceFit.params[7:10]
         polResults[band, 11] = np.sqrt((stokesQ / stokesI) ** 2.0 + (stokesU / stokesI) ** 2.0)
-        polResults[band, 12] = rad_to_deg(0.5 * np.arctan2(stokesU, stokesQ))
+        polResults[band, 12] = 0.5 * np.arctan2(stokesU, stokesQ)
         
-    return polResults, calibScanList, stdScanList
+    return polResults, calibScanList
+
+
+## Reduce polarisation calibration data, with quantified statistical uncertainty.
+# This fits a Jones feed matrix and the Stokes parameters of a polarised source to observed Stokes vectors.
+# The polarisation results are provided with standard deviations, which are estimated from the data set itself 
+# via resampling.
+# @param stdScanList      List of StandardSourceScan objects, describing pointings tracking a single polarised source
+# @param rawPowerDictList List of dicts of SingleDishData objects, containing copies of all raw data blocks
+# @param numSamples       Number of samples in resampling process (more is better but slower) [10]
+# @return polResults      Results of polarisation calibration, as a (numBands, 13) array containing feed matrix
+#                         source Stokes parameters per frequency band
+# @return calibScanList   List of data objects containing the fully calibrated main segments of each scan
+# @return tempScanList    List of modified scan objects, after power-to-temp conversion but before baseline subtraction
+def reduce_pol_scan_with_stats(stdScanList, rawPowerDictList, numSamples=10):
+    # Do the reduction without any variations first, to obtain scan lists and other constant outputs
+    tempScanList = copy.deepcopy(stdScanList)
+    polResults, calibScanList = reduce_pol_scan(tempScanList, rawPowerDictList, randomise=False)
+    
+    polList = [polResults]
+    # Re-run the reduction routine, which randomises itself internally each time
+    for n in xrange(numSamples-1):
+        results = reduce_pol_scan(copy.deepcopy(stdScanList), rawPowerDictList, randomise=True)
+        polList.append(results[0])
+    # Obtain statistics
+    polList = np.array(polList)
+    polLinearResults = stats.mu_sigma(polList[:, :, :12], axis=0)
+    # Polarisation angles repeat every pi radians (it is an orientation instead of a direction)
+    polAngleResults = stats.periodic_mu_sigma(np.atleast_3d(polList[:, :, 12]), axis=0, period=np.pi)
+    polResults = stats.ms_hstack((polLinearResults, polAngleResults))
+    return polResults, calibScanList, tempScanList
