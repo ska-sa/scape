@@ -7,12 +7,11 @@
 #         Robert Crida <robert.crida@ska.ac.za>
 # @date 2007-08-28
 
-# pylint: disable-msg=C0103,R0902
+# pylint: disable-msg=C0103,C0302,R0902
 
 import xdmsbe.xdmsbelib.fitsreader as fitsreader
 import xdmsbe.xdmsbelib.fitting as fitting
 import xdmsbe.xdmsbelib.gain_cal_data as gain_cal_data
-import xdmsbe.xdmsbelib.single_dish_data as sdd
 from xdmsbe.xdmsbelib import stats
 import xdmsbe.xdmsbelib.misc as misc
 from conradmisclib.transforms import rad_to_deg, deg_to_rad
@@ -877,3 +876,203 @@ def stability_test(tsys, alpha=0.05):
                                                                          func = lambda x: x, alpha=alpha)
         isStable[1, band] = fitG and muC
     return isStable
+
+
+## Function to fit to polarisation data.
+# This simulates the observed Stokes vector when a source with known Stokes parameters are observed through
+# a known Jones feed matrix, which includes an additional known rotation term (either due to parallactic rotation
+# or the feed rotator). It can also simulate the observed Stokes vector for a calibrator noise source injected
+# into the same known feed matrix, but without the corresponding rotation. The parameter vector p contains the
+# complex coefficients of the 2x2 feed matrix as [[p[0], p[1] + 1j*p[2]], [p[3] + 1j*p[4], p[5] + 1j*p[6]]], and
+# the source Stokes parameters as [p[7], p[8], p[9], p[10]]. The input vector x contains a flag x[0] indicating
+# whether to simulate the source (1) or calibrator (0), and an angle x[1] in radians which affects the source
+# simulation. The output is the observed Stokes vector. The function is not vectorised.
+# The parameter vector contains the values that will be optimised by the function fitter, while the input vector
+# contains further constants that vary per sample, but will not be optimised.
+# @param p Parameter vector, containing complex 2x2 feed matrix in p[0:7] and source Stokes in p[7:11]
+# @param x Function input vector, containing source selection flag x[0] and rotation angle x[1] in radians
+# @return 4-dimensional Stokes vector
+def _stokesFunc(p, x):
+    # Reconstruct Jones feed matrix from parameter vector
+    jonesFeed = np.array([[p[0],           p[1] + 1j*p[2]], \
+                          [p[3] + 1j*p[4], p[5] + 1j*p[6]]], dtype='complex128')
+    # Simulate polarised source
+    if x[0] > 0:
+        source = p[7:]
+        ang = x[1]
+        jonesRot = np.array([[np.cos(ang), -np.sin(ang)], [np.sin(ang),  np.cos(ang)]], dtype='complex128')
+        jonesTotal = np.dot(jonesFeed, jonesRot)
+        cohTransform = np.kron(jonesTotal, jonesTotal.conj())
+        mueller = np.dot(misc.coherencyToStokes, np.dot(cohTransform, misc.stokesToCoherency))
+        return np.dot(mueller.real, source)
+    # Simulate noise diode
+    else:
+        source = np.array([1, 0, 1, 0])
+        cohTransform = np.kron(jonesFeed, jonesFeed.conj())
+        mueller = np.dot(misc.coherencyToStokes, np.dot(cohTransform, misc.stokesToCoherency))
+        return np.dot(mueller.real, source)
+
+
+## Jacobian of polarisation function to be fitted to data.
+# This calculates the gradient of _stokesFunc with respect to the parameter vector p, at the values specified
+# in p and x. The output is an array of shape (4, 11), with element a_ij = dy_i / dp_j the partial derivative
+# of the ith Stokes parameter with respect to the jth parameter value. The function is not vectorised.
+# @param p Parameter vector, containing complex 2x2 feed matrix in p[0:7] and source Stokes in p[7:11]
+# @param x Function input vector, containing source selection flag x[0] and rotation angle x[1] in radians
+# @return Jacobian matrix of shape (4, 11), evaluated at the values in p and x
+def _stokesFuncJacobian(p, x):
+    jac = np.zeros((4, 11))
+    # Various matrices that will be re-used below
+    factorI = np.array([[ p[0],  p[0],  p[1],  p[2]],
+                        [ p[1], -p[1],  p[0],     0],
+                        [ p[2], -p[2],     0,  p[0]],
+                        [ p[3],  p[3],  p[5],  p[6]],
+                        [ p[4],  p[4],  p[6], -p[5]],
+                        [ p[5], -p[5],  p[3], -p[4]],
+                        [ p[6], -p[6],  p[4],  p[3]]])
+    factorQ = np.array([[ p[0],  p[0],  p[1],  p[2]],
+                        [ p[1], -p[1],  p[0],     0],
+                        [ p[2], -p[2],     0,  p[0]],
+                        [-p[3], -p[3], -p[5], -p[6]],
+                        [-p[4], -p[4], -p[6],  p[5]],
+                        [-p[5],  p[5], -p[3],  p[4]],
+                        [-p[6],  p[6], -p[4], -p[3]]])
+    factorU = np.array([[ p[3],  p[3],  p[5],  p[6]],
+                        [ p[5], -p[5],  p[3], -p[4]],
+                        [ p[6], -p[6],  p[4],  p[3]],
+                        [ p[0],  p[0],  p[1],  p[2]],
+                        [    0,     0,  p[2], -p[1]],
+                        [ p[1], -p[1],  p[0],     0],
+                        [ p[2], -p[2],     0,  p[0]]])
+    factorV = np.array([[-p[4], -p[4], -p[6],  p[5]],
+                        [-p[6],  p[6], -p[4], -p[3]],
+                        [ p[5], -p[5],  p[3], -p[4]],
+                        [    0,     0,  p[2], -p[1]],
+                        [-p[0], -p[0], -p[1], -p[2]],
+                        [ p[2], -p[2],     0,  p[0]],
+                        [-p[1],  p[1], -p[0],     0]])
+    # Gradient for polarised source setup
+    if x[0] > 0:
+        source = p[7:]
+        rotSource = source.copy()
+        # Implement Jones rotation matrix directly in Mueller form (this requires double the angle)
+        cos2Ang, sin2Ang = np.cos(2.0 * x[1]), np.sin(2.0 * x[1])
+        rotMat = np.array([[cos2Ang, -sin2Ang], [sin2Ang, cos2Ang]], dtype='double')
+        rotSource[1:3] = np.dot(rotMat, source[1:3])
+        
+        # partial derivative of I output wrt feed matrix components p[0]...p[6]
+        jac[0, :7] = np.dot(factorI, rotSource)
+        # partial derivative of I output wrt source components p[7]...p[10]
+        jac[0, 7]  =          0.5*( p[5]**2 + p[6]**2 + p[1]**2 + p[2]**2 + p[4]**2 + p[3]**2 + p[0]**2)
+        jac[0, 8]  =  0.5*cos2Ang*(-p[5]**2 - p[6]**2 - p[1]**2 - p[2]**2 + p[4]**2 + p[3]**2 + p[0]**2) + \
+                          sin2Ang*( p[0]*p[1] + p[3]*p[5] + p[4]*p[6])
+        jac[0, 9]  = -0.5*sin2Ang*(-p[5]**2 - p[6]**2 - p[1]**2 - p[2]**2 + p[4]**2 + p[3]**2 + p[0]**2) + \
+                          cos2Ang*( p[0]*p[1] + p[3]*p[5] + p[4]*p[6])
+        jac[0, 10] =                p[0]*p[2] - p[4]*p[5] + p[3]*p[6]
+        # partial derivative of Q output wrt feed matrix components p[0]...p[6]
+        jac[1, :7] = np.dot(factorQ, rotSource)
+        # partial derivative of Q output wrt source components p[7]...p[10]
+        jac[1, 7]  =          0.5*(-p[6]**2 - p[5]**2 + p[1]**2 + p[2]**2 + p[0]**2 - p[3]**2 - p[4]**2)
+        jac[1, 8]  =  0.5*cos2Ang*( p[6]**2 + p[5]**2 - p[1]**2 - p[2]**2 + p[0]**2 - p[3]**2 - p[4]**2) + \
+                          sin2Ang*(-p[4]*p[6] - p[3]*p[5] + p[0]*p[1])
+        jac[1, 9]  = -0.5*sin2Ang*( p[6]**2 + p[5]**2 - p[1]**2 - p[2]**2 + p[0]**2 - p[3]**2 - p[4]**2) + \
+                          cos2Ang*(-p[4]*p[6] - p[3]*p[5] + p[0]*p[1])
+        jac[1, 10] =               -p[3]*p[6] + p[4]*p[5] + p[0]*p[2]
+        # partial derivative of U output wrt feed matrix components p[0]...p[6]
+        jac[2, :7] = np.dot(factorU, rotSource)
+        # partial derivative of U output wrt source components p[7]...p[10]
+        jac[2, 7]  =            p[2]*p[6] + p[1]*p[5] + p[0]*p[3]
+        jac[2, 8]  =  cos2Ang*(-p[2]*p[6] - p[1]*p[5] + p[0]*p[3]) + sin2Ang*(p[2]*p[4] + p[1]*p[3] + p[0]*p[5])
+        jac[2, 9]  = -sin2Ang*(-p[2]*p[6] - p[1]*p[5] + p[0]*p[3]) + cos2Ang*(p[2]*p[4] + p[1]*p[3] + p[0]*p[5])
+        jac[2, 10] =            p[2]*p[3] - p[1]*p[4] + p[0]*p[6]
+        # partial derivative of V output wrt feed matrix components p[0]...p[6]
+        jac[3, :7] = np.dot(factorV, rotSource)
+        # partial derivative of V output wrt source components p[7]...p[10]
+        jac[3, 7]  =           -p[0]*p[4] - p[1]*p[6] + p[2]*p[5]
+        jac[3, 8]  =  cos2Ang*(-p[0]*p[4] + p[1]*p[6] - p[2]*p[5]) + sin2Ang*(-p[0]*p[6] - p[1]*p[4] + p[2]*p[3])
+        jac[3, 9]  = -sin2Ang*(-p[0]*p[4] + p[1]*p[6] - p[2]*p[5]) + cos2Ang*(-p[0]*p[6] - p[1]*p[4] + p[2]*p[3])
+        jac[3, 10] =            p[0]*p[5] - p[1]*p[3] - p[2]*p[4]
+    # Gradient for noise diode setup
+    else:
+        source = np.array([1, 0, 1, 0])
+        # partial derivative of I output wrt feed matrix components p[0]...p[6]
+        jac[0, :7] = np.dot(factorI, source)
+        # partial derivative of Q output wrt feed matrix components p[0]...p[6]
+        jac[1, :7] = np.dot(factorQ, source)
+        # partial derivative of U output wrt feed matrix components p[0]...p[6]
+        jac[2, :7] = np.dot(factorU, source)
+        # partial derivative of V output wrt feed matrix components p[0]...p[6]
+        jac[3, :7] = np.dot(factorV, source)
+    return jac
+
+
+## Reduce polarisation calibration data.
+# @param stdScanList      List of StandardSourceScan objects, describing pointings tracking a single polarised source
+# @param rawPowerDictList List of dicts of SingleDishData objects, containing copies of all raw data blocks
+# @param randomise        True if fits should be randomised, as part of a larger Monte Carlo run [False]
+def reduce_pol_scan(stdScanList, rawPowerDictList, randomise=False):
+    measuredStokes = funcInput = None
+    calibScanList = []
+    # Iterate through scans and add main source scans and noise-diode-on blocks to list of Stokes measurements
+    for stdScan, rawPowerDict in zip(stdScanList, rawPowerDictList):
+        # Calibrate main scan (power-to-temp, channel-to-band, baselines), and ensure it is in Stokes form
+        calibratedScan = calibrate_scan(stdScan, randomise)
+        calibratedScan.convert_to_stokes()
+        calibScanList.append(calibratedScan)
+        # Append source measurements to list
+        if measuredStokes == None:
+            measuredStokes = calibratedScan.powerData
+            funcInput = np.array([[1, ang] for ang in calibratedScan.rotAng_rad])
+        else:
+            measuredStokes = np.concatenate((measuredStokes, calibratedScan.powerData), axis=1)
+            funcInput = np.concatenate((funcInput, [[1, ang] for ang in calibratedScan.rotAng_rad]), axis=0)
+        
+        # Find pairs of "noise diode off" and "noise diode on" blocks in raw data (with same esn and data id)
+        noiseDiodeOffLabels = [k for k in rawPowerDict.iterkeys() if k.endswith("On")]
+        noiseDiodeOnLabels = [k for k in rawPowerDict.iterkeys() if k.endswith("OnND")]
+        # Collect power data blocks in pairs (copy them, as they are going to be modified below)
+        deltaPairs = [{'off' : copy.deepcopy(rawPowerDict[off]), 'on' : copy.deepcopy(rawPowerDict[on])} \
+                      for off in noiseDiodeOffLabels for on in noiseDiodeOnLabels if on[:-2] == off]
+        for pair in deltaPairs:
+            # Randomise cold power data itself if desired (assumes power has Gaussian distribution...)
+            if randomise:
+                powerStats = stats.mu_sigma(pair['on'].powerData, axis=1)
+                pair['on'].powerData = powerStats.mu[:, np.newaxis, :] + \
+                    powerStats.sigma[:, np.newaxis, :] * np.random.standard_normal(pair['on'].powerData.shape)
+                powerStats = stats.mu_sigma(pair['off'].powerData, axis=1)
+                pair['off'].powerData = powerStats.mu[:, np.newaxis, :] + \
+                    powerStats.sigma[:, np.newaxis, :] * np.random.standard_normal(pair['off'].powerData.shape)
+            # Calibrate "off" and "on" blocks, using same parameters as for main scan
+            pair['on'].convert_power_to_temp(stdScan.powerToTempFunc)
+            pair['on'].merge_channels_into_bands(stdScan.channelsPerBand, stdScan.badChannels)
+            pair['off'].convert_power_to_temp(stdScan.powerToTempFunc)
+            pair['off'].merge_channels_into_bands(stdScan.channelsPerBand, stdScan.badChannels)
+            # Subtract average Tsys contribution to "on" block, as this has to be estimated otherwise
+            # This serves the same role as baseline subtraction
+            pair['on'].powerData -= pair['off'].powerData.mean(axis=1)[:, np.newaxis, :]
+            # Add "noise diode on" block (calibrator measurements) to list
+            if measuredStokes == None:
+                measuredStokes = pair['on'].powerData
+                funcInput = np.array([[0, ang] for ang in pair['on'].rotAng_rad])
+            else:
+                measuredStokes = np.concatenate((measuredStokes, pair['on'].powerData), axis=1)
+                funcInput = np.concatenate((funcInput, [[0, ang] for ang in pair['on'].rotAng_rad]), axis=0)
+    
+    # Do polarisation calibration per frequency band
+    bandFreqs = calibScanList[0].freqs_Hz
+    numBands = len(bandFreqs)
+    polResults = np.zeros((numBands, 11))
+    for band in xrange(numBands):
+        # Initialise parameters (redo this at the start of every iteration, as fitting modifies it)
+        initParams = np.zeros(11)
+        initParams[0] = initParams[5] = initParams[7] = 1.0
+        # Set up function fitter with vectorised functions, and fit to data
+        feedSourceFit = fitting.NonLinearLeastSquaresFit(fitting.vectorizeFitFunc(_stokesFunc), initParams, \
+                                                         fitting.vectorizeFitFunc(_stokesFuncJacobian))
+        desiredOutput = measuredStokes[:, :, band].transpose()
+        feedSourceFit.fit(funcInput, desiredOutput)
+        if randomise:
+            feedSourceFit = fitting.randomise(feedSourceFit, funcInput, desiredOutput, 'shuffle')
+        polResults[band, :] = feedSourceFit.params
+    
+    return polResults, calibScanList, stdScanList

@@ -18,6 +18,7 @@ import xdmsbe.xdmsbelib.fitting as fitting
 import xdmsbe.xdmsbelib.vis as vis
 import xdmsbe.xdmsbelib.misc as misc
 import xdmsbe.xdmsbelib.stats as stats
+import xdmsbe.xdmsbelib.single_dish_data as sdd
 from conradmisclib.transforms import rad_to_deg
 import matplotlib.axes3d as mplot3d
 import numpy as np
@@ -296,6 +297,72 @@ def plot_baseline_fit(figColor, stdScanList, expName):
     yRange = [np.array(minY).min(), np.array(maxY).max()]
     if not np.any(np.isnan(yRange)):
         for axis in axesColorList:
+            axis.set_ylim(yRange)
+    
+    return axesColorList
+
+
+## Plot baseline fits for polarisation experiments.
+# @param figColor       Matplotlib Figure object to contain plots
+# @param stdScanList    List of StandardSourceScan objects, after power-to-temp and channel-to-band conversion,
+#                       with fitted baselines
+# @param expName        Title of experiment
+# @return axesColorList List of matplotlib Axes objects, one per plot
+# pylint: disable-msg=R0912,R0914
+def plot_baseline_pol(figColor, stdScanList, expName):
+    # Set up axes
+    axesColorList = []
+    stokesKey = ['I', 'Q', 'U', 'V']
+    # One figure, one subfigure per Stokes parameter, and rotator angle
+    for sub in range(len(stokesKey) + 1):
+        axesColorList.append(figColor.add_subplot(len(stokesKey) + 1, 1, sub+1))
+    
+    # Use relative time axis
+    timeRef = np.double(np.inf)
+    for stdScan in stdScanList:
+        timeRef = min(timeRef, stdScan.mainData.timeSamples.min())
+        if stdScan.baselineDataList != None:
+            for data in stdScan.baselineDataList:
+                timeRef = min(timeRef, data.timeSamples.min())
+    
+    # Plot of (continuum) baseline fits
+    minY = maxY = []
+    stokesLookup = sdd.power_index_dict(True)
+    for stokesInd, key in enumerate(stokesKey):
+        axis = axesColorList[stokesInd]
+        for stdScan in stdScanList:
+            dataBlocks = [stdScan.mainData]
+            if stdScan.baselineDataList:
+                dataBlocks += stdScan.baselineDataList
+            for block in dataBlocks:
+                timeLine = block.timeSamples - timeRef
+                contPower = block.stokes(key).mean(axis=1)
+                axis.plot(timeLine, contPower, lw=2, color='b')
+                if stdScan.baselineFunc != None:
+                    if stdScan.baselineUsesElevation:
+                        baseline = stdScan.baselineFunc(block.elAng_rad)[stokesLookup[key]].mean(axis=1)
+                    else:
+                        baseline = stdScan.baselineFunc(block.azAng_rad)[stokesLookup[key]].mean(axis=1)
+                    axis.plot(timeLine, baseline, lw=2, color='r')
+        axis.set_ylabel(key + ' (K)')
+        if stokesInd == 0:
+            axis.set_title(expName + ' : baseline fits on IQUV (averaged over bands)')
+            axis.set_ylim((0, 1.1*axis.get_ylim()[1]))
+        else:
+            minY.append(axis.get_ylim()[0])
+            maxY.append(axis.get_ylim()[1])
+    # Plot rotator angle
+    axis = axesColorList[-1]
+    for block in dataBlocks:
+        axis.plot(block.timeSamples - timeRef, rad_to_deg(block.rotAng_rad), lw=2, color='b')
+    axis.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
+    axis.set_ylabel('Rotator (deg)')
+    axis.set_ylim((axis.get_ylim()[0] - 20, axis.get_ylim()[1] + 20))
+    
+    # Set equal y-axis limits for Q, U, and V (I and rotator angle are done separately)
+    yRange = [np.array(minY).min(), np.array(maxY).max()]
+    if not np.any(np.isnan(yRange)):
+        for axis in axesColorList[1:-1]:
             axis.set_ylim(yRange)
     
     return axesColorList
