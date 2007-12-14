@@ -7,10 +7,11 @@
 
 from __future__ import division
 import xdmsbe.xdmpyfits as pyfits
+from conradmisclib.transforms import deg_to_rad
 from optparse import OptionParser
 import numpy as np
 import numpy.linalg as linalg
-import scipy as sp
+import scipy.stats as sp_stats
 import logging
 import logging.config
 import os.path
@@ -36,9 +37,9 @@ Jy             = 1e-26             # Radio flux density [W / m^2 / Hz]
 AU             = 1.49597870691e11  # Astronomical unit [m]
 lightyear      = 9.460536207e15    # Light year [m]
 parsec         = 3.08567802e16     # Parsec [m]
-siderealYear   = 365.2564          # idereal year [days]
-tropicalYear   = 365.2422          # ropical year [days]
-gregorianYear  = 365.2425          # regorian year [days]
+siderealYear   = 365.2564          # Sidereal year [days]
+tropicalYear   = 365.2422          # Tropical year [days]
+gregorianYear  = 365.2425          # Gregorian year [days]
 earthMass      = 5.9736e24         # Mass of Earth [kg]
 earthRadius    = 6371e3            # Radius of Earth [m]
 earthGM        = 398600.4415e9     # G * mass_earth   [m^3/s^2]
@@ -50,15 +51,16 @@ sunLuminosity  = 3.827e26          # Sun luminosity [W]
 gravConstantG  = 6.6726e-11        # Gravitational constant [m^3 / (kg s^2)
 
 # Stokes to coherency vector transformation matrix
-stokes2coherencyMatrix = 0.5*np.array([[  1,   1,  0,  0], \
-                                       [  0,   0,  1,  1j], \
-                                       [  0,   0,  1, -1j], \
-                                       [  1,  -1,  0,  0]],'complex128')
+stokesToCoherency = 0.5*np.array([[  1,   1,  0,  0],  \
+                                  [  0,   0,  1,  1j], \
+                                  [  0,   0,  1, -1j], \
+                                  [  1,  -1,  0,  0]], 'complex128')
 
-coherency2stokesMatrix = np.array([[1, 0, 0, 1],  \
-                                   [1, 0, 0, -1], \
-                                   [0, 1, 1, 0], \
-                                   [0, -1j, +1j, 0]], 'complex128')
+# Coherency vector to Stokes transformation matrix
+coherencyToStokes =     np.array([[  1,   0,   0,  1],  \
+                                  [  1,   0,   0, -1],  \
+                                  [  0,   1,   1,  0],  \
+                                  [  0,  -1j, +1j, 0]], 'complex128')
 
 
 #=======================================================================================================
@@ -384,6 +386,51 @@ def dict_regex_select(inDict, regexStr):
 
 
 #---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  a_matrix_sqrt
+#---------------------------------------------------------------------------------------------------------
+
+## Obtains matrix square root S of positive semi-definite Hermitian square matrix A so that S * S' = A.
+# The input matrix A should be square, Hermitian and positive semi-definite (i.e. the eigenvalues of A should
+# all be real and non-negative). This is "a" matrix square root, as matrix factorisations are not unique.
+# This function uses eigenvalue decomposition to factorise A = U * D * U', and then forms the square root as
+# S = U * sqrt(D) * U'.
+#
+# @param a Input matrix (should be square, Hermitian, and positive semi-definite)
+# @return s Matrix which is square root of a, so that numpy.dot(s, s.conj().transpose()) == a
+def a_matrix_sqrt(a):
+    d, u = np.linalg.eig(np.asarray(a))
+    # If a has negative or imaginary eigenvalues, quit
+    tol = np.abs(max(d)) * 1e-13
+    if np.any(d < 0) or np.any(np.abs(d.imag) > tol):
+        raise np.linalg.linalg.LinAlgError, "Matrix has negative or imaginary eigenvalues - cannot take square root."
+    return np.dot(np.dot(u, np.diag(np.sqrt(d.real))), u.conj().transpose())
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :    construct_stokes
+#---------------------------------------------------------------------------------------------------------
+
+## Converts comprehendable specification of polarised electromagnetic wave to equivalent Stokes parameters.
+#
+#  @param    stokesI        Stokes parameter I, which is the total power.
+#  @param    posAngle_deg   Position angle, in degrees. For linear and elliptical polarisations, this is the 
+#                           orientation of the electromagnetic wave in the plane perpendicular to the direction 
+#                           of propagation.
+#  @param    fracLinPol     The fraction of the wave's power that is linearly polarised.
+#  @param    fracCircPol    The fraction of the wave's power that is circularly polarised. The sign of this
+#                           quantity indicates the handedness of the polarisation (plus is left-handed, minus 
+#                           is right-handed, as per the IEEE definition).
+#
+#  @return   stokes         Stokes parameter representation of the specified wave.
+def construct_stokes(stokesI, posAngle_deg, fracLinPol, fracCircPol):
+    #Note: TotFracPol.^2 = FracLinPol.^2 + FracCircPol.^2
+    stokesQ = fracLinPol * stokesI * np.cos(2.0 * deg_to_rad(posAngle_deg))
+    stokesU = fracLinPol * stokesI * np.sin(2.0 * deg_to_rad(posAngle_deg))
+    stokesV = fracCircPol * stokesI
+    return np.array([stokesI, stokesQ, stokesU, stokesV])
+
+
+#---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  randn_complex
 #---------------------------------------------------------------------------------------------------------
 
@@ -415,7 +462,6 @@ def randn_complex(numSamples, dim, complexType='complex128', power=1.0, whiten=T
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  rand_complex_wishart
 #---------------------------------------------------------------------------------------------------------
-
 
 ## Generates a sequence of random matrices from the complex Wishart distribution.
 # The complex Wishart distribution is the distribution of the scatter matrix of a sequence of "degsFreedom"
@@ -450,16 +496,16 @@ def rand_complex_wishart(numSamples, dim, degsFreedom, covMat=None, complexType=
     else:
         # Load diagonal elements with square root of chi-square variates
         for d in xrange(dim):
-            data[:, d, d] = sp.stats.chi.rvs(2*degsFreedom - 2*d, size=numSamples)
+            data[:, d, d] = sp_stats.chi.rvs(2*degsFreedom - 2*d, size=numSamples)
         # Obtain all lower triangle indices, and load them with standard complex Gaussian RVs
         for sampleInd in xrange(numSamples):
             lower = np.tri(dim, k=-1).ravel() > 0
             data[sampleInd].ravel()[lower] = randn_complex(dim*(dim-1)//2, 1, complexType=complexType, power=2.0*dim)
             data[sampleInd] = np.dot(data[sampleInd], data[sampleInd].conj().transpose())
            
-    # Apply desired underlying covariance matrix
+    # Apply desired underlying covariance matrix (hopefully it's well behaved...)
     if covMat != None:
-        sqrtCovMat = np.linalg.cholesky(np.asarray(covMat))
+        sqrtCovMat = a_matrix_sqrt(covMat)
         for sampleInd in xrange(numSamples):
             data[sampleInd] = np.dot(sqrtCovMat, np.dot(data[sampleInd], sqrtCovMat.conj().transpose()))
     # Clean up diagonals
@@ -470,33 +516,37 @@ def rand_complex_wishart(numSamples, dim, degsFreedom, covMat=None, complexType=
 
 
 #---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  stokes_to_sqrt_coherency
+#--- FUNCTION :  gen_std_correlator_samples
 #---------------------------------------------------------------------------------------------------------
 
-## Convert Stokes vector to the (lower triangular) square root of its corresponding coherency matrix.
-# Useful for generating vectors with specified Stokes properties. This contains some sanity checks.
+## Generate standardised random samples simulating the output of a single-dish correlator.
+# Each sample is a 4-dimensional coherency vector, of the form [rxx, rxy, ryx, ryy]. The underlying signal
+# is assumed to be totally unpolarised with total power of two, which corresponds to a Stokes vector 
+# of [2, 0, 0, 0]. The mean values of rxx and ryy are therefore 1.0 each (unity power per polarisation channel).
+# The resulting samples can be transformed to any desired power value and polarisation by multiplying them with
+# the appropriate matrix. The more accurate 'wishart' method samples from the true distribution of the correlator
+# outputs, while the 'normal' method is an approximation, but hopefully faster. The 'wishart' method returns
+# complex-valued samples, while 'normal' returns real-valued samples.
 #
-# @param stokesVec 4-dimensional Stokes vector
-# @return sqrtCohMat 2x2 matrix that is (lower triangular) square root of corresponding coherency matrix
-def stokes_to_sqrt_coherency(stokesVec):
-    # First obtain coherency vector
-    cohVec = np.dot(stokes2coherencyMatrix, np.asarray(stokesVec))
-    rxx = cohVec[0]
-    rxy = cohVec[1]
-    ryx = cohVec[2]
-    ryy = cohVec[3]
-    # Pack into coherency matrix
-    cohMat = np.array([[rxx, rxy], [ryx, ryy]], 'complex128')
+# @param numSamples           Number of samples to generate
+# @param numSamplesIntegrated Number of voltage samples that were averaged into one power sample by correlator
+# @param method               Method to use (slower but more accurate 'wishart', or faster 'normal' (default))
+# @return data                Generated samples, as an array of shape (numStokes, numSamples)
+def gen_std_correlator_samples(numSamples, numSamplesIntegrated, method='normal'):
     
-    # Have to check for matrices which are non-positive definite (cholesky bombs otherwise)
-    if ((cohMat[0, 1]==0) and (cohMat[1, 0]==0)) and ((cohMat[0, 0]==0) or (cohMat[1, 1]==0)):
-        sqrtCohMat = np.sqrt(cohMat)
+    numStokes = 4
+    if method == 'wishart':
+        data = rand_complex_wishart(numSamples, 2, numSamplesIntegrated) / 2.0 / numSamplesIntegrated
+        data = data.reshape(numSamples, numStokes).transpose()
     else:
-        cohMat[0, 0] += 1e-12
-        cohMat[1, 1] += 1e-12
-        sqrtCohMat = np.linalg.cholesky(cohMat)
-    
-    return sqrtCohMat
+        # The old way of simulating received power (polarisation info bad, but faster)
+        # Simulate power samples via normally-distributed voltages
+        data = np.random.normal(1.0, 1.0 / np.sqrt(2.0 * numSamplesIntegrated), (numStokes, numSamples)) ** 2.0
+        # Reduce XY and YX data to virtually zero (assume unpolarised source)
+        data[1, :] *= 1e-10
+        data[2, :] *= 1e-10
+        
+    return data
 
 
 #---------------------------------------------------------------------------------------------------------
@@ -510,7 +560,7 @@ def stokes_to_sqrt_coherency(stokesVec):
 # @param    numVoltSamplesPerIntPeriod      number of samples integrated
 # @param    S                               2x2 matrix consisting of Jones matrices and coherency-to-Stokes matrix
 # @param    desiredTotalPower               desired total power of generated signal
-# @param    outputFormat                    'stokes' or 'coherency' vectors             ()
+# @param    outputFormat                    'stokes' or 'coherency' vectors
 # @return   sigBuf                          data sample buffer
 # pylint: disable-msg=W0102,R0914
 
@@ -549,7 +599,7 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, S, desiredT
         logger.error("Correlator simulator did not run successfully!")
     
     if (outputFormat.lower() == 'stokes'):
-        sigBuf = np.dot(coherency2stokesMatrix, sigBuf)
+        sigBuf = np.dot(coherencyToStokes, sigBuf)
 
     return sigBuf
 
