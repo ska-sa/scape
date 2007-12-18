@@ -40,6 +40,9 @@ logger = logging.getLogger("xdmsbe.xdmsbelib.single_dish_reduce")
 # - the baseline function that will be subtracted from main scan segment
 # pylint: disable-msg=R0903
 class StandardSourceScan(object):
+    ## @var expSeqNumber
+    # Experiment sequence number, used to group standard scans together
+    expSeqNumber = None
     ## @var sourceName
     # Description of underlying target/source being scanned
     sourceName = None
@@ -196,6 +199,7 @@ def load_tsys_pointing_list(fitsFileName):
             mainScanDict = fitsReaderScan.extract_data(dataIdNameList, dataSelectionList)
             
             # Load various parameters (the last file in experiment sequence determines the final values)
+            stdScan.expSeqNumber = fitsReaderScan.get_primary_header()['ExpSeqN']
             stdScan.sourceName = fitsReaderScan.get_primary_header()['Target']
             stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth')[0]
             rfiChannels = fitsReaderScan.get_rfi_channels()
@@ -232,11 +236,6 @@ def load_tsys_pointing_list(fitsFileName):
               "of which", len(badChannels), "are bad (including", len(rfiChannels), "RFI-flagged and", \
               len(stdScan.gainCalData.badChannels), "with insufficient variation between noise diode on/off blocks)"
         print "Number of frequency bands after removing bad channels:", len(stdScan.channelsPerBand)
-        
-        # If no frequency bands remain after bad channels are removed, discard the scans
-        if len(stdScan.channelsPerBand) == 0:
-            print "Experiment sequence discarded, as no frequency bands remain after bad channels are removed."
-            continue
         
         # Successful standard scan finally gets added to lists here - this ensures lists are in sync
         stdScanList.append(stdScan)
@@ -319,6 +318,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         
         mainScanData = copy.deepcopy(mainScanDict.values()[0])
         # Load various parameters from the main scan (these should be the same for other scans as well)
+        stdScan.expSeqNumber = fitsReaderScan.get_primary_header()['ExpSeqN']
         stdScan.sourceName = fitsReaderScan.get_primary_header()['Target']
         stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth')[0]
         rfiChannels = fitsReaderScan.get_rfi_channels()
