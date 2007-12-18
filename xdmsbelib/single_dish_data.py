@@ -264,18 +264,16 @@ class SingleDishData(object):
         self._powerConvertedToTemp = True
         return self
     
-    ## Merge frequency channels into bands, while optionally removing (RFI-)corrupted channels.
+    ## Merge frequency channels into bands.
     # The frequency channels are grouped into bands, and the power data is merged and averaged within each band.
     # Each band contains the average power of its constituent channels. The average power is simpler to use
     # than the total power in each band, as total power is dependent on the bandwidth of each band.
     # The channelsPerBand mapping contains a list of lists of channel indices, indicating which channels belong
-    # to each band. Some channels can also be marked as corrupted (e.g. by RFI), which will remove them from any band.
-    # The resulting number of bands might be less than what was requested (or even 0), due to this removal.
+    # to each band.
     # @param self            The current object
     # @param channelsPerBand A sequence of lists of channel indices, indicating which channels belong to each band
-    # @param badChannels     A sequence of channel indices, indicating channels to remove [None]
     # @return self           The current object
-    def merge_channels_into_bands(self, channelsPerBand, badChannels = None):
+    def merge_channels_into_bands(self, channelsPerBand):
         # Already done, so don't do it again
         if self._channelsMergedIntoBands:
             return self
@@ -283,12 +281,6 @@ class SingleDishData(object):
             message = "First convert raw power measurements to temperatures before merging channels into bands."
             logger.error(message)
             raise RuntimeError, message
-        # Convert "safer" default value of None to intended empty list
-        if badChannels == None:
-            badChannels = []
-        # Remove RFI channels from band channel lists, and delete any resulting empty bands
-        channelsPerBand = [list(set.difference(set(x), set(badChannels))) for x in channelsPerBand]
-        channelsPerBand = [x for x in channelsPerBand if len(x) > 0]
         # Merge and average power data into new array (keep same type as original data, which may be complex)
         bandPowerData = np.zeros(list(self.powerData.shape[0:2]) + [len(channelsPerBand)], dtype=self.powerData.dtype)
         for bandIndex, bandChannels in enumerate(channelsPerBand):
