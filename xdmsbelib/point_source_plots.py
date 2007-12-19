@@ -19,7 +19,7 @@ import xdmsbe.xdmsbelib.vis as vis
 import xdmsbe.xdmsbelib.misc as misc
 import xdmsbe.xdmsbelib.stats as stats
 import xdmsbe.xdmsbelib.single_dish_data as sdd
-from conradmisclib.transforms import rad_to_deg
+from conradmisclib.transforms import rad_to_deg, deg_to_rad
 import matplotlib.axes3d as mplot3d
 import numpy as np
 import logging
@@ -494,7 +494,8 @@ def plot_beam_pattern_target(figColorList, calibScanList, beamFuncList, expName)
             ellType, centerType = 'r-', 'r+'
         else:
             ellType, centerType = 'y-', 'y+'
-        ellipses = misc.gaussian_ellipses(beamCentres[band], np.diag(beamFuncList[band][0].var), contour=[0.5, 0.1])
+        ellipses = misc.gaussian_ellipses(deg_to_rad(beamCentres[band]), np.diag(beamFuncList[band][0].var), \
+                                          contour=[0.5, 0.1])
         for ellipse in ellipses:
             axis.plot(rad_to_deg(ellipse[:, 0]), rad_to_deg(ellipse[:, 1]), ellType, lw=2)
         axis.plot([beamCentres[band][0]], [beamCentres[band][1]], centerType, ms=12, aa=False, mew=2)
