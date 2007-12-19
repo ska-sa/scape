@@ -601,6 +601,8 @@ def reduce_point_source_scan(stdScanList, randomise=False):
         # pylint: disable-msg=W0704
         except AssertionError:
             pass
+        except AttributeError:
+            pass
         except ValueError:
             pass
     # The antenna effective area and friends can only be calculated for sources with known and valid flux densities
