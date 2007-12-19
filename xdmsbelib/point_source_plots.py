@@ -41,9 +41,10 @@ logger = logging.getLogger('xdmsbe.plots.point_source_plots')
 # @param figColor         Matplotlib Figure object to contain plots
 # @param rawPowerDictList List of dicts of SingleDishData objects, containing copies of all raw data blocks
 # @param expName          Title of experiment
+# @param stdScanList      List of StandardSourceScan objects, used for its channel lists only [None]
 # @return axesColorList   List of matplotlib Axes objects, one per plot
-# pylint: disable-msg=R0914
-def plot_raw_power(figColor, rawPowerDictList, expName):
+# pylint: disable-msg=R0912,R0914
+def plot_raw_power(figColor, rawPowerDictList, expName, stdScanList=None):
     # Set up axes
     axesColorList = []
     numScans = len(rawPowerDictList)
@@ -56,13 +57,33 @@ def plot_raw_power(figColor, rawPowerDictList, expName):
         for data in rawDict.itervalues():
             timeRef = min(timeRef, data.timeSamples.min())
     
+    # Determine appropriate channel to plot (the first channel valid in all scans, or 0 otherwise)
+    channel = 0
+    valid = '(no bad channel flags used, so some scans could be corrupted)'
+    if stdScanList != None:
+        flatChanList = []
+        allChans = []
+        for scan in stdScanList:
+            flatChans = []
+            for chanList in scan.channelsPerBand:
+                flatChans += chanList
+                allChans += chanList
+            flatChanList.append(flatChans)
+        common = [chan for chan in set(allChans) if np.all([(chan in chans) for chans in flatChanList])]
+        if len(common) > 0:
+            channel = common[0]
+            valid = '(first channel for which all scans are uncorrupted)'
+        else:
+            channel = 0
+            valid = '(no channels totally uncorrupted, so this has some corrupt scans)'
+    
     # Plot of (continuum) raw XX power
     minY = maxY = []
     for scanInd, rawDict in enumerate(rawPowerDictList):
         axis = axesColorList[scanInd]
         for block in rawDict.itervalues():
             timeLine = block.timeSamples - timeRef
-            contPower = block.coherency('XX')[:, 0]
+            contPower = block.coherency('XX')[:, channel]
             axis.plot(timeLine, contPower, lw=2, color='b')
         if (scanInd != numScans-1) and (numScans > 6):
             axis.set_xticklabels([])
@@ -72,7 +93,7 @@ def plot_raw_power(figColor, rawPowerDictList, expName):
             axis.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
         axis.set_ylabel('Raw power')
         if scanInd == 0:
-            axis.set_title(expName + ' : raw power for channel 0 (XX)')
+            axis.set_title(expName + ' : raw XX power for channel ' + str(channel) + '\n' + valid)
         minY.append(axis.get_ylim()[0])
         maxY.append(axis.get_ylim()[1])
     
