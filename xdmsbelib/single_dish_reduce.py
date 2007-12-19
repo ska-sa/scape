@@ -1038,13 +1038,10 @@ def reduce_pol_scan(stdScanList, rawPowerDictList, randomise=False):
         calibratedScan = calibrate_scan(stdScan, randomise)
         calibratedScan.convert_to_stokes()
         calibScanList.append(calibratedScan)
-        # Set up list of channels per band, used below to calculate noise diode temperature per band
-        channelsPerBand = [list(set.difference(set(x), set(stdScan.badChannels))) for x in stdScan.channelsPerBand]
-        channelsPerBand = [x for x in channelsPerBand if len(x) > 0]
-        numBands = len(channelsPerBand)
         
         # Append source measurements to list
         # Input has shape (numBands, numSamples, 3), output has shape (4, numSamples, numBands)
+        numBands = len(stdScan.channelsPerBand)
         scanFuncInput = np.array([[[1, ang, 0] for ang in calibratedScan.rotAng_rad] for band in xrange(numBands)])
         if measuredStokes == None:
             measuredStokes = calibratedScan.powerData
@@ -1082,8 +1079,8 @@ def reduce_pol_scan(stdScanList, rawPowerDictList, randomise=False):
             # This provides a more accurate estimate of the feed matrix gains and source flux
             tempPerChannel = stdScan.noiseDiodeData.temperature(channelFreqs, pair['on'].rotAng_rad, randomise)
             # Merge and average noise diode temperature into new array of shape (2, numBands, numAngles)
-            tempPerBand = np.zeros((2, len(channelsPerBand), tempPerChannel.shape[2]))
-            for bandIndex, bandChannels in enumerate(channelsPerBand):
+            tempPerBand = np.zeros((2, len(stdScan.channelsPerBand), tempPerChannel.shape[2]))
+            for bandIndex, bandChannels in enumerate(stdScan.channelsPerBand):
                 tempPerBand[:, bandIndex, :] = tempPerChannel[:, bandChannels, :].mean(axis=1)
             
             # Add "noise diode on" block (calibrator measurements) to list
