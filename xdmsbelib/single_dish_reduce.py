@@ -53,9 +53,9 @@ class StandardSourceScan(object):
     ## @var parallacticCorrectionApplied
     # True if parallactic correction was applied by rotating the feed
     parallacticCorrectionApplied = None
-    ## @var beamOffsets
-    # List containing horizontal and vertical beam offsets, in degrees
-    beamOffsets = None
+    ## @var beamOffset
+    # Beam offset in polar coordinates, as (radius, angle) in degrees
+    beamOffset = None
     ## @var mainData
     # SingleDishData object for main scan segment
     mainData = None
@@ -211,8 +211,8 @@ def load_tsys_pointing_list(fitsFileName):
             stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth')[0]
             stdScan.parallacticCorrectionApplied = (fitsReaderScan.get_primary_header()['Parall'] == 1)
             try:
-                stdScan.beamOffsets = (fitsReaderScan.get_primary_header()['offsetH'], \
-                                       fitsReaderScan.get_primary_header()['offsetV'])
+                stdScan.beamOffset = (fitsReaderScan.get_primary_header()['offsetR'], \
+                                      fitsReaderScan.get_primary_header()['offsetA'])
             # pylint: disabled-msg=W0704
             except KeyError:
                 pass
@@ -337,8 +337,8 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth')[0]
         stdScan.parallacticCorrectionApplied = (fitsReaderScan.get_primary_header()['Parall'] == 1)
         try:
-            stdScan.beamOffsets = (fitsReaderScan.get_primary_header()['offsetH'], \
-                                   fitsReaderScan.get_primary_header()['offsetV'])
+            stdScan.beamOffset = (fitsReaderScan.get_primary_header()['offsetR'], \
+                                  fitsReaderScan.get_primary_header()['offsetA'])
         # pylint: disabled-msg=W0704
         except KeyError:
             pass
