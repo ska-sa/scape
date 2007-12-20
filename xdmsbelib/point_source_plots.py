@@ -87,8 +87,6 @@ def plot_raw_power(figColor, rawPowerDictList, expName, stdScanList=None):
             axis.plot(timeLine, contPower, lw=2, color='b')
         if (scanInd != numScans-1) and (numScans > 6):
             axis.set_xticklabels([])
-        if (scanInd != numScans-1) and (numScans > 6):
-            axis.set_yticklabels([])
         if scanInd == numScans-1:
             axis.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
         axis.set_ylabel('Raw power')
