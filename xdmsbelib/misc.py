@@ -8,6 +8,9 @@
 from __future__ import division
 import xdmsbe.xdmpyfits as pyfits
 from conradmisclib.transforms import deg_to_rad
+import acsm.coordinatesystem as coordinatesystem
+import acsm.transform.transformfactory as transformfactory
+from conradmisclib import transforms
 from optparse import OptionParser
 import numpy as np
 import numpy.linalg as linalg
@@ -602,6 +605,31 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, S, desiredT
         sigBuf = np.dot(coherencyToStokes, sigBuf)
 
     return sigBuf
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  parallactic_rotation
+#---------------------------------------------------------------------------------------------------------
+
+## Calculate the parallactic rotation of a specified target as seen by a given mount at given times.
+#
+# @param    target              Target object for the target being observed
+# @param    mount               Target object for the mount of the observer
+# @param    timeSamples         Array of time instants at which to evaluate parallactic rotation, in seconds
+# @return   parRot_rad          Parallactic rotation at each time instant, in radians
+def parallactic_rotation(target, mount, timeSamples):
+    # Get latitude of mount
+    transform2wgs84 = transformfactory.get_transformer(mount.get_coordinate_system(), coordinatesystem.WGS84())
+    startMountCoord = mount.get_coordinate(timeSamples[0])
+    lat_rad = transform2wgs84.transform_coordinate(startMountCoord, timeSamples[0]).get_vector()[0]
+    # Transform target coordinates to ha/dec
+    haDecRot = coordinatesystem.Rotator(coordinatesystem.EquatorialHaDec(mount))
+    transform2HaDecRot = transformfactory.get_transformer(target.get_coordinate_system(), haDecRot)
+    targetVectors = target.get_vector(timeSamples)
+    destVectors = transform2HaDecRot.transform_vector(targetVectors, timeSamples)
+    # Parallactic rotation formula requires ha, dec, and lat
+    ha_rad, dec_rad = destVectors[:2]
+    return transforms.parallactic_rotation(ha_rad, dec_rad, lat_rad)
 
 
 #---------------------------------------------------------------------------------------------------------

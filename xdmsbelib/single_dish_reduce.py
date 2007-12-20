@@ -17,6 +17,7 @@ import xdmsbe.xdmsbelib.misc as misc
 from conradmisclib.transforms import rad_to_deg, deg_to_rad
 from acsm.coordinate import Coordinate
 import acsm.transform.transformfactory as transformfactory
+import acsm.targets.targetfactory as targetfactory
 import numpy as np
 import logging
 import copy
@@ -49,6 +50,12 @@ class StandardSourceScan(object):
     ## @var antennaBeamwidth_deg
     # Antenna half-power beamwidth in degrees
     antennaBeamwidth_deg = None
+    ## @var parallacticCorrectionApplied
+    # True if parallactic correction was applied by rotating the feed
+    parallacticCorrectionApplied = None
+    ## @var beamOffsets
+    # List containing horizontal and vertical beam offsets, in degrees
+    beamOffsets = None
     ## @var mainData
     # SingleDishData object for main scan segment
     mainData = None
@@ -202,6 +209,13 @@ def load_tsys_pointing_list(fitsFileName):
             stdScan.expSeqNumber = fitsReaderScan.get_primary_header()['ExpSeqN']
             stdScan.sourceName = fitsReaderScan.get_primary_header()['Target']
             stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth')[0]
+            stdScan.parallacticCorrectionApplied = (fitsReaderScan.get_primary_header()['Parall'] == 1)
+            try:
+                stdScan.beamOffsets = (fitsReaderScan.get_primary_header()['offsetH'], \
+                                       fitsReaderScan.get_primary_header()['offsetV'])
+            # pylint: disabled-msg=W0704
+            except KeyError:
+                pass
             rfiChannels = fitsReaderScan.get_rfi_channels()
             channelsPerBand = [x.tolist() for x in fitsReaderScan.select_masked_column('BANDS', 'Channels')]
             
@@ -321,6 +335,13 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         stdScan.expSeqNumber = fitsReaderScan.get_primary_header()['ExpSeqN']
         stdScan.sourceName = fitsReaderScan.get_primary_header()['Target']
         stdScan.antennaBeamwidth_deg = fitsReaderScan.select_masked_column('CONSTANTS', 'Beamwidth')[0]
+        stdScan.parallacticCorrectionApplied = (fitsReaderScan.get_primary_header()['Parall'] == 1)
+        try:
+            stdScan.beamOffsets = (fitsReaderScan.get_primary_header()['offsetH'], \
+                                   fitsReaderScan.get_primary_header()['offsetV'])
+        # pylint: disabled-msg=W0704
+        except KeyError:
+            pass
         rfiChannels = fitsReaderScan.get_rfi_channels()
         channelsPerBand = [x.tolist() for x in fitsReaderScan.select_masked_column('BANDS', 'Channels')]
         
@@ -1041,10 +1062,15 @@ def reduce_pol_scan(stdScanList, rawPowerDictList, randomise=False):
         calibratedScan.convert_to_stokes()
         calibScanList.append(calibratedScan)
         
+        # Obtain total rotation of source relative to feed, consisting of rotator and parallactic parts
+        totalRot_rad = calibratedScan.rotAng_rad
+        if not stdScan.parallacticCorrectionApplied:
+            totalRot_rad += calibratedScan.parallactic_rotation()
+        
         # Append source measurements to list
         # Input has shape (numBands, numSamples, 3), output has shape (4, numSamples, numBands)
         numBands = len(stdScan.channelsPerBand)
-        scanFuncInput = np.array([[[1, ang, 0] for ang in calibratedScan.rotAng_rad] for band in xrange(numBands)])
+        scanFuncInput = np.array([[[1, ang, 0] for ang in totalRot_rad] for band in xrange(numBands)])
         if measuredStokes == None:
             measuredStokes = calibratedScan.powerData
             funcInput = scanFuncInput

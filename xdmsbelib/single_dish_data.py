@@ -11,6 +11,7 @@
 
 from acsm.coordinate import Coordinate
 import acsm.transform.transformfactory as transformfactory
+import xdmsbe.xdmsbelib.misc as misc
 import numpy as np
 import logging
 import copy
@@ -320,3 +321,11 @@ class SingleDishData(object):
         self.powerData -= baselineData
         self._baselineSubtracted = True
         return self
+    
+    ## Parallactic rotation angle for duration of data.
+    # This calculates the parallactic rotation angle experienced by the target at each time instant of the data set.
+    # @param self         The current object
+    # @return             Array of angles in radians, one per time instant
+    def parallactic_rotation(self):
+        mountPosition = self.mountCoordSystem.get_attribute("position")
+        return misc.parallactic_rotation(self.targetObject, mountPosition, self.timeSamples)

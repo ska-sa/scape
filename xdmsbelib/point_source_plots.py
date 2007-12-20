@@ -334,9 +334,11 @@ def plot_baseline_pol(figColor, stdScanList, expName):
     # Set up axes
     axesColorList = []
     stokesKey = ['I', 'Q', 'U', 'V']
-    # One figure, one subfigure per Stokes parameter, and rotator angle
-    for sub in range(len(stokesKey) + 1):
-        axesColorList.append(figColor.add_subplot(len(stokesKey) + 1, 1, sub+1))
+    numParams = len(stokesKey) + 1
+    numScans = len(stdScanList)
+    # One figure, one subfigure per Stokes parameter/rotator angle and per standard scan
+    for sub in range(numParams * numScans):
+        axesColorList.append(figColor.add_subplot(numParams, numScans, sub+1))
     
     # Use relative time axis
     timeRef = np.double(np.inf)
@@ -347,11 +349,13 @@ def plot_baseline_pol(figColor, stdScanList, expName):
                 timeRef = min(timeRef, data.timeSamples.min())
     
     # Plot of (continuum) baseline fits
-    minY = maxY = []
+    yRange = np.zeros((numParams, 2*numScans))
     stokesLookup = sdd.power_index_dict(True)
+    # Iterate over parameters (subplot rows)
     for stokesInd, key in enumerate(stokesKey):
-        axis = axesColorList[stokesInd]
-        for stdScan in stdScanList:
+        # Iterate over scans (subplot columns)
+        for scanInd, stdScan in enumerate(stdScanList):
+            axis = axesColorList[numScans * stokesInd + scanInd]
             dataBlocks = [stdScan.mainData]
             if stdScan.baselineDataList:
                 dataBlocks += stdScan.baselineDataList
@@ -365,26 +369,48 @@ def plot_baseline_pol(figColor, stdScanList, expName):
                     else:
                         baseline = stdScan.baselineFunc(block.azAng_rad)[stokesLookup[key]].mean(axis=1)
                     axis.plot(timeLine, baseline, lw=2, color='r')
-        axis.set_ylabel(key + ' (K)')
-        if stokesInd == 0:
-            axis.set_title(expName + ' : baseline fits on IQUV (averaged over bands)')
-            axis.set_ylim((0, 1.1*axis.get_ylim()[1]))
+            axis.set_xticklabels([])
+            # Left-most column
+            if scanInd == 0:
+                axis.set_ylabel(key + ' (K)')
+            else:
+                axis.set_yticklabels([])
+            # Middle of top row
+            if (stokesInd == 0) and (scanInd == numScans // 2):
+                axis.set_title(expName + '\nBaseline fits on IQUV (averaged over bands, and per scan)')
+            yRange[stokesInd, 2*scanInd:2*scanInd+2] = axis.get_ylim()
+    # Plot rotator or parallactic angle
+    for scanInd, stdScan in enumerate(stdScanList):
+        axis = axesColorList[numScans * (numParams-1) + scanInd]
+        dataBlocks = [stdScan.mainData]
+        if stdScan.baselineDataList:
+            dataBlocks += stdScan.baselineDataList
+        if not stdScan.parallacticCorrectionApplied:
+            for block in dataBlocks:
+                axis.plot(block.timeSamples - timeRef, rad_to_deg(block.parallactic_rotation()), lw=2, color='b')
+            if scanInd == 0:
+                axis.set_ylabel('Parallactic (deg)')
+            else:
+                axis.set_yticklabels([])
         else:
-            minY.append(axis.get_ylim()[0])
-            maxY.append(axis.get_ylim()[1])
-    # Plot rotator angle
-    axis = axesColorList[-1]
-    for block in dataBlocks:
-        axis.plot(block.timeSamples - timeRef, rad_to_deg(block.rotAng_rad), lw=2, color='b')
-    axis.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
-    axis.set_ylabel('Rotator (deg)')
-    axis.set_ylim((axis.get_ylim()[0] - 20, axis.get_ylim()[1] + 20))
+            for block in dataBlocks:
+                axis.plot(block.timeSamples - timeRef, rad_to_deg(block.rotAng_rad), lw=2, color='b')
+            if scanInd == 0:
+                axis.set_ylabel('Rotator (deg)')
+            else:
+                axis.set_yticklabels([])
+        if scanInd == numScans // 2:
+            axis.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
+        yRange[numParams-1, 2*scanInd:2*scanInd+2] = axis.get_ylim()
     
-    # Set equal y-axis limits for Q, U, and V (I and rotator angle are done separately)
-    yRange = [np.array(minY).min(), np.array(maxY).max()]
-    if not np.any(np.isnan(yRange)):
-        for axis in axesColorList[1:-1]:
-            axis.set_ylim(yRange)
+    # Use the same y-axis limits for Q, U and V, and separate ones for I and rotator angle
+    yRange[0, :2] = [0, 1.1*yRange[0, :].max()]
+    yRange[1:-1, :2] = [yRange[1:-1, :].min(), yRange[1:-1, :].max()]
+    yRange[-1, :2] = [yRange[-1, :].min() - 20, yRange[-1, :].max() + 20]
+    for stokesInd in xrange(numParams):
+        for scanInd in xrange(numScans):
+            axis = axesColorList[numScans * stokesInd + scanInd]
+            axis.set_ylim(yRange[stokesInd, :2])
     
     return axesColorList
 
