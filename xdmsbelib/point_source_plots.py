@@ -454,7 +454,7 @@ def plot_calib_scans(figColorList, calibScanList, beamFuncList, expName):
                     beamColor = 'r'
                 else:
                     beamColor = 'y'
-                axis.plot(timeLine, beamFuncList[band][0](block.targetCoords[:, 0:2]), color=beamColor, lw=2)
+                axis.plot(timeLine, beamFuncList[band][0](block.targetCoords[:, :2]), color=beamColor, lw=2)
             if scanInd == numScans-1:
                 axis.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timeRef)))
             axis.set_ylabel('Power (K)')
@@ -497,7 +497,7 @@ def plot_beam_pattern_target(figColorList, calibScanList, beamFuncList, expName)
     targetCoords = []
     for scan in calibScanList:
         totalPower.append(scan.stokes('I'))
-        targetCoords.append(rad_to_deg(scan.targetCoords))
+        targetCoords.append(rad_to_deg(scan.targetCoords[:, :2]))
     # Also extract beam centres, in order to unwrap them with the rest of angle data
     for band in range(numBands):
         targetCoords.append(rad_to_deg(np.atleast_2d(beamFuncList[band][0].mean)))
@@ -691,7 +691,7 @@ def plot_beam_patterns_mount(figColorList, calibListList, beamListList, transfor
             elAngList.append(np.array([mountCoord[1]]))
             for ellipse in ellipses:
                 targetCoords = np.zeros((len(ellipse), targetDim), dtype='double')
-                targetCoords[:, 0:2] = ellipse
+                targetCoords[:, :2] = ellipse
                 mountCoords = np.array([targetToInstantMount(targetCoord) for targetCoord in targetCoords])
                 azAngList.append(mountCoords[:, 0])
                 elAngList.append(mountCoords[:, 1])
