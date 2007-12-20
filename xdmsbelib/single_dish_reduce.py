@@ -17,7 +17,6 @@ import xdmsbe.xdmsbelib.misc as misc
 from conradmisclib.transforms import rad_to_deg, deg_to_rad
 from acsm.coordinate import Coordinate
 import acsm.transform.transformfactory as transformfactory
-import acsm.targets.targetfactory as targetfactory
 import numpy as np
 import logging
 import copy
@@ -213,7 +212,7 @@ def load_tsys_pointing_list(fitsFileName):
             try:
                 stdScan.beamOffset = (fitsReaderScan.get_primary_header()['offsetR'], \
                                       fitsReaderScan.get_primary_header()['offsetA'])
-            # pylint: disabled-msg=W0704
+            # pylint: disable-msg=W0704
             except KeyError:
                 pass
             rfiChannels = fitsReaderScan.get_rfi_channels()
@@ -339,7 +338,7 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         try:
             stdScan.beamOffset = (fitsReaderScan.get_primary_header()['offsetR'], \
                                   fitsReaderScan.get_primary_header()['offsetA'])
-        # pylint: disabled-msg=W0704
+        # pylint: disable-msg=W0704
         except KeyError:
             pass
         rfiChannels = fitsReaderScan.get_rfi_channels()

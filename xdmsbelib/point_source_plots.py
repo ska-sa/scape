@@ -327,7 +327,7 @@ def plot_baseline_fit(figColor, stdScanList, expName):
 #                       with fitted baselines
 # @param expName        Title of experiment
 # @return axesColorList List of matplotlib Axes objects, one per plot
-# pylint: disable-msg=R0912,R0914
+# pylint: disable-msg=R0912,R0914,R0915
 def plot_baseline_pol(figColor, stdScanList, expName):
     # Set up axes
     axesColorList = []
