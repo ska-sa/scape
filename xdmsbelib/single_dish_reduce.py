@@ -463,7 +463,7 @@ def calibrate_scan(stdScan, randomise):
     # Require variation on the order of an antenna beam width to fit higher-order polynomial
     if elAngMax - elAngMin > deg_to_rad(stdScan.antennaBeamwidth_deg):
         stdScan.baselineUsesElevation = True
-        interp = fitting.Independent1DFit(fitting.Polynomial1DFit(maxDegree=3), axis=1)
+        interp = fitting.Independent1DFit(fitting.Polynomial1DFit(maxDegree=1), axis=1)
         interp.fit(allBaselineData.elAng_rad, allBaselineData.powerData)
         if randomise:
             interp = fitting.randomise(interp, allBaselineData.elAng_rad, allBaselineData.powerData, 'shuffle')
