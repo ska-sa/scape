@@ -21,6 +21,7 @@ import xdmsbe.xdmsbelib.stats as stats
 import xdmsbe.xdmsbelib.single_dish_data as sdd
 from conradmisclib.transforms import rad_to_deg, deg_to_rad
 import matplotlib.axes3d as mplot3d
+import pylab as pl
 import numpy as np
 import logging
 import time
@@ -543,9 +544,9 @@ def plot_beam_pattern_target(figColorList, calibScanList, beamFuncList, expName)
 ## Plot rough beam pattern derived from multiple raster scans through a single point source, in target space.
 # This works with the power values derived from multiple scans through a single point source, typically made
 # in a horizontal raster pattern. It interpolates the power values onto a regular uniform grid, and plots
-# contours of the interpolated function. It also assumes that the scans themselves follow a uniform grid pattern
-# in target space, which allows a 3D mesh/wireframe plot of the actual power values.
-# @param figColorList   List of matplotlib Figure objects to contain plots (two per frequency band)
+# the interpolated function both as a 2-D contour plot and a 3-D wireframe plot. It also plots several slices
+# through the peak of the interpolated function in dBs, to allow the sidelobe height to be determined.
+# @param figColorList   List of matplotlib Figure objects to contain plots (three per frequency band)
 # @param calibScanList  List of SingleDishData objects of calibrated main scans (one per scan)
 # @param expName        Title of experiment
 # @return axesColorList List of matplotlib Axes objects, one per plot
@@ -562,6 +563,8 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
         axesColorList.append(figColorList[band].add_subplot(1, 1, 1))
         # 3D axes for wireframe plot
         axesColorList.append(mplot3d.Axes3D(figColorList[band + numBands]))
+        # Normal axes for slice plot
+        axesColorList.append(figColorList[band + 2*numBands].add_subplot(1, 1, 1))
     
     # Extract total power and and first two target coordinates (assumed to be (az,el)) of all scans
     azScans_deg = []
@@ -592,31 +595,73 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
     targetMeshX, targetMeshY = np.meshgrid(targetX, targetY)
     meshCoords = np.vstack((targetMeshX.ravel(), targetMeshY.ravel()))
     
-    # Iterate through figures (two per band)
+    # Iterate through figures (three per band)
     for band in range(numBands):
         power = totalPowerScans[:, :, band]
-        # 2D contour plot
-        axis = axesColorList[2*band]
-        # Show the locations of the scan samples themselves
-        axis.plot(azScans_deg.ravel(), elScans_deg.ravel(), '.b', alpha=0.5)
         # Interpolate the power values onto a (jittered) 2-D az-el grid for a smoother contour plot
         gridder = fitting.Delaunay2DScatterFit(defaultVal = power.min(), jitter=True)
         gridder.fit(np.vstack((azScans_deg.ravel(), elScans_deg.ravel())), power.ravel())
         meshPower = gridder(meshCoords).reshape(targetY.size, targetX.size)
-        # Choose contour levels as fractions of the peak power
-        contourLevels = np.arange(0.1, 1.0, 0.1) * meshPower.max()
-        # Indicate half-power beamwidth (contourLevel = 0.5) with wider line
+        # Obtain peak of interpolated power on mesh
+        meshPowerPeakVal = meshPower.max()
+        meshPowerPeakInd = meshPower.argmax()
+        meshPowerPeakPos = [targetMeshX.flat[meshPowerPeakInd], targetMeshY.flat[meshPowerPeakInd]]
+        # Choose contour levels as fractions of the peak power (in dB, although the plot itself remains linear)
+        contourLevelsDb = np.arange(-27, 0, 3)
+        contourLevels = (10.0 ** (contourLevelsDb / 10.0)) * meshPowerPeakVal
+        # Indicate half-power beamwidth (contourLevel = -3 dB) with wider line
         lineWidths = 2*np.ones(len(contourLevels))
-        lineWidths[4] = 4
-        # Color the 0.5 and 0.1 contours red, to coincide with the scheme followed in the beam fitting plots
-#        colors = ['b'] * len(contourLevels)
-#        colors[0] = colors[4] = 'r'
+        lineWidths[-1] = 4
+        # Create horizontal, vertical and diagonal slices through interpolated power function, crossing at peak
+        # The power is plotted against angle, with a zero angle corresponding with the peak position
+        slices = []
+        slices.append([targetX - meshPowerPeakPos[0], meshPower[meshPowerPeakInd // targetY.size, :]])
+        slices.append([targetY - meshPowerPeakPos[1], meshPower[:, meshPowerPeakInd % targetY.size]])
+        # If we step through flattened mesh matrix by one more than row length, we move from upper left to lower right 
+        # Similarly, if we step by one less than row length, we move from lower left to upper right 
+        for shift in [targetY.size + 1, targetY.size - 1]:
+            diagInds = np.concatenate((np.flipud(np.arange(-shift, -meshPower.size - shift, -shift, dtype='int')), \
+                                       np.arange(0, meshPower.size + shift, shift, dtype='int'))) + meshPowerPeakInd
+            diagInds = diagInds[(diagInds >= 0) * (diagInds < meshPower.size)]
+            # Take the Euclidean distance of the (x,y) coordinates in 2-D target space to the peak as the angle,
+            # while using the sign of the x coordinate to scan properly across the peak
+            slices.append([np.sign(targetMeshX.flat[diagInds] - meshPowerPeakPos[0]) * \
+                           np.sqrt((targetMeshX.flat[diagInds] - meshPowerPeakPos[0]) ** 2 + \
+                                   (targetMeshY.flat[diagInds] - meshPowerPeakPos[1]) ** 2), \
+                           meshPower.flat[diagInds]])
+        
+        # 2D contour plot
+        axis = axesColorList[3*band]
+        # Show the locations of the scan samples themselves
+        axis.plot(azScans_deg.ravel(), elScans_deg.ravel(), '.b', alpha=0.5)
         # Plot contours of interpolated beam pattern
-        axis.contour(targetMeshX, targetMeshY, meshPower, contourLevels, linewidths=lineWidths, colors='b')
-        # 3D wireframe plot
-        axis = axesColorList[2*band + 1]
-        axis.plot_wireframe(azScans_deg, elScans_deg, power)
-    
+        cset = axis.contour(targetMeshX, targetMeshY, meshPower, contourLevels, linewidths=lineWidths, colors='b')
+        cset.levels = cset.layers = contourLevelsDb
+        pl.clabel(cset, fmt="%3.0f")
+        axis.plot([meshPowerPeakPos[0]], [meshPowerPeakPos[1]], marker='o', markersize=8, color='b')
+        axis.text(meshPowerPeakPos[0], meshPowerPeakPos[1], '0\n\n', ha='center', va='center', color='b')
+        axis.set_title(expName + ' : Beam pattern in band %d : %3.3f GHz' % (band, plotFreqs[band]) + \
+                                 '\nContours are in dB relative to peak')
+        # 3D wireframe plot (also of interpolated beam, as this allows more general scans to be used)
+        axis = axesColorList[3*band + 1]
+        axis.plot_wireframe(targetMeshX, targetMeshY, meshPower, color='b')
+        # Indicate original power samples that are interpolated
+        axis.plot3D(azScans_deg.ravel(), elScans_deg.ravel(), power.ravel(), '.r', alpha=0.5)
+        axis.set_zlabel('Power (K)')
+        axis.set_title(expName + ' : beam pattern in band %d : %3.3f GHz' % (band, plotFreqs[band]) + \
+                                 '\nBlue wireframe is interpolated from original red samples')
+        # 2D slice plot
+        axis = axesColorList[3*band + 2]
+        for sliceData in slices:
+            dbSlice = 10 * np.log10(sliceData[1]) - 10 * np.log10(meshPowerPeakVal)
+            dbSlice[np.isinf(dbSlice) + np.isnan(dbSlice)] = -1000
+            axis.plot(sliceData[0], dbSlice, 'b')
+        axis.set_ylim(-40, 0)
+        axis.set_xlabel('Target coord (deg)')
+        axis.set_ylabel('Height relative to peak (dB)')        
+        axis.set_title(expName + ' : beam pattern in band %d : %3.3f GHz' % (band, plotFreqs[band]) + \
+                                 '\nHorizontal, vertical, diagonal slices through peak')
+        
     # Axis settings and labels
     for band in range(2*numBands):
         axis = axesColorList[band]
@@ -626,7 +671,6 @@ def plot_beam_pattern_raster(figColorList, calibScanList, expName):
         axis.set_aspect('equal')
         axis.set_xlabel('Target coord 1 (deg)')
         axis.set_ylabel('Target coord 2 (deg)')
-        axis.set_title(expName + ' : Beam pattern in band %d : %3.3f GHz' % (band // 2, plotFreqs[band // 2]))
     
     return axesColorList
 
