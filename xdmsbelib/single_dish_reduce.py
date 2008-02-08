@@ -176,13 +176,17 @@ def check_data_consistency(dataDict):
 
 
 ## Loads a list of standard scans used for Tsys measurements from a chain of FITS files.
-# The power data is loaded in Stokes form, as this is more compact (real vs complex coherencies).
+# The power data is loaded in Stokes form, as this is more compact (real vs complex coherencies). The function returns
+# two lists of scans: one for receiver 'on' blocks, which is used for the standard Tsys measurements, and one for 
+# receiver 'off' blocks, which is used to monitor the Tsys_backend component.
 # @param fitsFileName      Name of initial file in FITS chain
-# @return stdScanList      List of StandardSourceScan objects, one per pointing
+# @return stdScanList    List of StandardSourceScan objects, one per pointing (main Tsys measurement - receiver "on")
+# @return stdOffScanList   List of StandardSourceScan objects, one per pointing (Tsys_backend part - receiver "off")
 # @return rawPowerDictList List of dictionaries containing SingleDishData objects representing all raw data blocks
 # pylint: disable-msg=R0914
 def load_tsys_pointing_list(fitsFileName):
     stdScanList = []
+    stdOffScanList = []
     rawPowerDictList = []
     noiseDiodeData = None
     print "               **** Loading pointing data from FITS files ****\n"
@@ -226,15 +230,6 @@ def load_tsys_pointing_list(fitsFileName):
         check_data_consistency(rawPowerDict)
         
         # Set up standard scan object (rest of members will be filled in during calibration)
-        onBlocks = [key for key in rawPowerDict.iterkeys() if key.endswith('On')]
-        coldOnBlocks = [key for key in onBlocks if key.find('_cold') >= 0]
-        # If there are no "cold" "on" blocks in set, discard the data, as both Tsys measurements and 
-        # linearity checks would be impossible (any use cases without "cold" "on" blocks?)
-        if len(coldOnBlocks) == 0:
-            print "Experiment sequence discarded, as it doesn't contain 'cold' 'on' blocks."
-            continue
-        # First 'cold' 'on' block is used for Tsys measurement
-        stdScan.mainData = rawPowerDict[coldOnBlocks[0]]
         stdScan.noiseDiodeData = noiseDiodeData
         stdScan.gainCalData = gain_cal_data.GainCalibrationData(rawPowerDict)
         # Merge bad channels due to RFI and those due to untrustworthy noise diode data
@@ -242,6 +237,20 @@ def load_tsys_pointing_list(fitsFileName):
         # Remove bad channels from band channel lists, and delete any resulting empty bands
         channelsPerBand = [list(set.difference(set(x), set(badChannels))) for x in channelsPerBand]
         stdScan.channelsPerBand = [x for x in channelsPerBand if len(x) > 0]
+        # Obtain both receiver 'on' and 'off' blocks
+        coldBlocks = [key for key in rawPowerDict.iterkeys() if key.find('_cold') >= 0]
+        coldOnBlocks = [key for key in coldBlocks if key.endswith('On')]
+        coldOffBlocks = [key for key in coldBlocks if key.endswith('Off')]
+        # If there are no 'cold' 'on' blocks in set, discard the data, as both Tsys measurements and 
+        # linearity checks would be impossible (any use cases without 'cold' 'on' blocks?)
+        if len(coldOnBlocks) == 0:
+            print "Experiment sequence discarded, as it doesn't contain 'cold' 'on' blocks."
+            continue
+        # First 'cold' 'on' block is used for Tsys measurement
+        stdScan.mainData = rawPowerDict[coldOnBlocks[0]]
+        # Copy standard scan object and add receiver 'off' data block (used to monitor Tsys_backend)
+        stdOffScan = copy.deepcopy(stdScan)
+        stdOffScan.mainData = rawPowerDict[coldOffBlocks[0]]
         
         print
         print "Pointing name:", stdScan.sourceName
@@ -252,9 +261,10 @@ def load_tsys_pointing_list(fitsFileName):
         
         # Successful standard scan finally gets added to lists here - this ensures lists are in sync
         stdScanList.append(stdScan)
+        stdOffScanList.append(stdOffScan)
         rawPowerDictList.append(rawPowerDict)
         
-    return stdScanList, rawPowerDictList
+    return stdScanList, stdOffScanList, rawPowerDictList
 
 
 ## Loads a list of standard scans across various point sources from a chain of FITS files.

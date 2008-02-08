@@ -137,7 +137,7 @@ def plot_tsys(figColor, resultList, expName):
         if not np.any(np.isnan(freqRange)):
             axis.set_xlim(freqRange)
         axis.grid()
-        axis.set_title(expName + ' : Tsys for polarisation ' + polName[polInd])
+        axis.set_title(expName + ' for polarisation ' + polName[polInd])
         axis.set_ylabel('Temperature (K)')
         if polInd == 0:
             axis.set_xticklabels([])
@@ -192,7 +192,7 @@ def plot_tsys_curve(figColorList, resultList, expName):
             vis.mu_sigma_plot(axis, xVals, tsys[:, polInd, band], linewidth=2, color='b')
             axis.plot(xVals, tsys.mu[:, polInd, band], '--b')
             axis.grid()
-            axis.set_title(expName + ' : Tsys (' + polName[polInd] + \
+            axis.set_title(expName + ' (' + polName[polInd] + \
                            ') in band %d : %3.3f GHz' % (band, plotFreqs[band]))
             axis.set_ylabel('Temperature (K)')
             if polInd == 0:
