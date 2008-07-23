@@ -175,6 +175,35 @@ def check_data_consistency(dataDict):
         raise ValueError, message
 
 
+## Restrict a scan list to frequency bands that are never empty in any single scan.
+# The channelsPerBand member of each standard scan in the list is inspected, and any empty band is noted.
+# Thereafter, each scan is restricted to the same set of bands that are never empty in any scan.
+# This ensures that each scan in the list has the same number of bands, and that the bands are comparable.
+# This does not mean that the bands themselves are identical... For example, given 9 underlying channels
+# and two band lists, [[1,2,3], [4,5,6], [7,8]] and [[1,2], [], [7,8,9]], the lists are modified to
+# [[1,2,3], [7,8]] and [[1,2], [7,8,9]], respectively.
+# Raises a ValueError exception if there is a mismatch in the original number of bands per scan.
+# @param stdScanList List of standard scans (modified by this routine)
+def prune_empty_bands(stdScanList):
+    if len(stdScanList) == 0:
+        return
+    bandNeverEmpty = [True] * len(stdScanList[0].channelsPerBand)
+    # First pass through list discovers all frequency bands that are never empty
+    for stdScan in stdScanList:
+        bandNotEmpty = [len(c) > 0 for c in stdScan.channelsPerBand]
+        # Consistency check (the same frequency bands should be used within an experimental run)
+        if len(bandNotEmpty) != len(bandNeverEmpty):
+            message = "Number of requested frequency bands (" + len(bandNotEmpty) + ") for standard scan" + \
+                      " differs from that of first scan in list (" + len(bandNeverEmpty) + ")"
+            logger.error(message)
+            raise ValueError, message
+        bandNeverEmpty = [bandNeverEmpty[n] and bandNotEmpty[n] for n in xrange(len(bandNotEmpty))]
+    # Second pass through list restricts each scan to these bands
+    for stdScan in stdScanList:
+        chanLists = stdScan.channelsPerBand
+        stdScan.channelsPerBand = [chanLists[n] for n in xrange(len(chanLists)) if bandNeverEmpty[n]]
+
+
 ## Loads a list of standard scans used for Tsys measurements from a chain of FITS files.
 # The power data is loaded in Stokes form, as this is more compact (real vs complex coherencies). The function returns
 # two lists of scans: one for receiver 'on' blocks, which is used for the standard Tsys measurements, and one for 
@@ -234,9 +263,8 @@ def load_tsys_pointing_list(fitsFileName):
         stdScan.gainCalData = gain_cal_data.GainCalibrationData(rawPowerDict)
         # Merge bad channels due to RFI and those due to untrustworthy noise diode data
         badChannels = list(set.union(set(rfiChannels), set(stdScan.gainCalData.badChannels)))
-        # Remove bad channels from band channel lists, and delete any resulting empty bands
-        channelsPerBand = [list(set.difference(set(x), set(badChannels))) for x in channelsPerBand]
-        stdScan.channelsPerBand = [x for x in channelsPerBand if len(x) > 0]
+        # Remove bad channels from band channel lists (don't delete empty bands yet...)
+        stdScan.channelsPerBand = [list(set.difference(set(x), set(badChannels))) for x in channelsPerBand]
         # Obtain both receiver 'on' and 'off' blocks
         coldBlocks = [key for key in rawPowerDict.iterkeys() if key.find('_cold') >= 0]
         coldOnBlocks = [key for key in coldBlocks if key.endswith('On')]
@@ -252,18 +280,27 @@ def load_tsys_pointing_list(fitsFileName):
         stdOffScan = copy.deepcopy(stdScan)
         stdOffScan.mainData = rawPowerDict[coldOffBlocks[0]]
         
-        print
-        print "Pointing name:", stdScan.sourceName
+        print "\nPointing name:", stdScan.sourceName
         print "Number of channels:", len(stdScan.mainData.freqs_Hz), \
               "of which", len(badChannels), "are bad (including", len(rfiChannels), "RFI-flagged and", \
-              len(stdScan.gainCalData.badChannels), "with insufficient variation between noise diode on/off blocks)"
-        print "Number of frequency bands after removing bad channels:", len(stdScan.channelsPerBand)
+              len(stdScan.gainCalData.badChannels), "with"
+        print "                    insufficient variation between noise diode on/off blocks)"
+        print "Number of non-empty frequency bands after removing bad channels:", \
+              len([x for x in stdScan.channelsPerBand if len(x) > 0])
         
         # Successful standard scan finally gets added to lists here - this ensures lists are in sync
         stdScanList.append(stdScan)
         stdOffScanList.append(stdOffScan)
         rawPowerDictList.append(rawPowerDict)
-        
+    
+    # Remove empty bands, while making sure all scans have the same number of bands afterwards
+    prune_empty_bands(stdScanList)
+    prune_empty_bands(stdOffScanList)
+    if len(stdScanList) > 0:
+        print "===========================================================================================\n"
+        print "Number of non-empty frequency bands consolidated from entire scan list:", \
+              len(stdScanList[0].channelsPerBand)
+    
     return stdScanList, stdOffScanList, rawPowerDictList
 
 
@@ -416,9 +453,8 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
         stdScan.gainCalData = gain_cal_data.GainCalibrationData(calDict)
         # Merge bad channels due to RFI and those due to untrustworthy noise diode data
         badChannels = list(set.union(set(rfiChannels), set(stdScan.gainCalData.badChannels)))
-        # Remove bad channels from band channel lists, and delete any resulting empty bands
-        channelsPerBand = [list(set.difference(set(x), set(badChannels))) for x in channelsPerBand]
-        stdScan.channelsPerBand = [x for x in channelsPerBand if len(x) > 0]
+        # Remove bad channels from band channel lists (don't delete empty bands yet)
+        stdScan.channelsPerBand = [list(set.difference(set(x), set(badChannels))) for x in channelsPerBand]
         if fitBaseline:
             stdScan.baselineDataList = [preScanData, postScanData]
         
@@ -430,12 +466,21 @@ def load_point_source_scan_list(fitsFileName, fitBaseline=True):
               % (rad_to_deg(mainScanData.azAng_rad[-1]), rad_to_deg(mainScanData.elAng_rad[-1]))
         print "Number of channels:", len(stdScan.mainData.freqs_Hz), \
               "of which", len(badChannels), "are bad (including", len(rfiChannels), "RFI-flagged and", \
-              len(stdScan.gainCalData.badChannels), "with insufficient variation between noise diode on/off blocks)"
-        print "Number of frequency bands after removing bad channels:", len(stdScan.channelsPerBand)
+              len(stdScan.gainCalData.badChannels), "with"
+        print "                    insufficient variation between noise diode on/off blocks)"
+        print "Number of non-empty frequency bands after removing bad channels:", \
+              len([x for x in stdScan.channelsPerBand if len(x) > 0])
         
         # Successful standard scan finally gets added to lists here - this ensures lists are in sync
         rawPowerDictList.append(rawPowerDict)
         stdScanList.append(stdScan)
+
+    # Remove empty bands, while making sure all scans have the same number of bands afterwards
+    prune_empty_bands(stdScanList)
+    if len(stdScanList) > 0:
+        print "===========================================================================================\n"
+        print "Number of non-empty frequency bands consolidated from entire scan list:", \
+              len(stdScanList[0].channelsPerBand)
         
     return stdScanList, rawPowerDictList
 
@@ -906,16 +951,19 @@ def stability_test(tsys, alpha=0.05):
     isStable = np.ndarray((2, numBands), dtype=bool)
     # Loop over frequency bands
     for band in range(numBands):
+        isStable[:, band] = False
         # Check X polarisation stability
         tsysX = tsys[:, 0, band]
-        fitG, pVal, k_2, chiSqThreshold, muC = stats.check_model_fit_agn(xMu = tsysX, y = tsysX.mean(),
-                                                                         func = lambda x: x, alpha=alpha)
-        isStable[0, band] = fitG and muC
+        if len(tsysX) >= 8:
+            fitG, pVal, k_2, chiSqThreshold, muC = stats.check_model_fit_agn(xMu = tsysX, y = tsysX.mean(),
+                                                                             func = lambda x: x, alpha=alpha)
+            isStable[0, band] = fitG and muC
         # Check Y polarisation stability
         tsysY = tsys[:, 1, band]
-        fitG, pVal, k_2, chiSqThreshold, muC = stats.check_model_fit_agn(xMu = tsysY, y = tsysY.mean(),
-                                                                         func = lambda x: x, alpha=alpha)
-        isStable[1, band] = fitG and muC
+        if len(tsysY) >= 8:
+            fitG, pVal, k_2, chiSqThreshold, muC = stats.check_model_fit_agn(xMu = tsysY, y = tsysY.mean(),
+                                                                             func = lambda x: x, alpha=alpha)
+            isStable[1, band] = fitG and muC
     return isStable
 
 
