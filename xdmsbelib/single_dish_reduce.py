@@ -214,6 +214,7 @@ def prune_empty_bands(stdScanList):
 # @return rawPowerDictList List of dictionaries containing SingleDishData objects representing all raw data blocks
 # pylint: disable-msg=R0914
 def load_tsys_pointing_list(fitsFileName):
+    # pylint: disable-msg=R0915
     stdScanList = []
     stdOffScanList = []
     rawPowerDictList = []
