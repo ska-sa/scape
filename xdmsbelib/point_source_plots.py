@@ -838,7 +838,7 @@ def plot_antenna_gain(figColor, resultList, expName):
         axis.set_ylim(min(yRange[0], axis.get_ylim()[0]), max(yRange[1], axis.get_ylim()[1]))
     axis.grid()
     axis.set_xticklabels([])
-    axis.set_ylabel('Area (m^2)')
+    axis.set_ylabel('Area ($m^2$)')
     axis.set_title(expName + ' : Antenna effective area')
     
     axis = axesColorList[2]
@@ -898,7 +898,7 @@ def plot_gain_curve(figColorList, resultList, expName):
             axis.set_ylim(min(yRange[0], axis.get_ylim()[0]), max(yRange[1], axis.get_ylim()[1]))
         axis.grid()
         axis.set_xticklabels([])
-        axis.set_ylabel('Area (m^2)')
+        axis.set_ylabel('Area ($m^2$)')
         axis.set_title(expName + ' : Antenna effective area in band %d : %3.3f GHz' % (band, plotFreqs[band]))
         
         axesInd = band*3 + 2
