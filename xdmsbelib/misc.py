@@ -2,9 +2,10 @@
 #
 # General utility routines used by XDM software backend.
 #
-# @author Richard Lord [rlord@ska.ac.za] & Rudolph van der Merwe [rudolph@ska.ac.za] on 2007-01-11.
 # @copyright (c) 2007 SKA/KAT. All rights reserved.
-
+# @author Ludwig Schwardt <ludwig@ska.ac.za>, Rudolph van der Merwe <rudolph@ska.ac.za>,
+#         Richard Lord <rlord@ska.ac.za>
+# @date 2007-01-11
 from __future__ import division
 import xdmsbe.xdmpyfits as pyfits
 from conradmisclib.transforms import deg_to_rad
@@ -603,7 +604,7 @@ def gen_polarized_power(numPowerSamples, numVoltSamplesPerIntPeriod, S, desiredT
     
     if (outputFormat.lower() == 'stokes'):
         sigBuf = np.dot(coherencyToStokes, sigBuf)
-
+        
     return sigBuf
 
 
@@ -630,6 +631,91 @@ def parallactic_rotation(target, mount, timeSamples):
     # Parallactic rotation formula requires ha, dec, and lat
     ha_rad, dec_rad = destVectors[:2]
     return transforms.parallactic_rotation(ha_rad, dec_rad, lat_rad)
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  find_baseline_segments
+#---------------------------------------------------------------------------------------------------------
+
+## Identify the samples in 1-D power data that are associated with the baseline.
+# This fits a specified interpolation function (typically a polynomial or spline) to a 1-D power data 
+# sequence, where this function serves as the "baseline" of the data. The baseline is defined as a 
+# low-order function that closely approximates the lowest parts of the data across the entire sequence. 
+# That is, the data sequence is assumed to be the sum of a smooth global baseline component and a compact
+# positive component, and optionally some noise component. The fitting process figures out the location
+# of the compact part, and uses the remaining data to estimate the baseline component. The interpolation 
+# function is fit to the sample indices of the power sequence. The compact part has to be wide enough to 
+# prevent latching onto a random peak. The parts of the data used to estimate the baseline (the "baseline 
+# segments") are returned, as well as residual statistics.
+# Future versions might find multiple compact components.
+#
+# @param powerData       1-D numpy array or sequence containing power ("y") data
+# @param scanCoord       1-D numpy array or sequence of same length as powerData, serving as "x"
+#                        coordinates of scan, in target coordinate system
+# @param interp          ScatterFit object that will be fit to baseline segments to resemble baseline
+# @param minWidth        Minimum width for a gap in baseline (in scan coordinate units)
+# @param maxProb         Maximum probability tolerated for observing a gap in baseline
+#                        if it is assumed the gap occurred by chance
+# @return partOfBaseline Vector of bools that indicates which samples were used to estimate baseline
+# @return residualStdev  Standard deviation of residuals of the baseline fit
+# @return durbinWatson   The Durbin-Watson statistic of the baseline fit, which is an indication of
+#                        the correlation between successive residual values. It ranges from 0 to 4.
+#                        Ideally it should be 2, which means uncorrelated residuals. A value of 0
+#                        means maximum positive correlation (indicating data that slowly drifts 
+#                        around the fitted function), while a value of 4 means maximum negative
+#                        correlation (indicating data that oscillates too fast around the fitted
+#                        function). A value of above 1 is considered "random enough".
+def find_baseline_segments(powerData, scanCoord, interp, minWidth, maxProb=0.01):
+    N = len(powerData)
+    x, y = np.arange(len(powerData)), powerData
+    # Initially the entire data sequence is considered part of the baseline
+    partOfBaseline = np.array(N * [True])
+    newPartOfBaseline = np.array(N * [True])
+    # As a safety measure, cap the number of iterations for pathological cases
+    # that oscillate instead of converging (usually converges in a few iterations)
+    # pylint: disable-msg=W0612
+    for iteration in xrange(20):
+        # Fit baseline function to parts of data designated as baseline
+        baselineX, baselineY = x[partOfBaseline], y[partOfBaseline]
+        interp.fit(baselineX, baselineY)
+        # Divide data into points above and below the fitted baseline
+        abovebelow = y > interp(x)
+        # Calculate residual stats
+        r = baselineY - interp(baselineX)
+        residualStdev = r.std()
+        dr = np.diff(r)
+        durbinWatson = np.dot(dr, dr) / np.dot(r, r)
+        # Find runs of points above and below the fitted baseline, stored as
+        # the first element in each run (and ending on the one-past-end index)
+        runBorders = np.arange(N)[np.diff(abovebelow)] + 1
+        runBorders = np.array([0] + runBorders.tolist() + [N])
+        # Calculate length of each run, and whether it is above or below the line
+        runLengths = np.diff(runBorders)
+        numRuns = len(runLengths)
+        runAbove = (np.arange(numRuns) % 2) != abovebelow[0]
+        # Sort runs above the baseline according to decreasing length
+        # sortedRunsAbove = np.flipud(np.arange(numRuns)[runAbove][runLengths[runAbove].argsort()])
+        # Find index of longest contiguous run above the baseline, as candidate gap
+        gap = np.arange(numRuns)[runAbove][runLengths[runAbove].argmax()]
+        gapStart, gapEnd = runBorders[gap], runBorders[gap+1]
+        # Check that "physical" width of gap exceeds minimum
+        if np.abs(scanCoord[gapEnd] - scanCoord[gapStart]) < minWidth:
+            break
+        # The probability of observing at least 1 length-k subsequence of the same type
+        # (heads/tails or True/False) in a sequence of total length N, assuming the
+        # heads/tails are equiprobable, is approximately P = 1 - (1 - 0.5^k) ^ (N-k)
+        segmentProb = 1.0 - (1.0 - 0.5 ** runLengths[gap]) ** (N - runLengths[gap])
+        # Check that "statistical" width of gap exceeds some minimum
+        if segmentProb > maxProb:
+            break
+        # Let baseline segments be everything except the largest gap
+        newPartOfBaseline[:] = True
+        newPartOfBaseline[gapStart:gapEnd] = False
+        # If the baseline segments did not change from the previous iteration, we are done
+        if np.equal(newPartOfBaseline, partOfBaseline).all():
+            break
+        partOfBaseline[:] = newPartOfBaseline
+    return partOfBaseline, residualStdev, durbinWatson
 
 
 #---------------------------------------------------------------------------------------------------------
