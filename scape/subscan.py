@@ -1,142 +1,145 @@
-## @file single_dish_data.py
-#
-# Class that contains single-dish power measurements and related pointing and timestamp data.
-#
-# copyright (c) 2007 SKA/KAT. All rights reserved.
-# @author Ludwig Schwardt <ludwig@ska.ac.za>, Rudolph van der Merwe <rudolph@ska.ac.za>,
-#         Robert Crida <robert.crida@ska.ac.za>
-# @date 2007-08-28
+"""Container for the data of a single subscan.
 
-# pylint: disable-msg=C0103,R0902
+A *subscan* is the *minimal amount of data taking that can be commanded at the
+script level,* in accordance with the ALMA Science Data Model. This includes
+a single linear sweep across a source, one line in an OTF map, a single
+pointing for Tsys measurement, a noise diode on-off measurement, etc. It
+contains several *integrations*, or correlator samples, and forms part of an
+overall *scan*.
 
-from acsm.coordinate import Coordinate
-import acsm.transform.transformfactory as transformfactory
-import xdmsbe.xdmsbelib.misc as misc
+This module provides the :class:`SubScan` class, which encapsulates all data
+and actions related to a single subscan across a point source, or a single
+subscan at a certain pointing. All actions requiring more than one subscan are
+grouped together in :class:`Scan` instead.
+
+"""
+
 import numpy as np
 import logging
-import copy
 
-logger = logging.getLogger("xdmsbe.xdmsbelib.single_dish_data")
+logger = logging.getLogger("scape.subscan")
 
-#----------------------------------------------------------------------------------------------------------------------
-#--- FUNCTIONS
-#----------------------------------------------------------------------------------------------------------------------
+# Order of Stokes and coherency values in data record
+stokes_order = ['I', 'Q', 'U', 'V']
+coherency_order = ['XX', 'YY', 'XY', 'YX']
 
-## Dictionary that maps polarisation type names to power data matrix indices.
-# This allows the use of symbolic names, which are clearer than numeric indices.
-# @param isStokes Boolean indicating whether Stokes IQUV (True) or cross power / coherency (False) is required
-# @return Dictionary mapping names to indices
-def power_index_dict(isStokes):
-    if isStokes:
-        return {'I': 0, 'Q': 1, 'U': 2, 'V': 3}
-    else:
-        return {'XX': 0, 'XY': 1, 'YX': 2, 'YY': 3}
-
-#----------------------------------------------------------------------------------------------------------------------
-#--- CLASS :  SingleDishData
-#----------------------------------------------------------------------------------------------------------------------
-
-## A container for single-dish data consisting of polarised power measurements combined with pointing information.
-# The main data member of this class is the 3-D powerData array, which stores power (autocorrelation) measurements as a
-# function of polarisation index, time and frequency channel/band. This array can take one of two forms:
-# - Stokes [I,Q,U,V] parameters, which are always real in the case of a single dish (I = the non-negative total power)
-# - Coherencies [XX,YY,XY,YX], where XX and YY are real and non-negative polarisation powers, and XY and YX can be
-#   complex in the general case (this makes powerData a potentially complex-valued array).
-# The class also stores pointing data (azimuth/elevation/rotator angles), timestamps, a list of frequencies, and
-# the mount coordinate system and target object, which permits the calculation of any relevant coordinates.
-class SingleDishData(object):
-    ## Initialiser/constructor
-    #
-    # @param    self              The current object
-    # @param    powerData         3-D array, of shape (4, number of time samples, number of frequency channels/bands)
-    #                             This can be interpreted as 4 data blocks of dimension time x channels/bands
-    # @param    isStokes          True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
-    # @param    timeSamples       Sequence of timestamps for each data block (in seconds since epoch)
-    # @param    azAng_rad         Azimuth angle sequence for each data block (in radians)
-    # @param    elAng_rad         Elevation angle sequence for each data block (in radians)
-    # @param    rotAng_rad        Rotator stage angle sequence for each data block (in radians)
-    # @param    freqs_Hz          List of channel/band centre frequencies (in Hz)
-    # @param    mountCoordSystem  Mount coordinate system object (see acsm.coordinatesystem module)
-    # @param    targetObject      Target object (see acsm.targets module)
-    # pylint: disable-msg=R0913
-    def __init__(self, powerData, isStokes, timeSamples, azAng_rad, elAng_rad, rotAng_rad, freqs_Hz, \
-                 mountCoordSystem=None, targetObject=None):
-        ## @var powerData
-        # Power data array, of shape (4, number of time samples, number of frequency channels/bands).
-        self.powerData = None
-        ## @var isStokes
-        # True if power data is in Stokes [I,Q,U,V] format, or False if in [XX,XY,YX,YY] format
-        self.isStokes = isStokes
-        ## @var timeSamples
-        # Sequence of timestamps for data block, in seconds since epoch
-        self.timeSamples = timeSamples
-        ## @var azAng_rad
-        # Mount azimuth angle sequence for data block, in radians
-        self.azAng_rad = azAng_rad
-        ## @var elAng_rad
-        # Mount elevation angle sequence for data block, in radians
-        self.elAng_rad = elAng_rad
-        ## @var rotAng_rad
-        # Rotator stage angle for data block, in radians
-        self.rotAng_rad = rotAng_rad
-        ## @var freqs_Hz
-        # List of channel/band centre frequencies, in Hz (keep doubles to prevent precision issues)
-        self.freqs_Hz = np.asarray(freqs_Hz, dtype='double')
-        
-        ## @var mountCoordSystem
-        # Coordinate system for mount (azimuth/evelation/rotation angles)
-        self.mountCoordSystem = mountCoordSystem
-        ## @var targetObject
-        # Coordinate system for target output (some projection, typically)
-        self.targetObject = targetObject
-        ## @var targetCoords
-        # Target coordinates, as an NxD array (N = number of samples, D = target coordinate dimension)
-        self.targetCoords = None
-        self.update_target_coords()
-        
-        ## @var originalChannels
-        # List of original channel indices associated with each frequency channel/band in powerData
-        self.originalChannels = range(len(self.freqs_Hz))
-        
-        self._powerConvertedToTemp = False
-        self._channelsMergedIntoBands = False
-        self._baselineSubtracted = False
-        
-        # Set power data to appropriate type, depending on whether it is Stokes or coherency
-        if isStokes:
-            self.powerData = np.array(np.asarray(powerData).real, dtype='double')
-        else:
-            self.powerData = np.asarray(powerData, dtype='complex128')
+class SubScan(object):
+    """Container for the data of a single subscan.
     
-    ## Use mount and target coordinate systems (if given) to calculate target coordinates for scan.
-    # @param self The current object
-    # @return self The updated object
-    def update_target_coords(self):
-        # Coordinate systems not complete - no target coordinates possible
-        if not (self.mountCoordSystem and self.targetObject):
-            self.targetCoords = None
-            return self
-        targetCoordSystem = self.targetObject.get_coordinate_system()
-        mountToTarget = transformfactory.get_transformer(self.mountCoordSystem, targetCoordSystem)
-        numTimeSamples = len(self.timeSamples)
-        self.targetCoords = np.zeros((numTimeSamples, targetCoordSystem.get_dimensions()), dtype='double')
-        
-        for k in np.arange(numTimeSamples):
-            mountCoordinate = Coordinate(self.mountCoordSystem, \
-                                         [self.azAng_rad[k], self.elAng_rad[k], self.rotAng_rad[k]])
-            targetCoordinate = mountToTarget.transform_coordinate(mountCoordinate, self.timeSamples[k])
-            self.targetCoords[k, :] = targetCoordinate.get_vector()
-        return self
+    The main data member of this class is the 3-D `data` array, which stores
+    power (autocorrelation) measurements as a function of time, frequency
+    channel/band and polarisation index. The array can take one of two forms:
     
-    ## Return power data for specified coherency.
-    # Returns coherency data directly, or calculate it if required.
-    # @param self The current object
-    # @param key  String indicating which coherency to return: 'XX', 'XY', 'YX', or 'YY'
-    # @return Matrix of power values, of shape (number of time samples, number of frequency channels/bands)
+    - Stokes parameters [I,Q,U,V], which are always real in the case of
+      a single dish (I = the non-negative total power)
+    
+    - Coherencies [XX,YY,XY,YX], where XX and YY are real and non-negative
+      polarisation powers, and XY and YX can be complex in the general case
+      (which makes `data` a complex-valued array)
+    
+    The class also stores pointing data (azimuth/elevation/rotator angles),
+    timestamps, flags, the spectral configuration and the target object, which
+    permits the calculation of any relevant coordinates.
+    
+    The number of time samples are indicated by *T* and the number of frequency
+    channels/bands are indicated by *F* below. The Attributes section lists
+    variables that do not directly correspond to parameters in the constructor.
+    
+    Parameters
+    ----------
+    data : real/complex record array, shape (*T*, *F*)
+        Stokes/coherency measurements as a record array. If the data is in
+        Stokes form, the array is real-valued and contains fields ('I', 'Q',
+        'U', 'V'). If the data is in coherency form, the array is
+        complex-valued and contains the fields ('XX', 'YY', 'XY', 'YX').
+    data_unit : {'raw', 'K', 'Jy'}
+        Physical unit of power data
+    timestamps : real array, shape (*T*,)
+        Sequence of timestamps, one per integration (in seconds since epoch)
+    pointing : real record array, shape (*T*,)
+        Pointing coordinates, with one record per integration (in radians).
+        The real-valued fields are 'az', 'el' and optionally 'rot', for
+        azimuth, elevation and rotator angle, respectively.
+    flags : bool record array, shape (*T*,)
+        Flags, with one record per integration. The field names correspond with
+        the flag names.
+    freqs : real array-like, length *F*
+        Sequence of channel/band centre frequencies (in Hz)
+    channel_width : float
+        Channel bandwidth (in Hz)
+    rfi_channels : list of ints
+        RFI-flagged channel indices
+    channels_per_band : List of lists of ints
+        List of lists of channel indices (one list per band), indicating which
+        channels belong to each band
+    dump_rate : float
+        Correlator dump rate (in Hz)
+    target : coords.Target object
+        Object describing target being scanned (name, coordinate, flux, etc.)
+    observer : coords.Observer object
+        Object describing dish (name, location, etc.)
+    label : string
+        Subscan label, used to distinguish e.g. normal and cal subscans
+    
+    Attributes
+    ----------
+    data : real/complex array, shape (*T*, *F*, 4)
+        Stokes/coherency measurements as a 3-D array.
+    is_stokes : bool
+        True if data is in Stokes parameter form, False if in coherency form
+    bandwidths : real array, shape (*F*,)
+        Array of channel/band bandwidths (in Hz)
+    target_coords : real array, shape (*T*, 2)
+        Spherical projection coordinates of subscan pointing
+    
+    """
+    def __init__(self, data, data_unit, timestamps, pointing, flags, 
+                 freqs, channel_width, rfi_channels, channels_per_band, dump_rate,
+                 target, observer, label):
+        # This check is here to ensure that `data` has a well-defined order
+        # This could still be relaxed later to handle arbitrary field orders
+        assert list(data.dtype.names) in (stokes_order, coherency_order), \
+               "Data record array does not have expected Stokes/coherency fields (order matters)"
+        base_type = data.dtype.fields.values()[0][0]
+        # Convert `data` from a record array to the underlying 3-D array
+        self.data = data.view((base_type, 4))
+        self.is_stokes = ('I' in data.dtype.names)
+        self.data_unit = data_unit
+        self.timestamps = timestamps
+        self.pointing = pointing
+        self.flags = flags
+        # Keep as doubles to prevent precision issues
+        self.freqs = np.asarray(freqs, dtype='double')
+        self.bandwidths = np.repeat(float(channel_width), len(freqs))
+        self.rfi_channels = rfi_channels
+        self.channels_per_band = channels_per_band
+        self.dump_rate = dump_rate        
+        self.target = target
+        self.observer = observer
+        self.label = label
+        self.target_coords = observer.project_to(target, pointing, timestamps)
+    
     def coherency(self, key):
-        # If data is already in coherency form, just return appropriate row
-        if not self.isStokes:
-            return self.powerData[power_index_dict(self.isStokes)[key]]
+        """Calculate specific coherency from data.
+        
+        Parameters
+        ----------
+        key : {'XX', 'XY', 'YX', 'YY'}
+            Coherency to calculate
+            
+        Returns
+        -------
+        coherency : real/complex array, shape (*T*, *F*)
+            The array is real for XX and YY, and complex for XY and YX.
+        
+        """
+        # If data is already in coherency form, just return appropriate subarray
+        if not self.is_stokes:
+            rec_view = self.data.view(zip(coherency_order, [self.data.dtype] * 4)).squeeze()
+            if key in ('XX', 'YY'):
+                return rec_view[key].real
+            else
+                return rec_view[key]
         else:
             if key == 'XX':
                 return 0.5 * (self.stokes('I') +    self.stokes('Q')).real
@@ -149,15 +152,24 @@ class SingleDishData(object):
             else:
                 raise TypeError, "Invalid coherency key: should be one of XX, XY, YX, or YY"
     
-    ## Return power data for specified Stokes parameter.
-    # Returns Stokes data directly, or calculate it if required. Stokes 'I' is the total power, for reference.
-    # @param self The current object
-    # @param key  String indicating which Stokes parameter to return: 'I', 'Q', 'U', or 'V'
-    # @return Matrix of power values, of shape (number of time samples, number of frequency channels/bands)
     def stokes(self, key):
-        # If data is already in Stokes form, just return appropriate row
-        if self.isStokes:
-            return self.powerData[power_index_dict(self.isStokes)[key]]
+        """Calculate specific Stokes parameter from data.
+        
+        Parameters
+        ----------
+        key : {'I', 'Q', 'U', 'V'}
+            Stokes parameter to calculate
+        
+        Returns
+        -------
+        stokes : real array, shape (*T*, *F*)
+            Specified Stokes parameter as a function of time and frequency
+        
+        """
+        # If data is already in Stokes form, just return appropriate subarray
+        if self.is_stokes:
+            rec_view = self.data.view(zip(stokes_order, [self.data.dtype] * 4)).squeeze()
+            return rec_view[key]
         else:
             if key == 'I':
                 return (self.coherency('XX') + self.coherency('YY')).real
@@ -170,162 +182,87 @@ class SingleDishData(object):
             else:
                 raise TypeError, "Invalid Stokes key: should be one of I, Q, U or V"
     
-    ## Convert the contained power buffer from Stokes vectors to coherency vectors.
-    # This results in a complex-valued powerData array. If the data is already in coherency form, do nothing.
-    # @param self  The current object
-    # @return self The current object
     def convert_to_coherency(self):
-        if self.isStokes:
-            lookup = power_index_dict(False)
-            keys = np.array(lookup.keys())[np.argsort(lookup.values())]
-            self.powerData = np.array([self.coherency(k) for k in keys], dtype='complex128')
-            self.isStokes = False
+        """Convert data to coherency form (idempotent).
+        
+        This results in a complex-valued data array. If the data is already
+        in coherency form, do nothing.
+        
+        """
+        if self.is_stokes:
+            self.data = np.dstack([self.coherency(k) for k in coherency_order])
+            self.is_stokes = False
         return self
     
-    ## Convert the contained power buffer from coherency vectors to Stokes vectors.
-    # This is forced to result in a real-valued powerData array. If the data is already in Stokes form, do nothing.
-    # @param self  The current object
-    # @return self The current object
     def convert_to_stokes(self):
-        if not self.isStokes:
-            lookup = power_index_dict(True)
-            keys = np.array(lookup.keys())[np.argsort(lookup.values())]
-            self.powerData = np.array([self.stokes(k) for k in keys], dtype='double')
-            self.isStokes = True
+        """Convert data to Stokes parameter form (idempotent).
+        
+        This is forced to result in a real-valued data array. If the data is
+        already in Stokes form, do nothing.
+        
+        """
+        if not self.is_stokes:
+            self.data = np.dstack([self.stokes(k) for k in stokes_order])
+            self.is_stokes = True
         return self
-    
-    ## Appends another data object to the current one.
-    # This appends the data of the second object to the main object (including power data,
-    # coordinates, timestamps, etc.). It also ensures the two objects are compatible.
-    # @param self  The current object
-    # @param other The object to append to current object
-    # @return self The updated object
-    # pylint: disable-msg=W0212
-    def append(self, other):
-        # Ensure reference targets are the same
-#        if self.targetObject.get_reference_target() != other.targetObject.get_reference_target():
-#            message = "Cannot concatenate data objects with incompatible reference targets."
-#            logger.error(message)
-#            raise ValueError, message
-        # Ensure mount coordinates (az/el/rot) are compatible
-        if self.mountCoordSystem != other.mountCoordSystem:
-            message = "Cannot concatenate data objects with incompatible mount coordinate systems."
-            logger.error(message)
-            raise ValueError, message
-        # Ensure objects are in the same state
-        if (self._powerConvertedToTemp    != other._powerConvertedToTemp) or \
-           (self._channelsMergedIntoBands != other._channelsMergedIntoBands) or \
-           (self._baselineSubtracted      != other._baselineSubtracted):
-            message = "Data objects are not in the same state, as their flags differ."
-            logger.error(message)
-            raise ValueError, message
-        # Ensure list of frequencies and original channel indices are the same
-        if np.any(self.freqs_Hz != other.freqs_Hz) or (self.originalChannels != other.originalChannels):
-            message = "Cannot concatenate data objects with different frequency channels/bands."
-            logger.error(message)
-            raise ValueError, message
-        # Convert power data to appropriate format if it differs for the two objects
-        if self.isStokes != other.isStokes:
-            # First make a copy to prevent unexpected mutation of "other" object
-            other = copy.deepcopy(other)
-            if self.isStokes:
-                other.convert_to_stokes()
-            else:
-                other.convert_to_coherency()
-        # Concatenate coordinate vectors, and power data along time axis
-        self.timeSamples = np.concatenate((self.timeSamples, other.timeSamples))
-        self.azAng_rad = np.concatenate((self.azAng_rad, other.azAng_rad))
-        self.elAng_rad = np.concatenate((self.elAng_rad, other.elAng_rad))
-        self.rotAng_rad = np.concatenate((self.rotAng_rad, other.rotAng_rad))
-        self.powerData = np.concatenate((self.powerData, other.powerData), axis=1)
-        # Convert all target coordinate data to target coord system of first object
-        self.update_target_coords()
-        return self
-    
-    ## Convert raw power measurements (W) into temperature (K) using the provided conversion function.
-    # The main argument is a callable object with the signature 'factor = func(time)', which provides
-    # an interpolated conversion factor function. The conversion factor returned by func should be an array
-    # of shape (4, numTimeSamples, numChannels), which will be multiplied with the power data in coherency
-    # form to obtain temperatures.
-    # @param self The current object
-    # @param func The power-to-temperature conversion factor as a function of time
-    # @return self The current object
+        
     def convert_power_to_temp(self, func):
-        # Already done, so don't do it again
-        if self._powerConvertedToTemp:
+        """Convert raw power into temperature (K) using conversion function.
+        
+        The main parameter is a callable object with the signature
+        ``factor = func(time)``, which provides an interpolated conversion
+        factor function. The conversion factor returned by func should be
+        an array of shape (*T*, *F*, 4), where *T* is the number of timestamps
+        and *F* is the number of channels. This will be multiplied with the
+        power data in coherency form to obtain temperatures. This should be
+        called *before* merge_channels_into_bands and
+        fit_and_subtract_baseline, as gain calibration should happen on the
+        finest available frequency scale.
+        
+        Parameters
+        ----------
+        func : function, signature ``factor = func(time)``
+            The power-to-temperature conversion factor as a function of time
+                
+        """
+        if func is None:
             return self
-        # Obtain interpolated conversion factor
-        powerToTempFactor = func(self.timeSamples)
-        originallyIsStokes = self.isStokes
+        # Only operate on raw data
+        if self.data_unit != 'raw':
+            logger.warning("Expected raw power data to convert to temperature, got data with units '" + 
+                           self.data_unit + "' instead.")
+            return self
+        originally_stokes = self.is_stokes
         # Convert coherency power to temperature, and restore Stokes/coherency status
         self.convert_to_coherency()
-        self.powerData *= powerToTempFactor
-        if originallyIsStokes:
+        self.data *= func(self.timestamps)
+        if originally_stokes:
             self.convert_to_stokes()
-        self._powerConvertedToTemp = True
+        self.data_unit = 'K'
         return self
     
-    ## Merge frequency channels into bands.
-    # The frequency channels are grouped into bands, and the power data is merged and averaged within each band.
-    # Each band contains the average power of its constituent channels. The average power is simpler to use
-    # than the total power in each band, as total power is dependent on the bandwidth of each band.
-    # The channelsPerBand mapping contains a list of lists of channel indices, indicating which channels belong
-    # to each band.
-    # @param self            The current object
-    # @param channelsPerBand A sequence of lists of channel indices, indicating which channels belong to each band
-    # @return self           The current object
-    def merge_channels_into_bands(self, channelsPerBand):
-        # Already done, so don't do it again
-        if self._channelsMergedIntoBands:
-            return self
-        if not self._powerConvertedToTemp:
-            message = "First convert raw power measurements to temperatures before merging channels into bands."
-            logger.error(message)
-            raise RuntimeError, message
+    def merge_channels_into_bands(self):
+        """Merge frequency channels into bands.
+        
+        The frequency channels are grouped into bands, and the power data is
+        merged and averaged within each band. Each band contains the average
+        power of its constituent channels. The average power is simpler to use
+        than the total power in each band, as total power is dependent on the
+        bandwidth of each band. The channels_per_band mapping contains a list
+        of lists of channel indices, indicating which channels belong to each
+        band. This method should be called *after* convert_power_to_temp and
+        *before* fit_and_subtract_baseline.
+        
+        """
         # Merge and average power data into new array (keep same type as original data, which may be complex)
-        bandPowerData = np.zeros(list(self.powerData.shape[0:2]) + [len(channelsPerBand)], dtype=self.powerData.dtype)
-        for bandIndex, bandChannels in enumerate(channelsPerBand):
-            bandPowerData[:, :, bandIndex] = self.powerData[:, :, bandChannels].mean(axis=2)
-        self.powerData = bandPowerData
+        band_data = np.zeros((self.data.shape[0], len(self.channels_per_band), 4), 
+                             dtype=self.data.dtype)
+        for band_index, band_channels in enumerate(self.channels_per_band):
+            band_data[:, band_index, :] = self.data[:, band_channels, :].mean(axis=1)
+        self.data = band_data
         # Each band centre frequency is the mean of the corresponding channel centre frequencies
-        self.freqs_Hz = np.array([self.freqs_Hz[chans].mean() for chans in channelsPerBand], dtype='double')
-        self.originalChannels = channelsPerBand
-        self._channelsMergedIntoBands = True
+        self.freqs = np.array([self.freqs[chans].mean() for chans in self.channels_per_band], dtype='double')
+        # Each band bandwidth is the sum of the corresponding channel bandwidths
+        self.bandwidths = np.array([self.bandwidths[chans].sum() for chans in self.channels_per_band],
+                                   dtype='double')
         return self
-    
-    ## Subtract a baseline function from the scan data.
-    # The main argument is a callable object with the signature 'temp = func(ang)', which provides
-    # an interpolated baseline function based on either elevation or azimuth angle.
-    # @param self         The current object
-    # @param func         The baseline function (as a function of elevation or azimuth angle)
-    # @param useElevation True if elevation angle is to be used
-    # @return self        The current object
-    def subtract_baseline(self, func, useElevation):
-        # Already done, so don't do it again
-        if self._baselineSubtracted:
-            return self
-        if not self._powerConvertedToTemp:
-            message = "Cannot subtract baseline from unconverted (raw) power measurements."
-            logger.error(message)
-            raise RuntimeError, message
-        if not self._channelsMergedIntoBands:
-            message = "Baseline should only be subtracted after frequency channels are merged into bands."
-            logger.error(message)
-            raise RuntimeError, message
-        # Obtain baseline
-        if useElevation:
-            baselineData = func(self.elAng_rad)
-        else:
-            baselineData = func(self.azAng_rad)
-        # Subtract baseline
-        self.powerData -= baselineData
-        self._baselineSubtracted = True
-        return self
-    
-    ## Parallactic rotation angle for duration of data.
-    # This calculates the parallactic rotation angle experienced by the target at each time instant of the data set.
-    # @param self         The current object
-    # @return             Array of angles in radians, one per time instant
-    def parallactic_rotation(self):
-        mountPosition = self.mountCoordSystem.get_attribute("position")
-        return misc.parallactic_rotation(self.targetObject, mountPosition, self.timeSamples)
