@@ -25,26 +25,26 @@ coherency_order = ['XX', 'YY', 'XY', 'YX']
 
 class SubScan(object):
     """Container for the data of a single subscan.
-    
+
     The main data member of this class is the 3-D `data` array, which stores
     power (autocorrelation) measurements as a function of time, frequency
     channel/band and polarisation index. The array can take one of two forms:
-    
+
     - Stokes parameters [I,Q,U,V], which are always real in the case of
       a single dish (I = the non-negative total power)
-    
+
     - Coherencies [XX,YY,XY,YX], where XX and YY are real and non-negative
       polarisation powers, and XY and YX can be complex in the general case
       (which makes `data` a complex-valued array)
-    
+
     The class also stores pointing data (azimuth/elevation/rotator angles),
     timestamps, flags, the spectral configuration and the target object, which
     permits the calculation of any relevant coordinates.
-    
+
     The number of time samples are indicated by *T* and the number of frequency
     channels/bands are indicated by *F* below. The Attributes section lists
     variables that do not directly correspond to parameters in the constructor.
-    
+
     Parameters
     ----------
     data : real/complex record array, shape (*T*, *F*)
@@ -80,7 +80,7 @@ class SubScan(object):
         Object describing dish (name, location, etc.)
     label : string
         Subscan label, used to distinguish e.g. normal and cal subscans
-    
+
     Attributes
     ----------
     data : real/complex array, shape (*T*, *F*, 4)
@@ -91,9 +91,9 @@ class SubScan(object):
         Array of channel/band bandwidths (in Hz)
     target_coords : real array, shape (*T*, 2)
         Spherical projection coordinates of subscan pointing
-    
+
     """
-    def __init__(self, data, data_unit, timestamps, pointing, flags, 
+    def __init__(self, data, data_unit, timestamps, pointing, flags,
                  freqs, channel_width, rfi_channels, channels_per_band, dump_rate,
                  target, observer, label):
         # This check is here to ensure that `data` has a well-defined order
@@ -113,32 +113,32 @@ class SubScan(object):
         self.bandwidths = np.repeat(float(channel_width), len(freqs))
         self.rfi_channels = rfi_channels
         self.channels_per_band = channels_per_band
-        self.dump_rate = dump_rate        
+        self.dump_rate = dump_rate
         self.target = target
         self.observer = observer
         self.label = label
         self.target_coords = observer.project_to(target, pointing, timestamps)
-    
+
     def coherency(self, key):
         """Calculate specific coherency from data.
-        
+
         Parameters
         ----------
         key : {'XX', 'XY', 'YX', 'YY'}
             Coherency to calculate
-            
+
         Returns
         -------
         coherency : real/complex array, shape (*T*, *F*)
             The array is real for XX and YY, and complex for XY and YX.
-        
+
         """
         # If data is already in coherency form, just return appropriate subarray
         if not self.is_stokes:
             rec_view = self.data.view(zip(coherency_order, [self.data.dtype] * 4)).squeeze()
             if key in ('XX', 'YY'):
                 return rec_view[key].real
-            else
+            else:
                 return rec_view[key]
         else:
             if key == 'XX':
@@ -151,20 +151,20 @@ class SubScan(object):
                 return 0.5 * (self.stokes('I') -    self.stokes('Q')).real
             else:
                 raise TypeError, "Invalid coherency key: should be one of XX, XY, YX, or YY"
-    
+
     def stokes(self, key):
         """Calculate specific Stokes parameter from data.
-        
+
         Parameters
         ----------
         key : {'I', 'Q', 'U', 'V'}
             Stokes parameter to calculate
-        
+
         Returns
         -------
         stokes : real array, shape (*T*, *F*)
             Specified Stokes parameter as a function of time and frequency
-        
+
         """
         # If data is already in Stokes form, just return appropriate subarray
         if self.is_stokes:
@@ -181,34 +181,34 @@ class SubScan(object):
                 return (self.coherency('XY') - self.coherency('YX')).imag
             else:
                 raise TypeError, "Invalid Stokes key: should be one of I, Q, U or V"
-    
+
     def convert_to_coherency(self):
         """Convert data to coherency form (idempotent).
-        
+
         This results in a complex-valued data array. If the data is already
         in coherency form, do nothing.
-        
+
         """
         if self.is_stokes:
             self.data = np.dstack([self.coherency(k) for k in coherency_order])
             self.is_stokes = False
         return self
-    
+
     def convert_to_stokes(self):
         """Convert data to Stokes parameter form (idempotent).
-        
+
         This is forced to result in a real-valued data array. If the data is
         already in Stokes form, do nothing.
-        
+
         """
         if not self.is_stokes:
             self.data = np.dstack([self.stokes(k) for k in stokes_order])
             self.is_stokes = True
         return self
-        
+
     def convert_power_to_temp(self, func):
         """Convert raw power into temperature (K) using conversion function.
-        
+
         The main parameter is a callable object with the signature
         ``factor = func(time)``, which provides an interpolated conversion
         factor function. The conversion factor returned by func should be
@@ -218,18 +218,18 @@ class SubScan(object):
         called *before* merge_channels_into_bands and
         fit_and_subtract_baseline, as gain calibration should happen on the
         finest available frequency scale.
-        
+
         Parameters
         ----------
         func : function, signature ``factor = func(time)``
             The power-to-temperature conversion factor as a function of time
-                
+
         """
         if func is None:
             return self
         # Only operate on raw data
         if self.data_unit != 'raw':
-            logger.warning("Expected raw power data to convert to temperature, got data with units '" + 
+            logger.warning("Expected raw power data to convert to temperature, got data with units '" +
                            self.data_unit + "' instead.")
             return self
         originally_stokes = self.is_stokes
@@ -240,10 +240,10 @@ class SubScan(object):
             self.convert_to_stokes()
         self.data_unit = 'K'
         return self
-    
+
     def merge_channels_into_bands(self):
         """Merge frequency channels into bands.
-        
+
         The frequency channels are grouped into bands, and the power data is
         merged and averaged within each band. Each band contains the average
         power of its constituent channels. The average power is simpler to use
@@ -252,10 +252,10 @@ class SubScan(object):
         of lists of channel indices, indicating which channels belong to each
         band. This method should be called *after* convert_power_to_temp and
         *before* fit_and_subtract_baseline.
-        
+
         """
         # Merge and average power data into new array (keep same type as original data, which may be complex)
-        band_data = np.zeros((self.data.shape[0], len(self.channels_per_band), 4), 
+        band_data = np.zeros((self.data.shape[0], len(self.channels_per_band), 4),
                              dtype=self.data.dtype)
         for band_index, band_channels in enumerate(self.channels_per_band):
             band_data[:, band_index, :] = self.data[:, band_channels, :].mean(axis=1)
