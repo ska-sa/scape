@@ -12,10 +12,15 @@ and actions related to a single subscan across a point source, or a single
 subscan at a certain pointing. All actions requiring more than one subscan are
 grouped together in :class:`Scan` instead.
 
+Functionality: power conversion,...
+
 """
 
-import numpy as np
 import logging
+
+import numpy as np
+
+import coord
 
 logger = logging.getLogger("scape.subscan")
 
@@ -74,10 +79,10 @@ class SubScan(object):
         channels belong to each band
     dump_rate : float
         Correlator dump rate (in Hz)
-    target : coords.Target object
-        Object describing target being scanned (name, coordinate, flux, etc.)
-    observer : coords.Observer object
-        Object describing dish (name, location, etc.)
+    target : string
+        Name of the target of this subscan
+    antenna : string
+        Name of antenna that did the subscan
     label : string
         Subscan label, used to distinguish e.g. normal and cal subscans
 
@@ -95,7 +100,7 @@ class SubScan(object):
     """
     def __init__(self, data, data_unit, timestamps, pointing, flags,
                  freqs, channel_width, rfi_channels, channels_per_band, dump_rate,
-                 target, observer, label):
+                 target, antenna, label):
         # This check is here to ensure that `data` has a well-defined order
         # This could still be relaxed later to handle arbitrary field orders
         assert list(data.dtype.names) in (stokes_order, coherency_order), \
@@ -114,10 +119,18 @@ class SubScan(object):
         self.rfi_channels = rfi_channels
         self.channels_per_band = channels_per_band
         self.dump_rate = dump_rate
-        self.target = target
-        self.observer = observer
+        # Load source and antenna from catalogues
+        try:
+            self.target = coord.source_catalogue[target]
+        except KeyError:
+            raise KeyError("Unknown source '%s'" % target)
+        try:
+            self.antenna = coord.antenna_catalogue[antenna]
+        except KeyError:
+            raise KeyError("Unknown antenna '%s'" % antenna)
         self.label = label
-        self.target_coords = observer.project_to(target, pointing, timestamps)
+        self.target_coords = coord.sphere_to_plane(self.target, self.antenna,
+                                                   pointing['az'], pointing['el'], timestamps)
 
     def coherency(self, key):
         """Calculate specific coherency from data.
