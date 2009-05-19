@@ -70,21 +70,23 @@ class SubScan(object):
         the flag names.
     freqs : real array-like, length *F*
         Sequence of channel/band centre frequencies (in Hz)
-    channel_width : float
-        Channel bandwidth (in Hz)
-    rfi_channels : list of ints
+    bandwidths : real array, shape (*F*,)
+        Array of channel/band bandwidths (in Hz)
+    *rfi_channels : list of ints
         RFI-flagged channel indices
     channels_per_band : List of lists of ints
         List of lists of channel indices (one list per band), indicating which
         channels belong to each band
-    dump_rate : float
+    *dump_rate : float
         Correlator dump rate (in Hz)
-    target : string
+    *target : string
         Name of the target of this subscan
-    antenna : string
+    *antenna : string
         Name of antenna that did the subscan
     label : string
         Subscan label, used to distinguish e.g. normal and cal subscans
+    path : string
+        Filename or HDF5 path from which subscan was loaded
 
     Attributes
     ----------
@@ -92,15 +94,13 @@ class SubScan(object):
         Stokes/coherency measurements as a 3-D array.
     is_stokes : bool
         True if data is in Stokes parameter form, False if in coherency form
-    bandwidths : real array, shape (*F*,)
-        Array of channel/band bandwidths (in Hz)
     target_coords : real array, shape (*T*, 2)
         Spherical projection coordinates of subscan pointing
 
     """
     def __init__(self, data, data_unit, timestamps, pointing, flags,
-                 freqs, channel_width, rfi_channels, channels_per_band, dump_rate,
-                 target, antenna, label):
+                 freqs, bandwidths, rfi_channels, channels_per_band, dump_rate,
+                 target, antenna, label, path):
         # This check is here to ensure that `data` has a well-defined order
         # This could still be relaxed later to handle arbitrary field orders
         assert list(data.dtype.names) in (stokes_order, coherency_order), \
@@ -115,7 +115,7 @@ class SubScan(object):
         self.flags = flags
         # Keep as doubles to prevent precision issues
         self.freqs = np.asarray(freqs, dtype='double')
-        self.bandwidths = np.repeat(float(channel_width), len(freqs))
+        self.bandwidths = bandwidths
         self.rfi_channels = rfi_channels
         self.channels_per_band = channels_per_band
         self.dump_rate = dump_rate
@@ -129,6 +129,7 @@ class SubScan(object):
         except KeyError:
             raise KeyError("Unknown antenna '%s'" % antenna)
         self.label = label
+        self.path = path
         self.target_coords = coord.sphere_to_plane(self.target, self.antenna,
                                                    pointing['az'], pointing['el'], timestamps)
 
@@ -218,7 +219,76 @@ class SubScan(object):
             self.data = np.dstack([self.stokes(k) for k in stokes_order])
             self.is_stokes = True
         return self
-
+    
+    def select(self, timekeep=None, freqkeep=None, copy=True):
+        """Select a subset of time and frequency indices in data matrix.
+        
+        This creates a new SubScan object that contains a subset of the rows
+        and columns of the data matrix. This allows time samples and/or frequency
+        channels/bands to be discarded. If `copy` is False, the data is selected
+        via a masked array, and the returned object is a view on the original
+        data. If `copy` is True, the data matrix and all associated coordinate
+        vectors are reduced to a smaller size and copied.
+        
+        Parameters
+        ----------
+        timekeep : array-like of bool or int
+            Sequence of indicators of which time samples to keep (either integer
+            indices or booleans that are True for the values to be kept). The
+            default is None, which keeps everything.
+        timekeep : array-like of bool or int
+            Sequence of indicators of which frequency channels/bands to keep
+            (either integer indices or booleans that are True for the values to
+            be kept). The default is None, which keeps everything.
+        copy : {True, False}
+            True if the new subscan is a copy, False if it is a view
+        
+        Returns
+        -------
+        sub : SubScan object
+            Subscan with reduced data matrix (either masked array or smaller copy)
+        
+        """
+        # Normalise the selection vectors to select elements via bools instead of indices
+        if timekeep is None:
+            timekeep1d = np.tile(True, len(self.timestamps))
+        else:
+            timekeep1d = np.tile(False, len(self.timestamps))
+            timekeep1d[timekeep] = True
+        if freqkeep is None:
+            freqkeep1d = np.tile(True, len(self.freqs))
+        else:
+            freqkeep1d = np.tile(False, len(self.freqs))
+            freqkeep1d[freqkeep] = True
+        # Create a shallow view of data matrix via a masked array
+        if not copy:
+            timekeep3d = np.atleast_3d(timekeep1d).transpose((1, 0, 2))
+            freqkeep3d = np.atleast_3d(freqkeep1d).transpose((0, 1, 2))
+            polkeep3d = np.atleast_3d([True, True, True, True]).transpose((0, 2, 1))
+            keep3d = np.kron(timekeep3d, np.kron(freqkeep3d, polkeep3d))
+            masked_data = np.ma.array(self.data, mask=~keep3d)
+            if self.is_stokes:
+                rec_view = masked_data.view(zip(stokes_order, [self.data.dtype] * 4)).squeeze()
+            else:
+                rec_view = masked_data.view(zip(coherency_order, [self.data.dtype] * 4)).squeeze()
+            return SubScan(rec_view, self.data_unit,
+                           self.timestamps, self.pointing, self.flags,
+                           self.freqs, self.bandwidths, self.rfi_channels, self.channels_per_band,
+                           self.dump_rate, self.target.name, self.antenna.name, self.label, self.path)
+        # Use advanced indexing to create a smaller copy of the data matrix
+        else:
+            timekeep, freqkeep = timekeep1d.nonzero()[0], freqkeep1d.nonzero()[0]
+            masked_data = self.data[np.atleast_2d(timekeep).transpose(), np.atleast_2d(freqkeep), :]
+            if self.is_stokes:
+                rec_view = masked_data.view(zip(stokes_order, [self.data.dtype] * 4)).squeeze()
+            else:
+                rec_view = masked_data.view(zip(coherency_order, [self.data.dtype] * 4)).squeeze()
+            return SubScan(rec_view, self.data_unit,
+                           self.timestamps[timekeep], self.pointing[timekeep], self.flags[timekeep],
+                           self.freqs[freqkeep], self.bandwidths[freqkeep], self.rfi_channels,
+                           [self.channels_per_band[n] for n in xrange(len(self.channels_per_band)) if n in freqkeep],
+                           self.dump_rate, self.target.name, self.antenna.name, self.label, self.path)
+    
     def convert_power_to_temp(self, func):
         """Convert raw power into temperature (K) using conversion function.
 
