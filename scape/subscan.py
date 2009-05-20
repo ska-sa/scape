@@ -10,7 +10,7 @@ overall *scan*.
 This module provides the :class:`SubScan` class, which encapsulates all data
 and actions related to a single subscan across a point source, or a single
 subscan at a certain pointing. All actions requiring more than one subscan are
-grouped together in :class:`Scan` instead.
+grouped together in :class:`scan.Scan` instead.
 
 Functionality: power conversion,...
 
@@ -31,8 +31,8 @@ coherency_order = ['XX', 'YY', 'XY', 'YX']
 class SubScan(object):
     """Container for the data of a single subscan.
 
-    The main data member of this class is the 3-D `data` array, which stores
-    power (autocorrelation) measurements as a function of time, frequency
+    The main data member of this class is the 3-D :attr:`data` array, which
+    stores power (autocorrelation) measurements as a function of time, frequency
     channel/band and polarisation index. The array can take one of two forms:
 
     - Stokes parameters [I,Q,U,V], which are always real in the case of
@@ -40,7 +40,7 @@ class SubScan(object):
 
     - Coherencies [XX,YY,XY,YX], where XX and YY are real and non-negative
       polarisation powers, and XY and YX can be complex in the general case
-      (which makes `data` a complex-valued array)
+      (which makes :attr:`data` a complex-valued array)
 
     The class also stores pointing data (azimuth/elevation/rotator angles),
     timestamps, flags, the spectral configuration and the target object, which
@@ -52,11 +52,14 @@ class SubScan(object):
 
     Parameters
     ----------
-    data : real/complex record array, shape (*T*, *F*)
-        Stokes/coherency measurements as a record array. If the data is in
-        Stokes form, the array is real-valued and contains fields ('I', 'Q',
-        'U', 'V'). If the data is in coherency form, the array is
-        complex-valued and contains the fields ('XX', 'YY', 'XY', 'YX').
+    data : real/complex array, shape (*T*, *F*, 4)
+        Stokes/coherency measurements. If the data is in Stokes form, the array
+        is real-valued and the polarisation order on the last dimension is given
+        by :data:`stokes_order`. If the data is in coherency form, the array is
+        complex-valued and the polarisation order is given by
+        :data:`coherency_order`.
+    is_stokes : bool
+        True if data is in Stokes parameter form, False if in coherency form
     data_unit : {'raw', 'K', 'Jy'}
         Physical unit of power data
     timestamps : real array, shape (*T*,)
@@ -90,25 +93,15 @@ class SubScan(object):
 
     Attributes
     ----------
-    data : real/complex array, shape (*T*, *F*, 4)
-        Stokes/coherency measurements as a 3-D array.
-    is_stokes : bool
-        True if data is in Stokes parameter form, False if in coherency form
     target_coords : real array, shape (*T*, 2)
         Spherical projection coordinates of subscan pointing
 
     """
-    def __init__(self, data, data_unit, timestamps, pointing, flags,
+    def __init__(self, data, is_stokes, data_unit, timestamps, pointing, flags,
                  freqs, bandwidths, rfi_channels, channels_per_band, dump_rate,
                  target, antenna, label, path):
-        # This check is here to ensure that `data` has a well-defined order
-        # This could still be relaxed later to handle arbitrary field orders
-        assert list(data.dtype.names) in (stokes_order, coherency_order), \
-               "Data record array does not have expected Stokes/coherency fields (order matters)"
-        base_type = data.dtype.fields.values()[0][0]
-        # Convert `data` from a record array to the underlying 3-D array
-        self.data = data.view((base_type, 4))
-        self.is_stokes = ('I' in data.dtype.names)
+        self.data = data
+        self.is_stokes = is_stokes
         self.data_unit = data_unit
         self.timestamps = timestamps
         self.pointing = pointing
@@ -132,7 +125,7 @@ class SubScan(object):
         self.path = path
         self.target_coords = coord.sphere_to_plane(self.target, self.antenna,
                                                    pointing['az'], pointing['el'], timestamps)
-
+    
     def coherency(self, key):
         """Calculate specific coherency from data.
 
@@ -145,15 +138,23 @@ class SubScan(object):
         -------
         coherency : real/complex array, shape (*T*, *F*)
             The array is real for XX and YY, and complex for XY and YX.
-
+        
+        Raises
+        ------
+        KeyError
+            If *key* is not one of the allowed coherency names
+        
         """
         # If data is already in coherency form, just return appropriate subarray
         if not self.is_stokes:
-            rec_view = self.data.view(zip(coherency_order, [self.data.dtype] * 4)).squeeze()
+            try:
+                index = coherency_order.index(key)
+            except ValueError:
+                raise KeyError("Coherency key should be one of 'XX', 'XY', 'YX', or 'YY'")
             if key in ('XX', 'YY'):
-                return rec_view[key].real
+                return self.data[:, :, index].real
             else:
-                return rec_view[key]
+                return self.data[:, :, index]
         else:
             if key == 'XX':
                 return 0.5 * (self.stokes('I') +    self.stokes('Q')).real
@@ -164,26 +165,34 @@ class SubScan(object):
             elif key == 'YY':
                 return 0.5 * (self.stokes('I') -    self.stokes('Q')).real
             else:
-                raise TypeError, "Invalid coherency key: should be one of XX, XY, YX, or YY"
+                raise KeyError("Coherency key should be one of 'XX', 'XY', 'YX', or 'YY'")
 
     def stokes(self, key):
         """Calculate specific Stokes parameter from data.
-
+        
         Parameters
         ----------
         key : {'I', 'Q', 'U', 'V'}
             Stokes parameter to calculate
-
+        
         Returns
         -------
         stokes : real array, shape (*T*, *F*)
             Specified Stokes parameter as a function of time and frequency
-
+        
+        Raises
+        ------
+        KeyError
+            If *key* is not one of the allowed Stokes parameter names
+        
         """
         # If data is already in Stokes form, just return appropriate subarray
         if self.is_stokes:
-            rec_view = self.data.view(zip(stokes_order, [self.data.dtype] * 4)).squeeze()
-            return rec_view[key]
+            try:
+                index = stokes_order.index(key)
+            except ValueError:
+                raise KeyError("Stokes key should be one of 'I', 'Q', 'U' or 'V'")
+            return self.data[:, :, index]
         else:
             if key == 'I':
                 return (self.coherency('XX') + self.coherency('YY')).real
@@ -194,7 +203,7 @@ class SubScan(object):
             elif key == 'V':
                 return (self.coherency('XY') - self.coherency('YX')).imag
             else:
-                raise TypeError, "Invalid Stokes key: should be one of I, Q, U or V"
+                raise KeyError("Stokes key should be one of 'I', 'Q', 'U' or 'V'")
 
     def convert_to_coherency(self):
         """Convert data to coherency form (idempotent).
@@ -220,73 +229,84 @@ class SubScan(object):
             self.is_stokes = True
         return self
     
-    def select(self, timekeep=None, freqkeep=None, copy=True):
+    def select(self, timekeep=None, freqkeep=None, copy=False):
         """Select a subset of time and frequency indices in data matrix.
         
-        This creates a new SubScan object that contains a subset of the rows
-        and columns of the data matrix. This allows time samples and/or frequency
-        channels/bands to be discarded. If `copy` is False, the data is selected
-        via a masked array, and the returned object is a view on the original
-        data. If `copy` is True, the data matrix and all associated coordinate
-        vectors are reduced to a smaller size and copied.
+        This creates a new :class:`SubScan` object that contains a subset of the
+        rows and columns of the data matrix. This allows time samples and/or
+        frequency channels/bands to be discarded. If *copy* is False, the data
+        is selected via a masked array or view, and the returned object is a
+        view on the original data. If *copy* is True, the data matrix and all
+        associated coordinate vectors are reduced to a smaller size and copied.
         
         Parameters
         ----------
-        timekeep : array-like of bool or int
+        timekeep : array-like of bool or int, optional
             Sequence of indicators of which time samples to keep (either integer
             indices or booleans that are True for the values to be kept). The
             default is None, which keeps everything.
-        timekeep : array-like of bool or int
+        timekeep : array-like of bool or int, optional
             Sequence of indicators of which frequency channels/bands to keep
             (either integer indices or booleans that are True for the values to
             be kept). The default is None, which keeps everything.
-        copy : {True, False}
+        copy : {False, True}, optional
             True if the new subscan is a copy, False if it is a view
         
         Returns
         -------
-        sub : SubScan object
+        sub : :class:`SubScan` object
             Subscan with reduced data matrix (either masked array or smaller copy)
         
         """
-        # Normalise the selection vectors to select elements via bools instead of indices
-        if timekeep is None:
-            timekeep1d = np.tile(True, len(self.timestamps))
-        else:
-            timekeep1d = np.tile(False, len(self.timestamps))
-            timekeep1d[timekeep] = True
-        if freqkeep is None:
-            freqkeep1d = np.tile(True, len(self.freqs))
-        else:
-            freqkeep1d = np.tile(False, len(self.freqs))
-            freqkeep1d[freqkeep] = True
-        # Create a shallow view of data matrix via a masked array
-        if not copy:
-            timekeep3d = np.atleast_3d(timekeep1d).transpose((1, 0, 2))
-            freqkeep3d = np.atleast_3d(freqkeep1d).transpose((0, 1, 2))
-            polkeep3d = np.atleast_3d([True, True, True, True]).transpose((0, 2, 1))
-            keep3d = np.kron(timekeep3d, np.kron(freqkeep3d, polkeep3d))
-            masked_data = np.ma.array(self.data, mask=~keep3d)
-            if self.is_stokes:
-                rec_view = masked_data.view(zip(stokes_order, [self.data.dtype] * 4)).squeeze()
-            else:
-                rec_view = masked_data.view(zip(coherency_order, [self.data.dtype] * 4)).squeeze()
-            return SubScan(rec_view, self.data_unit,
-                           self.timestamps, self.pointing, self.flags,
-                           self.freqs, self.bandwidths, self.rfi_channels, self.channels_per_band,
-                           self.dump_rate, self.target.name, self.antenna.name, self.label, self.path)
         # Use advanced indexing to create a smaller copy of the data matrix
-        else:
-            timekeep, freqkeep = timekeep1d.nonzero()[0], freqkeep1d.nonzero()[0]
-            masked_data = self.data[np.atleast_2d(timekeep).transpose(), np.atleast_2d(freqkeep), :]
-            if self.is_stokes:
-                rec_view = masked_data.view(zip(stokes_order, [self.data.dtype] * 4)).squeeze()
+        if copy:
+            # If data matrix is kept intact, make a straight copy - probably faster
+            if (timekeep is None) and (freqkeep is None):
+                selected_data = self.data.copy()
+                timekeep = np.arange(len(self.timestamps))
+                freqkeep = np.arange(len(self.freqs))
             else:
-                rec_view = masked_data.view(zip(coherency_order, [self.data.dtype] * 4)).squeeze()
-            return SubScan(rec_view, self.data_unit,
+                # Convert boolean selection vectors (and None) to indices
+                if timekeep is None:
+                    timekeep = np.arange(len(self.timestamps))
+                elif np.asarray(timekeep).dtype == 'bool':
+                    timekeep = np.asarray(timekeep).nonzero()[0]
+                if freqkeep is None:
+                    freqkeep = np.arange(len(self.freqs))
+                elif np.asarray(freqkeep).dtype == 'bool':
+                    freqkeep = np.asarray(freqkeep).nonzero()[0]
+                selected_data = self.data[np.atleast_2d(timekeep).transpose(), np.atleast_2d(freqkeep), :]
+            return SubScan(selected_data, self.is_stokes, self.data_unit,
                            self.timestamps[timekeep], self.pointing[timekeep], self.flags[timekeep],
                            self.freqs[freqkeep], self.bandwidths[freqkeep], self.rfi_channels,
                            [self.channels_per_band[n] for n in xrange(len(self.channels_per_band)) if n in freqkeep],
+                           self.dump_rate, self.target.name, self.antenna.name, self.label, self.path)
+        # Create a shallow view of data matrix via a masked array or view
+        else:
+            # If data matrix is kept intact, rather just return a view instead of masked array
+            if (timekeep is None) and (freqkeep is None):
+                selected_data = self.data
+            else:
+                # Normalise the selection vectors to select elements via bools instead of indices
+                if timekeep is None:
+                    timekeep1d = np.tile(True, len(self.timestamps))
+                else:
+                    timekeep1d = np.tile(False, len(self.timestamps))
+                    timekeep1d[timekeep] = True
+                if freqkeep is None:
+                    freqkeep1d = np.tile(True, len(self.freqs))
+                else:
+                    freqkeep1d = np.tile(False, len(self.freqs))
+                    freqkeep1d[freqkeep] = True
+                # Create 3-D mask matrix of same shape as data, with rows and columns masked
+                timekeep3d = np.atleast_3d(timekeep1d).transpose((1, 0, 2))
+                freqkeep3d = np.atleast_3d(freqkeep1d).transpose((0, 1, 2))
+                polkeep3d = np.atleast_3d([True, True, True, True]).transpose((0, 2, 1))
+                keep3d = np.kron(timekeep3d, np.kron(freqkeep3d, polkeep3d))
+                selected_data = np.ma.array(self.data, mask=~keep3d)
+            return SubScan(selected_data, self.is_stokes, self.data_unit,
+                           self.timestamps, self.pointing, self.flags,
+                           self.freqs, self.bandwidths, self.rfi_channels, self.channels_per_band,
                            self.dump_rate, self.target.name, self.antenna.name, self.label, self.path)
     
     def convert_power_to_temp(self, func):

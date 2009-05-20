@@ -2,6 +2,8 @@
 
 import os.path
 
+from scan import Scan
+
 # Try to import all available formats
 try:
     import xdmfits
@@ -19,17 +21,19 @@ class DataSet(object):
     
     This is the top-level container for the data of a single-dish experiment.
     Given a data filename, the initialiser determines the appropriate file format
-    to use, based on the file extension. If the filename is blank, the DataSet
-    can also be directly initialised from its constituent parts. The DataSet
-    object contains a list of Scans as well as the noise diode characteristics.
+    to use, based on the file extension. If the filename is blank, the
+    :class:`DataSet` can also be directly initialised from its constituent
+    parts, which is useful for simulations and creating the data sets in the
+    first place. The :class:`DataSet` object contains a list of scans as well as
+    the noise diode characteristics.
     
     Parameters
     ----------
     filename : string
         Name of data set file, or blank string if the other parameters are given
-    scanlist : list of Scan objects, optional
+    scanlist : list of :class:`scan.Scan` objects, optional
         Use this to initialise data set if filename is explicitly blanked
-    nd_data : gaincal.NoiseDiodeBase object, optional
+    nd_data : :class:`gaincal.NoiseDiodeBase` object, optional
         Use this to initialise data set if filename is explicitly blanked
     
     Raises
@@ -62,3 +66,15 @@ class DataSet(object):
         for s in self.scans:
             subscanlist.extend(s.subscans)
         return iter(subscanlist)
+
+    def select(self, labelkeep=None, timekeep=None, freqkeep=None, copy=False):
+        """Select subset of data set, based on subscan label, time and frequency."""
+        scanlist = []
+        for s in self.scans:
+            subscanlist = []
+            for ss in s.subscans:
+                if (labelkeep is None) or (ss.label in labelkeep):
+                    subscanlist.append(ss.select(timekeep, freqkeep, copy))
+            if subscanlist:
+                scanlist.append(Scan(subscanlist))
+        return DataSet(None, scanlist, self.noise_diode_data)

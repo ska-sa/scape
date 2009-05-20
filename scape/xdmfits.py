@@ -116,7 +116,7 @@ def load_subscan(filename):
     
     Returns
     -------
-    sub : SubScan object
+    sub : :class:`subscan.SubScan` object
         SubScan based on file
     exp_seq_num : int
         Experiment sequence number associated with subscan
@@ -148,9 +148,9 @@ def load_subscan(filename):
     feed_id = int(header['FeedID'])
     
     if is_stokes:
-        data = np.rec.fromarrays([hdu['MSDATA'].data.field(s) for s in stokes_order], names=stokes_order)
+        data = np.dstack([hdu['MSDATA'].data.field(s) for s in stokes_order])
     else:
-        data = np.rec.fromarrays([hdu['MSDATA'].data.field(s) for s in coherency_order], names=coherency_order)
+        data = np.dstack([hdu['MSDATA'].data.field(s) for s in coherency_order])
     data_unit = 'raw'
     timestamps = np.arange(num_samples) * sample_period + start_time + start_time_offset
     pointing = np.rec.fromarrays([coord.radians(hdu['MSDATA'].data.field(s)) 
@@ -175,7 +175,7 @@ def load_subscan(filename):
     label = str(data_header['ID'+str(data_header['DATAID'])])
     path = filename
     
-    return SubScan(data, data_unit, timestamps, pointing, flags,
+    return SubScan(data, is_stokes, data_unit, timestamps, pointing, flags,
                    freqs, bandwidths, rfi_channels, channels_per_band, dump_rate,
                    target, antenna, label, path), exp_seq_num, feed_id
 
@@ -185,8 +185,8 @@ def load_dataset(data_filename, nd_filename=None):
     This loads the XDM data set starting at the given filename and consisting of
     consecutively numbered FITS files. The noise diode model can also be
     overridden. Since this function is usually not called directly, but via the
-    DataSet initialiser, the noise diode file should rather be assigned to
-    xdmfits.default_nd_filename.
+    :class:`dataset.DataSet` initialiser, the noise diode file should rather be
+    assigned to :data:`default_nd_filename`.
     
     Parameters
     ----------
@@ -197,9 +197,9 @@ def load_dataset(data_filename, nd_filename=None):
     
     Returns
     -------
-    scanlist : list of Scan objects
+    scanlist : list of :class:`scan.Scan` objects
         List of scans
-    nd_data : NoiseDiodeXDM object
+    nd_data : :class:`NoiseDiodeXDM` object
         Noise diode model
     
     Raises
@@ -223,7 +223,6 @@ def load_dataset(data_filename, nd_filename=None):
     subscanlists = {}
     nd_data = None
     for fits_file in filelist:
-        logger.info("Loading file:   " + fits_file)
         sub, exp_seq_num, feed_id = load_subscan(fits_file)
         if subscanlists.has_key(exp_seq_num):
             subscanlists[exp_seq_num].append(sub)
@@ -244,11 +243,12 @@ def load_dataset(data_filename, nd_filename=None):
             if nd_filename is None:
                 try:
                     nd_data = NoiseDiodeXDM(data_filename)
-                    logger.info("Loaded noise diode characteristics")
+                    logger.info("Loaded noise diode characteristics from %s" % fits_file)
                 except gaincal.NoiseDiodeNotFound:
                     pass
-        logger.info("subscan info:   %s '%s' (%d samples, %d channels, %d pols)" % 
-                    (sub.label, sub.target.name, sub.data.shape[0], sub.data.shape[1], sub.data.shape[2]))
+        logger.info("Loaded %s: %s '%s' (%d samps, %d chans, %d pols)" % 
+                    (os.path.basename(fits_file), sub.label, sub.target.name,
+                     sub.data.shape[0], sub.data.shape[1], sub.data.shape[2]))
     # Assemble Scan objects from subscan lists
     scanlist = []
     for subscanlist in subscanlists.itervalues():
