@@ -2,6 +2,8 @@
 
 import os.path
 
+import numpy as np
+
 from scan import Scan
 
 # Try to import all available formats
@@ -67,12 +69,75 @@ class DataSet(object):
             subscanlist.extend(s.subscans)
         return iter(subscanlist)
 
-    def select(self, labelkeep=None, timekeep=None, freqkeep=None, copy=False):
-        """Select subset of data set, based on subscan label, time and frequency."""
+    def select(self, labelkeep=None, flagkeep=None, freqkeep=None, copy=False):
+        """Select subset of data set, based on subscan label, flags and frequency.
+        
+        This returns a data set with a possibly reduced number of time samples,
+        frequency channels/bands and subscans, based on the selection criteria.
+        Since each subscan potentially has a different number of time samples,
+        it is less useful to filter directly on sample index. Instead, the
+        flags are used to select a subset of time samples in each subscan. The
+        list of flags are ANDed together to determine which parts are kept. It
+        is also possible to invert flags by prepending a ~ (tilde) character.
+        
+        Based on the value of *copy*, the new data set contains either a view of
+        the original data or a copy. All criteria are optional, and with no
+        parameters the returned data set is unchanged. This can be used to make
+        a copy of the data set.
+        
+        Parameters
+        ----------
+        labelkeep : list of strings, optional
+            All subscans with labels in this list will be kept. The default is
+            None, which means all labels are kept.
+        flagkeep : list of strings, optional
+            List of flags used to select time ranges in each subscan. The time
+            samples for which all the flags in the list are true are kept.
+            Individual flags can be negated by prepending a ~ (tilde) character.
+            The default is None, which means all time samples are kept.
+        freqkeep : sequence of bools or ints, optional
+            Sequence of indicators of which frequency channels/bands to keep
+            (either integer indices or booleans that are True for the values to
+            be kept). The default is None, which keeps all channels/bands.
+        copy : {False, True}, optional
+            True if the new subscan is a copy, False if it is a view
+        
+        Returns
+        -------
+        dataset : :class:`DataSet` object
+            Data set with selection of subscans with possibly smaller data arrays.
+        
+        Raises
+        ------
+        KeyError
+            If flag in *flagkeep* is unknown
+        
+        """
         scanlist = []
         for s in self.scans:
             subscanlist = []
             for ss in s.subscans:
+                # Convert flag selection to time sample selection
+                if flagkeep is None:
+                    timekeep = None
+                else:
+                    # By default keep all time samples
+                    timekeep = np.tile(True, len(ss.timestamps))
+                    for flag in flagkeep:
+                        invert = False
+                        # Flags prepended with ~ get inverted
+                        if flag[0] == '~':
+                            invert = True
+                            flag = flag[1:]
+                        # Ignore unknown flags
+                        try:
+                            flag_data = ss.flags[flag]
+                        except KeyError:
+                            raise KeyError("Unknown flag '%s'" % flag)
+                        if invert:
+                            timekeep &= ~flag_data
+                        else:
+                            timekeep &= flag_data
                 if (labelkeep is None) or (ss.label in labelkeep):
                     subscanlist.append(ss.select(timekeep, freqkeep, copy))
             if subscanlist:

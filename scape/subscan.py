@@ -241,11 +241,11 @@ class SubScan(object):
         
         Parameters
         ----------
-        timekeep : array-like of bool or int, optional
+        timekeep : sequence of bools or ints, optional
             Sequence of indicators of which time samples to keep (either integer
             indices or booleans that are True for the values to be kept). The
             default is None, which keeps everything.
-        timekeep : array-like of bool or int, optional
+        freqkeep : sequence of bools or ints, optional
             Sequence of indicators of which frequency channels/bands to keep
             (either integer indices or booleans that are True for the values to
             be kept). The default is None, which keeps everything.
