@@ -3,6 +3,7 @@
 import copy
 
 import numpy as np
+import scipy.signal as signal
 
 #--------------------------------------------------------------------------------------------------
 #--- CLASS :  MuSigmaArray
@@ -323,3 +324,65 @@ def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
     sigma2 = (delta_ang ** 2.0).mean(axis=0) - (delta_ang.mean(axis=0) ** 2.0)
     # Scale answers back to original data range
     return MuSigmaArray(mu / scale, np.sqrt(sigma2) / scale)
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  remove_spikes
+#--------------------------------------------------------------------------------------------------
+
+def remove_spikes(data, axis=0, kernel_size=7, outlier_sigma=5.0):
+    """Remove outliers from data, replacing them with a local median value.
+    
+    The data is median-filtered along the specified axis, and any data values
+    that deviate significantly from the local median is replaced with the median.
+    
+    Parameters
+    ----------
+    data : array-like
+        N-dimensional numpy array containing data to clean
+    axis : int, optional
+        Axis along which to perform median, between 0 and N-1
+    kernel_size : int, optional
+        Kernel size for median filter, should be an odd integer
+    outlier_sigma : float, optional
+        Multiple of standard deviation that indicates an outlier
+    
+    Returns
+    -------
+    cleaned_data : array
+        N-dimensional numpy array of same shape as original data, with outliers
+        removed
+    
+    Notes
+    -----
+    This is very similar to a *Hampel filter*, also known as a *decision-based
+    filter* or three-sigma edit rule combined with a Hampel outlier identifier.
+    
+    .. todo::
+    
+       TODO: Make this more like a Hampel filter by making MAD time-variable too.
+       TODO: Change np.median() use, which now accepts an axis parameter.
+    
+    """
+    data = np.atleast_1d(data)
+    # Median filter data along the desired axis, with given kernel size
+    kernel = np.ones(data.ndim, dtype='int32')
+    kernel[axis] = kernel_size
+    filtered_data = signal.medfilt(data, kernel)
+    # The deviation is measured relative to the local median in the signal
+    abs_dev = np.abs(data - filtered_data)
+    # Rearrange axes so that desired one is first (needed because np.median() does not accept an axis param)
+    trans = np.arange(data.ndim, dtype='int32')
+    trans[axis] = 0
+    trans[0] = axis
+    tile = np.ones(data.ndim, dtype='int32')
+    tile[0] = data.shape[axis]
+    # Calculate median absolute deviation (MAD), and tile it back to original shape of data
+    med_abs_dev = np.tile(np.median(abs_dev.transpose(trans)), tile).transpose(trans)
+#    med_abs_dev = signal.medfilt(abs_dev, kernel)
+    # Assuming normally distributed deviations, this is a robust estimator of the standard deviation 
+    estm_stdev = 1.4826 * med_abs_dev
+    # Identify outliers (again based on normal assumption), and replace them with local median
+    outliers = (abs_dev > outlier_sigma * estm_stdev)
+    cleaned_data = data.copy()
+    cleaned_data[outliers] = filtered_data[outliers]
+    return cleaned_data
