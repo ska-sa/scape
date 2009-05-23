@@ -65,7 +65,7 @@ def waterfall(dataset, title='', channel_decimation=16, fig=None):
                                  sharex=axes_list[2], sharey=axes_list[0]))
     
     # Use relative time axis and obtain data limits (of smoothed data) per channel
-    blocks = [s for s in dataset.iter_subscans()]
+    blocks = dataset.subscans()
     if not blocks:
         logger.error('Data set is empty')
         return

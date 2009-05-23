@@ -62,12 +62,12 @@ class DataSet(object):
         self.scans = scanlist
         self.noise_diode_data = nd_data
     
-    def iter_subscans(self):
-        """Iterator over all subscans in data set."""
+    def subscans(self):
+        """List of all subscans in data set."""
         subscanlist = []
         for s in self.scans:
             subscanlist.extend(s.subscans)
-        return iter(subscanlist)
+        return subscanlist
 
     def select(self, labelkeep=None, flagkeep=None, freqkeep=None, copy=False):
         """Select subset of data set, based on subscan label, flags and frequency.
