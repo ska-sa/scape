@@ -71,27 +71,64 @@ class NoiseDiodeBase(object):
 #--------------------------------------------------------------------------------------------------
 
 def estimate_nd_jumps(dataset, min_samples=10, jump_significance=10.0):
+    """Estimate jumps in power when noise diode toggles state in data set.
+    
+    This examines all time instants where the noise diode flag changes state
+    (both off -> on and on -> off). The average power is calculated for the time
+    segments immediately before and after the jump, for all frequencies and
+    polarisations, using robust statistics. All jumps with a significant
+    difference between these two power levels are returned.
+    
+    Parameters
+    ----------
+    dataset : :class:`dataset.DataSet` object
+        Data set to analyse
+    min_samples : int, optional
+        Minimum number of samples in a time segment, to ensure good estimates
+    jump_significance : float, optional
+        The jump in power level should be at least this number of standard devs
+    
+    Returns
+    -------
+    nd_jump_times : list of floats
+        Timestamps at which jumps occur
+    nd_jump_power : list of :class:`stats.MuSigmaArray` objects, shape (*F*, 4)
+        Power level changes at each jump, stored as a :class:`stats.MuSigmaArray`
+        object of shape (*F*, 4), where *F* is the number of channels/bands
+    
+    """
     nd_jump_times, nd_jump_power = [], []
     for ss in dataset.subscans():
+        # Find indices where noise diode flag changes value
         jumps = (np.diff(ss.flags['nd_on']).nonzero()[0] + 1).tolist()
         if jumps:
             before_jump = [0] + jumps[:-1]
             at_jump = jumps
             after_jump = jumps[1:] + [len(ss.timestamps)]
+            # For every jump, obtain segments before and after jump with constant noise diode state
             for start, mid, end in zip(before_jump, at_jump, after_jump):
-                before_region = ss.flags['valid'][start:mid].nonzero()[0] + start
-                after_region = ss.flags['valid'][mid:end].nonzero()[0] + mid
-                if (len(before_region) > min_samples) and (len(after_region) > min_samples):
+                # Restrict these segments to indices where data is valid
+                before_segment = ss.flags['valid'][start:mid].nonzero()[0] + start
+                after_segment = ss.flags['valid'][mid:end].nonzero()[0] + mid
+                if (len(before_segment) > min_samples) and (len(after_segment) > min_samples):
+                    # Utilise both off -> on and on -> off transitions 
+                    # (mid is the first sample of the segment after the jump)
                     if ss.flags['nd_on'][mid]:
-                        off_region, on_region = before_region, after_region
+                        off_segment, on_segment = before_segment, after_segment
                     else:
-                        on_region, off_region = before_region, after_region
-                    nd_off = stats.robust_mu_sigma(ss.data[off_region, :, :])    
-                    nd_off.sigma /= np.sqrt(len(off_region))
-                    nd_on = stats.robust_mu_sigma(ss.data[on_region, :, :])
-                    nd_on.sigma /= np.sqrt(len(on_region))
+                        on_segment, off_segment = before_segment, after_segment
+                    # Calculate mean and standard deviation of the *averaged* power data in the two segments.
+                    # Use robust estimators to suppress spikes and transients in data. Since the estimated mean
+                    # of data is less variable than the data itself, we have to divide the data sigma by sqrt(N).
+                    nd_off = stats.robust_mu_sigma(ss.data[off_segment, :, :])    
+                    nd_off.sigma /= np.sqrt(len(off_segment))
+                    nd_on = stats.robust_mu_sigma(ss.data[on_segment, :, :])
+                    nd_on.sigma /= np.sqrt(len(on_segment))
+                    # Obtain mean and standard deviation of difference between averaged power in the segments
                     nd_delta = stats.MuSigmaArray(nd_on.mu - nd_off.mu,
                                                   np.sqrt(nd_on.sigma ** 2 + nd_off.sigma ** 2))
+                    # Only keep jumps with significant change in power
+                    # This discards segments where noise diode did not fire as expected
                     if np.mean(np.abs(nd_delta.mu / nd_delta.sigma), axis=0).max() > jump_significance:
                         nd_jump_times.append(ss.timestamps[mid])
                         nd_jump_power.append(nd_delta)
@@ -101,26 +138,28 @@ def calibrate(dataset, gain):
     pass
 
 # plots
-# d = dataset.DataSet('/Users/schwardt/xdmsbe/bin/xdm/2009-01-12-13h48/cal_src_scan_2009-01-12-13h48_0000.fits')
-# nd_transition, nd_delta_power = estimate_gain(d)
-# delta = nd_delta_power[0]
-# xx = 0.5*(delta[:,0].mu + delta[:,1].mu)
-# yy = 0.5*(delta[:,0].mu - delta[:,1].mu)
-# ss = d.scans[0].subscans[0]
-# tnd = d.noise_diode_data.temperature(ss.freqs)
-# gx2 = xx / tnd[0, :]
-# gy2 = yy / tnd[1, :]
-# phi = -np.arctan2(delta[:,3].mu, delta[:,2].mu)
-# non_rfi = list(set(range(1024)) - set(ss.rfi_channels))
-# 
-# clf()
-# subplot(311); cla(); plot(ss.freqs / 1e9, 10*np.log10(gx2)); plot(ss.freqs[non_rfi] / 1e9, 10*np.log10(gx2[non_rfi]), 'ob')
-# subplot(312); cla(); plot(ss.freqs / 1e9, 10*np.log10(gy2)); plot(ss.freqs[non_rfi] / 1e9, 10*np.log10(gy2[non_rfi]), 'ob')
-# angles = coord.degrees(phi)
-# angles = angles % 360.0
-# subplot(313); cla(); plot(ss.freqs / 1e9, angles); plot(ss.freqs[non_rfi] / 1e9, angles[non_rfi], 'ob')
-# subplot(311); xticks([]); ylabel('dB'); title('XX power gain'); axis([1.4, 1.6, 10, 20])
-# subplot(312); xticks([]); ylabel('dB'); title('YY power gain'); axis([1.4, 1.6, 10, 20])
-# subplot(313); xlabel('Frequency (GHz)'); ylabel('degrees'); title('Phase difference of Y relative to X'); axis([1.4, 1.6, 150, 240])
-# savefig('xdm_2009-01-12-13h48_gaincal.pdf')
-# 
+# import glob
+# pl.figure()
+# pl.clf()
+# for f in glob.glob('xdm/*/*_0000.fits'):
+#     d = dataset.DataSet(f)
+#     nd_transition, nd_delta_power = gaincal.estimate_nd_jumps(d)
+#     delta = nd_delta_power[0]
+#     xx = 0.5*(delta[:,0].mu + delta[:,1].mu)
+#     yy = 0.5*(delta[:,0].mu - delta[:,1].mu)
+#     ss = d.scans[0].subscans[0]
+#     tnd = d.noise_diode_data.temperature(ss.freqs)
+#     gx2 = xx / tnd[0, :]
+#     gy2 = yy / tnd[1, :]
+#     phi = -np.arctan2(delta[:,3].mu, delta[:,2].mu)
+#     non_rfi = list(set(range(1024)) - set(ss.rfi_channels))
+#     pl.subplot(311); pl.plot(ss.freqs / 1e9, 10*np.log10(gx2), 'b'); pl.plot(ss.freqs[non_rfi] / 1e9, 10*np.log10(gx2[non_rfi]), 'ob')
+#     pl.subplot(312); pl.plot(ss.freqs / 1e9, 10*np.log10(gy2), 'b'); pl.plot(ss.freqs[non_rfi] / 1e9, 10*np.log10(gy2[non_rfi]), 'ob')
+#     angles = coord.degrees(phi)
+#     angles = angles % 360.0
+#     pl.subplot(313); pl.plot(ss.freqs / 1e9, angles, 'b'); pl.plot(ss.freqs[non_rfi] / 1e9, angles[non_rfi], 'ob')
+#     pl.subplot(311); pl.xticks([]); pl.ylabel('dB'); pl.title('XX power gain'); pl.axis([1.4, 1.6, 10, 20])
+#     pl.subplot(312); pl.xticks([]); pl.ylabel('dB'); pl.title('YY power gain'); pl.axis([1.4, 1.6, 10, 20])
+#     pl.subplot(313); pl.xlabel('Frequency (GHz)'); pl.ylabel('degrees'); pl.title('Phase difference of Y relative to X'); pl.axis([1.4, 1.6, 150, 240])
+#     raw_input()
+#     
