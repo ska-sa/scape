@@ -101,26 +101,26 @@ def calibrate(dataset, gain):
     pass
 
 # plots
-d = dataset.DataSet('/Users/schwardt/xdmsbe/bin/xdm/2009-01-12-13h48/cal_src_scan_2009-01-12-13h48_0000.fits')
-nd_transition, nd_delta_power = estimate_gain(d)
-delta = nd_delta_power[0]
-xx = 0.5*(delta[:,0].mu + delta[:,1].mu)
-yy = 0.5*(delta[:,0].mu - delta[:,1].mu)
-ss = d.scans[0].subscans[0]
-tnd = d.noise_diode_data.temperature(ss.freqs)
-gx2 = xx / tnd[0, :]
-gy2 = yy / tnd[1, :]
-phi = -np.arctan2(delta[:,3].mu, delta[:,2].mu)
-non_rfi = list(set(range(1024)) - set(ss.rfi_channels))
-
-clf()
-subplot(311); cla(); plot(ss.freqs / 1e9, 10*np.log10(gx2)); plot(ss.freqs[non_rfi] / 1e9, 10*np.log10(gx2[non_rfi]), 'ob')
-subplot(312); cla(); plot(ss.freqs / 1e9, 10*np.log10(gy2)); plot(ss.freqs[non_rfi] / 1e9, 10*np.log10(gy2[non_rfi]), 'ob')
-angles = coord.degrees(phi)
-angles = angles % 360.0
-subplot(313); cla(); plot(ss.freqs / 1e9, angles); plot(ss.freqs[non_rfi] / 1e9, angles[non_rfi], 'ob')
-subplot(311); xticks([]); ylabel('dB'); title('XX power gain'); axis([1.4, 1.6, 10, 20])
-subplot(312); xticks([]); ylabel('dB'); title('YY power gain'); axis([1.4, 1.6, 10, 20])
-subplot(313); xlabel('Frequency (GHz)'); ylabel('degrees'); title('Phase difference of Y relative to X'); axis([1.4, 1.6, 150, 240])
-savefig('xdm_2009-01-12-13h48_gaincal.pdf')
-
+# d = dataset.DataSet('/Users/schwardt/xdmsbe/bin/xdm/2009-01-12-13h48/cal_src_scan_2009-01-12-13h48_0000.fits')
+# nd_transition, nd_delta_power = estimate_gain(d)
+# delta = nd_delta_power[0]
+# xx = 0.5*(delta[:,0].mu + delta[:,1].mu)
+# yy = 0.5*(delta[:,0].mu - delta[:,1].mu)
+# ss = d.scans[0].subscans[0]
+# tnd = d.noise_diode_data.temperature(ss.freqs)
+# gx2 = xx / tnd[0, :]
+# gy2 = yy / tnd[1, :]
+# phi = -np.arctan2(delta[:,3].mu, delta[:,2].mu)
+# non_rfi = list(set(range(1024)) - set(ss.rfi_channels))
+# 
+# clf()
+# subplot(311); cla(); plot(ss.freqs / 1e9, 10*np.log10(gx2)); plot(ss.freqs[non_rfi] / 1e9, 10*np.log10(gx2[non_rfi]), 'ob')
+# subplot(312); cla(); plot(ss.freqs / 1e9, 10*np.log10(gy2)); plot(ss.freqs[non_rfi] / 1e9, 10*np.log10(gy2[non_rfi]), 'ob')
+# angles = coord.degrees(phi)
+# angles = angles % 360.0
+# subplot(313); cla(); plot(ss.freqs / 1e9, angles); plot(ss.freqs[non_rfi] / 1e9, angles[non_rfi], 'ob')
+# subplot(311); xticks([]); ylabel('dB'); title('XX power gain'); axis([1.4, 1.6, 10, 20])
+# subplot(312); xticks([]); ylabel('dB'); title('YY power gain'); axis([1.4, 1.6, 10, 20])
+# subplot(313); xlabel('Frequency (GHz)'); ylabel('degrees'); title('Phase difference of Y relative to X'); axis([1.4, 1.6, 150, 240])
+# savefig('xdm_2009-01-12-13h48_gaincal.pdf')
+# 

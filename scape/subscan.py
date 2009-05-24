@@ -112,11 +112,8 @@ class SubScan(object):
         self.rfi_channels = rfi_channels
         self.channels_per_band = channels_per_band
         self.dump_rate = dump_rate
-        # Load source and antenna from catalogues
-        try:
-            self.target = coord.source_catalogue[target]
-        except KeyError:
-            raise KeyError("Unknown source '%s'" % target)
+        # Interpret source and antenna name strings and return relevant objects
+        self.target = coord.construct_source(target)
         try:
             self.antenna = coord.antenna_catalogue[antenna]
         except KeyError:

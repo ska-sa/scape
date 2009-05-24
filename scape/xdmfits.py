@@ -102,10 +102,17 @@ def _acsm_target_name(target):
     """Extract target name from ACSM target object."""
     ref_target = target.get_reference_target()
     if ref_target._name:
-        return ref_target._name
+        name = ref_target._name
     else:
-        return ref_target.get_description()
-
+        name = ref_target.get_description()
+    match = re.match(r'EquatorialRaDec\(J2000\)\(\((\d+), (\d+), (\d+)\), \((-?\d+), (\d+), (\d+)\)\)', name)
+    if match:
+        return "Ra: %s:%s:%s Dec: %s:%s:%s" % match.groups()
+    match = re.match(r'Horizontal\(\((-?\d+), (\d+), (\d+)\), \((-?\d+), (\d+), (\d+)\)\)', name)
+    if match:
+        return "Az: %s:%s:%s El: %s:%s:%s" % match.groups()
+    return name
+    
 def load_subscan(filename):
     """Load subscan from single XDM FITS file.
     
