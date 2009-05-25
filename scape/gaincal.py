@@ -155,7 +155,7 @@ def calibrate(dataset, gain):
 #     non_rfi = list(set(range(1024)) - set(ss.rfi_channels))
 #     pl.subplot(311); pl.plot(ss.freqs / 1e9, 10*np.log10(gx2), 'b'); pl.plot(ss.freqs[non_rfi] / 1e9, 10*np.log10(gx2[non_rfi]), 'ob')
 #     pl.subplot(312); pl.plot(ss.freqs / 1e9, 10*np.log10(gy2), 'b'); pl.plot(ss.freqs[non_rfi] / 1e9, 10*np.log10(gy2[non_rfi]), 'ob')
-#     angles = coord.degrees(phi)
+#     angles = coord.rad2deg(phi)
 #     angles = angles % 360.0
 #     pl.subplot(313); pl.plot(ss.freqs / 1e9, angles, 'b'); pl.plot(ss.freqs[non_rfi] / 1e9, angles[non_rfi], 'ob')
 #     pl.subplot(311); pl.xticks([]); pl.ylabel('dB'); pl.title('XX power gain'); pl.axis([1.4, 1.6, 10, 20])

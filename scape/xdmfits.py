@@ -161,7 +161,7 @@ def load_subscan(filename):
                           2.0 * hdu['MSDATA'].data.field('XY').real, 2.0 * hdu['MSDATA'].data.field('XY').imag])
     data_unit = 'raw'
     timestamps = np.arange(num_samples) * sample_period + start_time + start_time_offset
-    pointing = np.rec.fromarrays([coord.radians(hdu['MSDATA'].data.field(s)) 
+    pointing = np.rec.fromarrays([coord.deg2rad(hdu['MSDATA'].data.field(s)) 
                                   for s in ['AzAng', 'ElAng', 'RotAng']],
                                  names=['az', 'el', 'rot'])
     flags = np.rec.fromarrays([np.array(hdu['MSDATA'].data.field(s), 'bool')
