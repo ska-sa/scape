@@ -24,10 +24,6 @@ import coord
 
 logger = logging.getLogger("scape.subscan")
 
-# Order of Stokes and coherency values in data record
-stokes_order = ['I', 'Q', 'U', 'V']
-coherency_order = ['XX', 'YY', 'XY', 'YX']
-
 class SubScan(object):
     """Container for the data of a single subscan.
 
@@ -35,12 +31,14 @@ class SubScan(object):
     stores power (autocorrelation) measurements as a function of time, frequency
     channel/band and polarisation index. The array can take one of two forms:
 
-    - Stokes parameters [I,Q,U,V], which are always real in the case of
-      a single dish (I = the non-negative total power)
+    - Stokes parameters (I, Q, U, V), which are always real in the case of
+      a single dish. I is additionally non-negative, being the total power.
 
-    - Coherencies [XX,YY,XY,YX], where XX and YY are real and non-negative
-      polarisation powers, and XY and YX can be complex in the general case
-      (which makes :attr:`data` a complex-valued array)
+    - Coherencies (XX, YY, 2*Re{XY}, 2*Im{XY}), where XX and YY are real and
+      non-negative polarisation powers. For a single dish, the YX cross-coherency
+      is the complex conjugate of XY, and therefore does not need to be stored.
+      Additionally, since U = 2 * Re{XY} and V = 2 * Im{XY}, conversion to
+      Stokes parameters is very simple and efficient.
 
     The class also stores pointing data (azimuth/elevation/rotator angles),
     timestamps, flags, the spectral configuration and the target object, which
@@ -52,12 +50,10 @@ class SubScan(object):
 
     Parameters
     ----------
-    data : real/complex array, shape (*T*, *F*, 4)
-        Stokes/coherency measurements. If the data is in Stokes form, the array
-        is real-valued and the polarisation order on the last dimension is given
-        by :data:`stokes_order`. If the data is in coherency form, the array is
-        complex-valued and the polarisation order is given by
-        :data:`coherency_order`.
+    data : real array, shape (*T*, *F*, 4)
+        Stokes/coherency measurements. If the data is in Stokes form, the
+        polarisation order on the last dimension is (I, Q, U, V). If the data
+        is in coherency form, the order is (XX, YY, 2*Re{XY}, 2*Im{XY}).
     is_stokes : bool
         True if data is in Stokes parameter form, False if in coherency form
     data_unit : {'raw', 'K', 'Jy'}
@@ -142,27 +138,22 @@ class SubScan(object):
             If *key* is not one of the allowed coherency names
         
         """
-        # If data is already in coherency form, just return appropriate subarray
-        if not self.is_stokes:
-            try:
-                index = coherency_order.index(key)
-            except ValueError:
-                raise KeyError("Coherency key should be one of 'XX', 'XY', 'YX', or 'YY'")
-            if key in ('XX', 'YY'):
-                return self.data[:, :, index].real
+        if key == 'XX':
+            if not self.is_stokes:
+                return self.data[:, :, 0]
             else:
-                return self.data[:, :, index]
+                return 0.5 * (self.data[:, :, 0] + self.data[:, :, 1])
+        elif key == 'YY':
+            if not self.is_stokes:
+                return self.data[:, :, 1]
+            else:
+                return 0.5 * (self.data[:, :, 0] - self.data[:, :, 1])
+        elif key == 'XY':
+            return 0.5 * (self.data[:, :, 2] + 1.0j * self.data[:, :, 3])
+        elif key == 'YX':
+            return 0.5 * (self.data[:, :, 2] - 1.0j * self.data[:, :, 3])
         else:
-            if key == 'XX':
-                return 0.5 * (self.stokes('I') +    self.stokes('Q')).real
-            elif key == 'XY':
-                return 0.5 * (self.stokes('U') + 1j*self.stokes('V'))
-            elif key == 'YX':
-                return 0.5 * (self.stokes('U') - 1j*self.stokes('V'))
-            elif key == 'YY':
-                return 0.5 * (self.stokes('I') -    self.stokes('Q')).real
-            else:
-                raise KeyError("Coherency key should be one of 'XX', 'XY', 'YX', or 'YY'")
+            raise KeyError("Coherency key should be one of 'XX', 'XY', 'YX', or 'YY'")
 
     def stokes(self, key):
         """Calculate specific Stokes parameter from data.
@@ -185,6 +176,7 @@ class SubScan(object):
         """
         # If data is already in Stokes form, just return appropriate subarray
         if self.is_stokes:
+            stokes_order = ['I', 'Q', 'U', 'V']
             try:
                 index = stokes_order.index(key)
             except ValueError:
@@ -192,37 +184,39 @@ class SubScan(object):
             return self.data[:, :, index]
         else:
             if key == 'I':
-                return (self.coherency('XX') + self.coherency('YY')).real
+                return self.data[:, :, 0] + self.data[:, :, 1]
             elif key == 'Q':
-                return (self.coherency('XX') - self.coherency('YY')).real
+                return self.data[:, :, 0] - self.data[:, :, 1]
             elif key == 'U':
-                return (self.coherency('XY') + self.coherency('YX')).real
+                return self.data[:, :, 2]
             elif key == 'V':
-                return (self.coherency('XY') - self.coherency('YX')).imag
+                return self.data[:, :, 3]
             else:
                 raise KeyError("Stokes key should be one of 'I', 'Q', 'U' or 'V'")
 
     def convert_to_coherency(self):
         """Convert data to coherency form (idempotent).
 
-        This results in a complex-valued data array. If the data is already
-        in coherency form, do nothing.
+        If the data is already in coherency form, do nothing.
 
         """
         if self.is_stokes:
-            self.data = np.dstack([self.coherency(k) for k in coherency_order])
+            data_i, data_q = self.data[:, :, 0].copy(), self.data[:, :, 1].copy()
+            self.data[:, :, 0] = 0.5 * (data_i + data_q)
+            self.data[:, :, 1] = 0.5 * (data_i - data_q)
             self.is_stokes = False
         return self
 
     def convert_to_stokes(self):
         """Convert data to Stokes parameter form (idempotent).
 
-        This is forced to result in a real-valued data array. If the data is
-        already in Stokes form, do nothing.
+        If the data is already in Stokes form, do nothing.
 
         """
         if not self.is_stokes:
-            self.data = np.dstack([self.stokes(k) for k in stokes_order])
+            data_xx, data_yy = self.data[:, :, 0].copy(), self.data[:, :, 1].copy()
+            self.data[:, :, 0] = data_xx + data_yy
+            self.data[:, :, 1] = data_xx - data_yy
             self.is_stokes = True
         return self
     

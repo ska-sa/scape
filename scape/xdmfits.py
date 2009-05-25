@@ -20,7 +20,7 @@ import numpy as np
 import acsm
 
 import coord
-from subscan import SubScan, stokes_order, coherency_order
+from subscan import SubScan
 from scan import Scan
 import gaincal
 
@@ -155,9 +155,10 @@ def load_subscan(filename):
     feed_id = int(header['FeedID'])
     
     if is_stokes:
-        data = np.dstack([hdu['MSDATA'].data.field(s) for s in stokes_order])
+        data = np.dstack([hdu['MSDATA'].data.field(s) for s in ['I', 'Q', 'U', 'V']])
     else:
-        data = np.dstack([hdu['MSDATA'].data.field(s) for s in coherency_order])
+        data = np.dstack([hdu['MSDATA'].data.field('XX'), hdu['MSDATA'].data.field('YY'),
+                          2.0 * hdu['MSDATA'].data.field('XY').real, 2.0 * hdu['MSDATA'].data.field('XY').imag])
     data_unit = 'raw'
     timestamps = np.arange(num_samples) * sample_period + start_time + start_time_offset
     pointing = np.rec.fromarrays([coord.radians(hdu['MSDATA'].data.field(s)) 
