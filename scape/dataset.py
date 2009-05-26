@@ -51,6 +51,8 @@ class DataSet(object):
         If file extension is known, but appropriate module would not import
     ValueError
         If file extension is unknown
+    KeyError
+        If the antenna name is unknown
     
     """
     def __init__(self, filename, scanlist=None, data_unit=None, spectral=None, antenna=None, nd_data=None):
@@ -100,7 +102,7 @@ class DataSet(object):
     
     def rfi_channels():
         """Class method which creates rfi_channels property."""
-        doc = 'List of RFI-corrupted channels.'
+        doc = 'List of RFI-flagged channels.'
         def fget(self):
             return self.spectral.rfi_channels
         def fset(self, value):
@@ -220,6 +222,14 @@ class DataSet(object):
                 scanlist.append(scan.Scan(subscanlist, s.target.name))
         return DataSet(None, scanlist, self.data_unit, self.spectral.select(freqkeep),
                        self.antenna.name, self.noise_diode_data)
+    
+    def remove_rfi_channels(self):
+        """Remove RFI-flagged channels from data set, returning a copy."""
+        non_rfi = list(set(range(len(self.freqs))) - set(self.rfi_channels))
+        d = self.select(freqkeep=non_rfi, copy=True)
+        DataSet.__init__(self, '', d.scans, d.data_unit, d.spectral, d.antenna.name, d.noise_diode_data)
+        del d
+        return self
     
     def convert_power_to_temp(self, func):
         """Convert raw power into temperature (K) using conversion function.

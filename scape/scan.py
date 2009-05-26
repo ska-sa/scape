@@ -65,9 +65,11 @@ class SpectralConfig(object):
             return self
         elif np.asarray(freqkeep).dtype == 'bool':
             freqkeep = np.asarray(freqkeep).nonzero()[0]
-        return SpectralConfig(self.freqs[freqkeep], self.bandwidths[freqkeep], self.rfi_channels,
-                              [self.channels_per_band[n] for n in xrange(len(self.channels_per_band))
-                               if n in freqkeep], self.dump_rate)
+        return SpectralConfig(self.freqs[freqkeep], self.bandwidths[freqkeep],
+                              [freqkeep.index(n) for n in (set(self.rfi_channels) & set(freqkeep))],
+                              [[freqkeep.index(n) for n in (set(chanlist) & set(freqkeep))] 
+                               for chanlist in self.channels_per_band],
+                              self.dump_rate)
 
 class Scan(object):
     """Container for the data of a single scan.
