@@ -45,6 +45,22 @@ class DataSet(object):
     nd_data : :class:`gaincal.NoiseDiodeBase` object, optional
         Noise diode model
     
+    Attributes
+    ----------
+    freqs : real array, shape (*F*,)
+        Centre frequency of each channel/band, in Hz (same as in *spectral*)
+    bandwidths : real array-like, shape (*F*,)
+        Bandwidth of each channel/band, in Hz (same as in *spectral*)
+    rfi_channels : list of ints
+        RFI-flagged channel indices (same as in *spectral*)
+    channels_per_band : List of lists of ints
+        List of lists of channel indices (one list per band), indicating which
+        channels belong to each band (same as in *spectral*)
+    dump_rate : float
+        Correlator dump rate, in Hz (same as in *spectral*)
+    subscans : list of :class:`subscan.SubScan` objects
+        Flattened list of all subscans in data set
+    
     Raises
     ------
     ImportError
@@ -76,13 +92,17 @@ class DataSet(object):
         except KeyError:
             raise KeyError("Unknown antenna '%s'" % antenna)
         self.noise_diode_data = nd_data
+        # Create subscan list
+        self.subscans = []
+        for s in self.scans:
+            self.subscans.extend(s.subscans)
     
     # Provide properties to access the attributes of the spectral configuration directly
     # This uses the same trick as in stats.MuSigmaArray to create the properties, which
     # leads to less class namespace clutter, but more pylint uneasiness (shame).
     def freqs():
         """Class method which creates freqs property."""
-        doc = 'Frequency of each channel/band, in Hz.'
+        doc = 'Centre frequency of each channel/band, in Hz.'
         def fget(self):
             return self.spectral.freqs
         def fset(self, value):
@@ -130,21 +150,14 @@ class DataSet(object):
         return locals()
     dump_rate = property(**dump_rate())
     
-    def subscans(self):
-        """List of all subscans in data set."""
-        subscanlist = []
-        for s in self.scans:
-            subscanlist.extend(s.subscans)
-        return subscanlist
-    
     def convert_to_coherency(self):
         """Convert power data to coherency format."""
-        for ss in self.subscans():
+        for ss in self.subscans:
             ss.convert_to_coherency()
     
     def convert_to_stokes(self):
         """Convert power data to Stokes parameter format."""
-        for ss in self.subscans():
+        for ss in self.subscans:
             ss.convert_to_stokes()
     
     def select(self, labelkeep=None, flagkeep=None, freqkeep=None, copy=False):
@@ -227,8 +240,7 @@ class DataSet(object):
         """Remove RFI-flagged channels from data set, returning a copy."""
         non_rfi = list(set(range(len(self.freqs))) - set(self.rfi_channels))
         d = self.select(freqkeep=non_rfi, copy=True)
-        DataSet.__init__(self, '', d.scans, d.data_unit, d.spectral, d.antenna.name, d.noise_diode_data)
-        del d
+        DataSet.__init__(self, None, d.scans, d.data_unit, d.spectral, d.antenna.name, d.noise_diode_data)
         return self
     
     def convert_power_to_temp(self, func):

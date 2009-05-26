@@ -98,7 +98,7 @@ def estimate_nd_jumps(dataset, min_samples=10, jump_significance=10.0):
     
     """
     nd_jump_times, nd_jump_power = [], []
-    for ss in dataset.subscans():
+    for ss in dataset.subscans:
         # Find indices where noise diode flag changes value
         jumps = (np.diff(ss.flags['nd_on']).nonzero()[0] + 1).tolist()
         if jumps:
@@ -197,7 +197,7 @@ def calibrate(dataset, max_degree=1, randomise=False, **kwargs):
     gains[:, :2, :] /= temp_nd[:, :, np.newaxis]
     interp = fitting.Independent1DFit(fitting.Polynomial1DFit(max_degree=max_degree), axis=2)
     interp.fit(np.array(nd_jump_times), gains)
-    for ss in dataset.subscans():
+    for ss in dataset.subscans:
         smooth_gains = interp(ss.timestamps)
     
 # plots
