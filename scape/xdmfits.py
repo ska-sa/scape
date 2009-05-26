@@ -21,7 +21,7 @@ import acsm
 
 import coord
 from subscan import SubScan
-from scan import Scan
+from scan import Scan, SpectralConfig
 import gaincal
 
 logger = logging.getLogger("scape.xdmfits")
@@ -125,6 +125,14 @@ def load_subscan(filename):
     -------
     sub : :class:`subscan.SubScan` object
         SubScan based on file
+    data_unit : {'raw', 'K', 'Jy'}
+        Physical unit of power data
+    spectral : :class:`scan.SpectralConfig` object
+        Spectral configuration
+    target : string
+        Name of the target of this subscan
+    antenna : string
+        Name of antenna that did the subscan
     exp_seq_num : int
         Experiment sequence number associated with subscan
     feed_id : int
@@ -159,7 +167,6 @@ def load_subscan(filename):
     else:
         data = np.dstack([hdu['MSDATA'].data.field('XX'), hdu['MSDATA'].data.field('YY'),
                           2.0 * hdu['MSDATA'].data.field('XY').real, 2.0 * hdu['MSDATA'].data.field('XY').imag])
-    data_unit = 'raw'
     timestamps = np.arange(num_samples) * sample_period + start_time + start_time_offset
     pointing = np.rec.fromarrays([coord.deg2rad(hdu['MSDATA'].data.field(s)) 
                                   for s in ['AzAng', 'ElAng', 'RotAng']],
@@ -167,6 +174,11 @@ def load_subscan(filename):
     flags = np.rec.fromarrays([np.array(hdu['MSDATA'].data.field(s), 'bool')
                                for s in ['Valid_F', 'ND_ON_F', 'RX_ON_F']],
                               names=['valid', 'nd_on', 'rx_on'])
+    data_header = hdu['MSDATA'].header
+    label = str(data_header['ID'+str(data_header['DATAID'])])
+    path = filename
+    
+    data_unit = 'raw'
     freqs = hdu['CHANNELS'].data.field('Freq')
     bandwidths = np.repeat(channel_width, len(freqs))
     rfi_channels = [x[0] for x in hdu['RFI'].data.field('Channels')]
@@ -174,18 +186,14 @@ def load_subscan(filename):
     # Therefore, remove any invalid indices, as a further safeguard
     rfi_channels = [x for x in rfi_channels if (x >= 0) and (x < len(freqs))]
     channels_per_band = [x.tolist() for x in hdu['BANDS'].data.field('Channels')]
-
+    spectral = SpectralConfig(freqs, bandwidths, rfi_channels, channels_per_band, dump_rate)
+    
     target = _acsm_target_name(cPickle.loads(hdu['OBJECTS'].data.field('Target')[0]))
     mount = cPickle.loads(hdu['OBJECTS'].data.field('Mount')[0])
     antenna = mount.get_decorated_coordinate_system().get_attribute('position').get_description().split()[0]
-    
-    data_header = hdu['MSDATA'].header
-    label = str(data_header['ID'+str(data_header['DATAID'])])
-    path = filename
-    
-    return SubScan(data, is_stokes, data_unit, timestamps, pointing, flags,
-                   freqs, bandwidths, rfi_channels, channels_per_band, dump_rate,
-                   target, antenna, label, path), exp_seq_num, feed_id
+        
+    return SubScan(data, is_stokes, timestamps, pointing, flags, label, path), \
+           data_unit, spectral, target, antenna, exp_seq_num, feed_id
 
 def load_dataset(data_filename, nd_filename=None):
     """Load data set from XDM FITS file series.
@@ -207,6 +215,12 @@ def load_dataset(data_filename, nd_filename=None):
     -------
     scanlist : list of :class:`scan.Scan` objects
         List of scans
+    data_unit : {'raw', 'K', 'Jy'}
+        Physical unit of power data
+    spectral : :class:`scan.SpectralConfig` object
+        Spectral configuration object
+    antenna : string
+        Name of antenna that produced the data set
     nd_data : :class:`NoiseDiodeXDM` object
         Noise diode model
     
@@ -228,14 +242,17 @@ def load_dataset(data_filename, nd_filename=None):
         filelist.append('%s_%04d.fits' % (prefix, file_counter))
         file_counter += 1
     # Group all FITS files (= subscans) with the same experiment sequence number into a scan
-    subscanlists = {}
+    subscanlists, targets = {}, {}
     nd_data = None
     for fits_file in filelist:
-        sub, exp_seq_num, feed_id = load_subscan(fits_file)
+        sub, data_unit, spectral, target, antenna, exp_seq_num, feed_id = load_subscan(fits_file)
         if subscanlists.has_key(exp_seq_num):
             subscanlists[exp_seq_num].append(sub)
         else:
             subscanlists[exp_seq_num] = [sub]
+        assert not targets.has_key(exp_seq_num) or targets[exp_seq_num] == target, \
+               "Each subscan in a scan is required to have the same target"
+        targets[exp_seq_num] = target
         # Load noise diode characteristics if available
         if nd_data is None:
             # Alternate cal FITS file overrides the data set version
@@ -255,10 +272,10 @@ def load_dataset(data_filename, nd_filename=None):
                 except gaincal.NoiseDiodeNotFound:
                     pass
         logger.info("Loaded %s: %s '%s' (%d samps, %d chans, %d pols)" % 
-                    (os.path.basename(fits_file), sub.label, sub.target.name,
+                    (os.path.basename(fits_file), sub.label, target,
                      sub.data.shape[0], sub.data.shape[1], sub.data.shape[2]))
     # Assemble Scan objects from subscan lists
     scanlist = []
-    for subscanlist in subscanlists.itervalues():
-        scanlist.append(Scan(subscanlist))
-    return scanlist, nd_data
+    for esn, subscanlist in subscanlists.iteritems():
+        scanlist.append(Scan(subscanlist, targets[esn]))
+    return scanlist, data_unit, spectral, antenna, nd_data

@@ -16,13 +16,7 @@ Functionality: power conversion,...
 
 """
 
-import logging
-
 import numpy as np
-
-import coord
-
-logger = logging.getLogger("scape.subscan")
 
 class SubScan(object):
     """Container for the data of a single subscan.
@@ -41,12 +35,9 @@ class SubScan(object):
       Stokes parameters is very simple and efficient.
 
     The class also stores pointing data (azimuth/elevation/rotator angles),
-    timestamps, flags, the spectral configuration and the target object, which
-    permits the calculation of any relevant coordinates.
-
-    The number of time samples are indicated by *T* and the number of frequency
-    channels/bands are indicated by *F* below. The Attributes section lists
-    variables that do not directly correspond to parameters in the constructor.
+    timestamps and flags, which all vary as a function of time. The number of
+    time samples are indicated by *T* and the number of frequency channels/bands
+    are indicated by *F* below.
 
     Parameters
     ----------
@@ -56,8 +47,6 @@ class SubScan(object):
         is in coherency form, the order is (XX, YY, 2*Re{XY}, 2*Im{XY}).
     is_stokes : bool
         True if data is in Stokes parameter form, False if in coherency form
-    data_unit : {'raw', 'K', 'Jy'}
-        Physical unit of power data
     timestamps : real array, shape (*T*,)
         Sequence of timestamps, one per integration (in seconds since epoch)
     pointing : real record array, shape (*T*,)
@@ -67,57 +56,20 @@ class SubScan(object):
     flags : bool record array, shape (*T*,)
         Flags, with one record per integration. The field names correspond with
         the flag names.
-    freqs : real array-like, length *F*
-        Sequence of channel/band centre frequencies (in Hz)
-    bandwidths : real array, shape (*F*,)
-        Array of channel/band bandwidths (in Hz)
-    *rfi_channels : list of ints
-        RFI-flagged channel indices
-    channels_per_band : List of lists of ints
-        List of lists of channel indices (one list per band), indicating which
-        channels belong to each band
-    *dump_rate : float
-        Correlator dump rate (in Hz)
-    *target : string
-        Name of the target of this subscan
-    *antenna : string
-        Name of antenna that did the subscan
     label : string
         Subscan label, used to distinguish e.g. normal and cal subscans
     path : string
         Filename or HDF5 path from which subscan was loaded
-
-    Attributes
-    ----------
-    target_coords : real array, shape (*T*, 2)
-        Spherical projection coordinates of subscan pointing
-
+    
     """
-    def __init__(self, data, is_stokes, data_unit, timestamps, pointing, flags,
-                 freqs, bandwidths, rfi_channels, channels_per_band, dump_rate,
-                 target, antenna, label, path):
+    def __init__(self, data, is_stokes, timestamps, pointing, flags, label, path):
         self.data = data
         self.is_stokes = is_stokes
-        self.data_unit = data_unit
         self.timestamps = timestamps
         self.pointing = pointing
         self.flags = flags
-        # Keep as doubles to prevent precision issues
-        self.freqs = np.asarray(freqs, dtype='double')
-        self.bandwidths = bandwidths
-        self.rfi_channels = rfi_channels
-        self.channels_per_band = channels_per_band
-        self.dump_rate = dump_rate
-        # Interpret source and antenna name strings and return relevant objects
-        self.target = coord.construct_source(target)
-        try:
-            self.antenna = coord.antenna_catalogue[antenna]
-        except KeyError:
-            raise KeyError("Unknown antenna '%s'" % antenna)
         self.label = label
         self.path = path
-        self.target_coords = coord.sphere_to_plane(self.target, self.antenna,
-                                                   pointing['az'], pointing['el'], timestamps)
     
     def coherency(self, key):
         """Calculate specific coherency from data.
@@ -254,24 +206,21 @@ class SubScan(object):
             # If data matrix is kept intact, make a straight copy - probably faster
             if (timekeep is None) and (freqkeep is None):
                 selected_data = self.data.copy()
-                timekeep = np.arange(len(self.timestamps))
-                freqkeep = np.arange(len(self.freqs))
+                timekeep = np.arange(self.data.shape[0])
+                freqkeep = np.arange(self.data.shape[1])
             else:
                 # Convert boolean selection vectors (and None) to indices
                 if timekeep is None:
-                    timekeep = np.arange(len(self.timestamps))
+                    timekeep = np.arange(self.data.shape[0])
                 elif np.asarray(timekeep).dtype == 'bool':
                     timekeep = np.asarray(timekeep).nonzero()[0]
                 if freqkeep is None:
-                    freqkeep = np.arange(len(self.freqs))
+                    freqkeep = np.arange(self.data.shape[1])
                 elif np.asarray(freqkeep).dtype == 'bool':
                     freqkeep = np.asarray(freqkeep).nonzero()[0]
                 selected_data = self.data[np.atleast_2d(timekeep).transpose(), np.atleast_2d(freqkeep), :]
-            return SubScan(selected_data, self.is_stokes, self.data_unit,
-                           self.timestamps[timekeep], self.pointing[timekeep], self.flags[timekeep],
-                           self.freqs[freqkeep], self.bandwidths[freqkeep], self.rfi_channels,
-                           [self.channels_per_band[n] for n in xrange(len(self.channels_per_band)) if n in freqkeep],
-                           self.dump_rate, self.target.name, self.antenna.name, self.label, self.path)
+            return SubScan(selected_data, self.is_stokes, self.timestamps[timekeep], 
+                           self.pointing[timekeep], self.flags[timekeep], self.label, self.path)
         # Create a shallow view of data matrix via a masked array or view
         else:
             # If data matrix is kept intact, rather just return a view instead of masked array
@@ -280,14 +229,14 @@ class SubScan(object):
             else:
                 # Normalise the selection vectors to select elements via bools instead of indices
                 if timekeep is None:
-                    timekeep1d = np.tile(True, len(self.timestamps))
+                    timekeep1d = np.tile(True, self.data.shape[0])
                 else:
-                    timekeep1d = np.tile(False, len(self.timestamps))
+                    timekeep1d = np.tile(False, self.data.shape[0])
                     timekeep1d[timekeep] = True
                 if freqkeep is None:
-                    freqkeep1d = np.tile(True, len(self.freqs))
+                    freqkeep1d = np.tile(True, self.data.shape[1])
                 else:
-                    freqkeep1d = np.tile(False, len(self.freqs))
+                    freqkeep1d = np.tile(False, self.data.shape[1])
                     freqkeep1d[freqkeep] = True
                 # Create 3-D mask matrix of same shape as data, with rows and columns masked
                 timekeep3d = np.atleast_3d(timekeep1d).transpose((1, 0, 2))
@@ -295,68 +244,5 @@ class SubScan(object):
                 polkeep3d = np.atleast_3d([True, True, True, True]).transpose((0, 2, 1))
                 keep3d = np.kron(timekeep3d, np.kron(freqkeep3d, polkeep3d))
                 selected_data = np.ma.array(self.data, mask=~keep3d)
-            return SubScan(selected_data, self.is_stokes, self.data_unit,
-                           self.timestamps, self.pointing, self.flags,
-                           self.freqs, self.bandwidths, self.rfi_channels, self.channels_per_band,
-                           self.dump_rate, self.target.name, self.antenna.name, self.label, self.path)
-    
-    def convert_power_to_temp(self, func):
-        """Convert raw power into temperature (K) using conversion function.
-
-        The main parameter is a callable object with the signature
-        ``factor = func(time)``, which provides an interpolated conversion
-        factor function. The conversion factor returned by func should be
-        an array of shape (*T*, *F*, 4), where *T* is the number of timestamps
-        and *F* is the number of channels. This will be multiplied with the
-        power data in coherency form to obtain temperatures. This should be
-        called *before* merge_channels_into_bands and
-        fit_and_subtract_baseline, as gain calibration should happen on the
-        finest available frequency scale.
-
-        Parameters
-        ----------
-        func : function, signature ``factor = func(time)``
-            The power-to-temperature conversion factor as a function of time
-
-        """
-        if func is None:
-            return self
-        # Only operate on raw data
-        if self.data_unit != 'raw':
-            logger.warning("Expected raw power data to convert to temperature, got data with units '" +
-                           self.data_unit + "' instead.")
-            return self
-        originally_stokes = self.is_stokes
-        # Convert coherency power to temperature, and restore Stokes/coherency status
-        self.convert_to_coherency()
-        self.data *= func(self.timestamps)
-        if originally_stokes:
-            self.convert_to_stokes()
-        self.data_unit = 'K'
-        return self
-
-    def merge_channels_into_bands(self):
-        """Merge frequency channels into bands.
-
-        The frequency channels are grouped into bands, and the power data is
-        merged and averaged within each band. Each band contains the average
-        power of its constituent channels. The average power is simpler to use
-        than the total power in each band, as total power is dependent on the
-        bandwidth of each band. The channels_per_band mapping contains a list
-        of lists of channel indices, indicating which channels belong to each
-        band. This method should be called *after* convert_power_to_temp and
-        *before* fit_and_subtract_baseline.
-
-        """
-        # Merge and average power data into new array (keep same type as original data, which may be complex)
-        band_data = np.zeros((self.data.shape[0], len(self.channels_per_band), 4),
-                             dtype=self.data.dtype)
-        for band_index, band_channels in enumerate(self.channels_per_band):
-            band_data[:, band_index, :] = self.data[:, band_channels, :].mean(axis=1)
-        self.data = band_data
-        # Each band centre frequency is the mean of the corresponding channel centre frequencies
-        self.freqs = np.array([self.freqs[chans].mean() for chans in self.channels_per_band], dtype='double')
-        # Each band bandwidth is the sum of the corresponding channel bandwidths
-        self.bandwidths = np.array([self.bandwidths[chans].sum() for chans in self.channels_per_band],
-                                   dtype='double')
-        return self
+            return SubScan(selected_data, self.is_stokes, self.timestamps, self.pointing, self.flags,
+                           self.label, self.path)
