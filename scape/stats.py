@@ -4,6 +4,7 @@ import copy
 
 import numpy as np
 import scipy.signal as signal
+import scipy.stats as stats
 
 #--------------------------------------------------------------------------------------------------
 #--- CLASS :  MuSigmaArray
@@ -326,6 +327,38 @@ def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
     return MuSigmaArray(mu / scale, np.sqrt(sigma2) / scale)
 
 #--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  minimise_angle_wrap
+#--------------------------------------------------------------------------------------------------
+
+def minimise_angle_wrap(angles, axis=0):
+    """Minimise wrapping of angles to improve interpretation.
+    
+    Move wrapping point as far away as possible from mean angle on given axis.
+    The main use of this function is to improve the appearance of angle plots.
+    
+    Parameters
+    ----------
+    angles : array-like
+        Array of angles to unwrap, in radians
+    axis : int, optional
+        Axis along which angle wrap is evaluated. Plots along this axis will
+        typically improve in appearance.
+    
+    Returns
+    -------
+    angles : array
+        Array of same shape as input array, with angles wrapped around new point
+    
+    """
+    angles = np.asarray(angles)
+    # Calculate a "safe" mean on the unit circle
+    mu = np.arctan2(np.sin(angles).mean(axis=axis), np.cos(angles).mean(axis=axis))
+    delta_ang = angles - np.expand_dims(mu, axis)
+    # Wrap angle differences into interval -pi ... pi
+    delta_ang = (delta_ang + np.pi) % (2.0 * np.pi) - np.pi
+    return delta_ang + np.expand_dims(mu, axis)
+    
+#--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  remove_spikes
 #--------------------------------------------------------------------------------------------------
 
@@ -386,3 +419,62 @@ def remove_spikes(data, axis=0, kernel_size=7, outlier_sigma=5.0):
     cleaned_data = data.copy()
     cleaned_data[outliers] = filtered_data[outliers]
     return cleaned_data
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  chi2_conf_interval
+#--------------------------------------------------------------------------------------------------
+
+def chi2_conf_interval(dof, mean=1.0, sigma=3.0):
+    """Confidence interval for chi-square distribution.
+    
+    Return lower and upper limit of confidence interval of chi-square
+    distribution, defined in terms of a normal confidence interval. That is,
+    given *sigma*, which is a multiple of the standard deviation, calculate the
+    probability mass within the interval [-sigma, sigma] for a standard normal
+    distribution, and return the interval with the same probability mass for the
+    chi-square distribution with *dof* degrees of freedom. The interval is
+    scaled by ``(mean/dof)``, which enforces the given mean and implies a
+    standard deviation of ``mean*sqrt(2/dof)``. This represents the distribution
+    of the power estimator $P = 1/N \sum_{i=1}^{N} x_i^2$, with N = *dof* and
+    zero-mean Gaussian voltages $x_i$ with variance *mean*.
+    
+    Parameters
+    ----------
+    dof : float
+        Degrees of freedom (number of independent samples summed to form chi^2 
+        variable)
+    mean : array or float, optional
+        Desired mean of chi^2 distribution (may be a numpy array)
+    sigma : array or float, optional
+        Multiple of standard deviation, used to specify size of required
+        confidence interval
+    
+    Returns
+    -------
+    lower : array or float
+        Lower limit of confidence interval (numpy array if mean is one)
+    upper : array or float
+        Upper limit of confidence interval (numpy array if mean is one)
+    
+    Notes
+    -----
+    The advantage of this approach is that it uses a well-known concept to
+    specify the interval (multiples of standard deviation), while returning
+    valid intervals for all values of *dof*. For (very) large values of *dof*,
+    (lower, upper) will be close to
+    
+    (mean - sigma * mean*sqrt(2/dof), mean + sigma * mean*sqrt(2/dof)),
+    
+    as the chi-square distribution will be approximately normal. For small *dof*
+    or large *sigma*, however, this approximation breaks down and may lead to
+    negative lower values, for example.
+    
+    """
+    # Ensure degrees of freedom is positive integer >= 1
+    dof = int(np.max([np.floor(dof), 1.0]))
+    chi2_rv = stats.chi2(dof)
+    normal_rv = stats.norm()
+    # Translate normal conf interval to chi^2 distribution, maintaining the probability inside interval
+    lower = chi2_rv.ppf(normal_rv.cdf(-sigma)) * mean / dof
+    upper = chi2_rv.ppf(normal_rv.cdf(sigma)) * mean / dof
+    return lower, upper

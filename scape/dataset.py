@@ -68,7 +68,17 @@ class DataSet(object):
         for s in self.scans:
             subscanlist.extend(s.subscans)
         return subscanlist
-
+    
+    def convert_to_coherency(self):
+        """Convert power data to coherency format."""
+        for ss in self.subscans():
+            ss.convert_to_coherency()
+    
+    def convert_to_stokes(self):
+        """Convert power data to Stokes parameter format."""
+        for ss in self.subscans():
+            ss.convert_to_stokes()
+    
     def select(self, labelkeep=None, flagkeep=None, freqkeep=None, copy=False):
         """Select subset of data set, based on subscan label, flags and frequency.
         
