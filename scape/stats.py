@@ -275,11 +275,11 @@ def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
     function. The period with which the values repeat can be explicitly
     specified, otherwise the data is assumed to be radians. The mean is in the
     range -period/2 ... period/2, and the maximum standard deviation is about
-    period/4. The approach in [Ref]_ is used.
+    period/4. The approach in [1]_ is used.
 
-    .. [Ref] Yamartino, R.J., "A Comparison of Several 'Single-Pass' Estimators
-    of the Standard Deviation of Wind Direction," Journal of Climate and Applied
-    Meteorology, vol. 23, pp. 1362-1366, 1984.
+    .. [1] R. J. Yamartino, "A Comparison of Several 'Single-Pass' Estimators
+       of the Standard Deviation of Wind Direction," Journal of Climate and
+       Applied Meteorology, vol. 23, pp. 1362-1366, 1984.
     
     Parameters
     ----------
@@ -299,11 +299,11 @@ def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
     
     Notes
     -----
-    The approach in [Ref]_ is used.
+    The approach in [1]_ is used.
 
-    .. [Ref] Yamartino, R.J., "A Comparison of Several 'Single-Pass' Estimators
-    of the Standard Deviation of Wind Direction," Journal of Climate and Applied
-    Meteorology, vol. 23, pp. 1362-1366, 1984.
+    .. [1] R. J. Yamartino, "A Comparison of Several 'Single-Pass' Estimators
+       of the Standard Deviation of Wind Direction," Journal of Climate and
+       Applied Meteorology, vol. 23, pp. 1362-1366, 1984.
     
     """
     data = np.asarray(data, dtype='double')
