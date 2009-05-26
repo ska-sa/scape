@@ -154,29 +154,29 @@ def estimate_gain(dataset, **kwargs):
     -------
     timestamps : real array, shape (*T*,)
         Timestamp of each gain measurement, in seconds-since-Unix-epoch
-    gain_xx : real array, shape (*F*, *T*)
-        Power gain of X chain per channel and measurement, in units of raw/K
-    gain_yy : real array, shape (*F*, *T*)
-        Power gain of Y chain per channel and measurement, in units of raw/K
-    phi : real array, shape (*F*, *T*)
-        Phase of Y relative to X, per channel and measurement, in radians
+    gain_xx : real array, shape (*T*, *F*)
+        Power gain of X chain per measurement and channel, in units of raw/K
+    gain_yy : real array, shape (*T*, *F*)
+        Power gain of Y chain per measurement and channel, in units of raw/K
+    phi : real array, shape (*T*, *F*)
+        Phase of Y relative to X, per measurement and channel, in radians
     
     """
     dataset.convert_to_coherency()
     nd_jump_times, nd_jump_power = estimate_nd_jumps(dataset, **kwargs)
     if not nd_jump_times:
-        return np.zeros((0)), np.zeros((len(dataset.freqs), 0)), \
-               np.zeros((len(dataset.freqs), 0)), np.zeros((len(dataset.freqs), 0))
+        return np.zeros((0)), np.zeros((0, len(dataset.freqs))), \
+               np.zeros((0, len(dataset.freqs))), np.zeros((0, len(dataset.freqs)))
     timestamps = np.array(nd_jump_times)
-    deltas = np.dstack([p.mu for p in nd_jump_power])
+    deltas = np.concatenate([p.mu[np.newaxis] for p in nd_jump_power])
     temp_nd = dataset.noise_diode_data.temperature(dataset.freqs)
-    gain_xx = deltas[:, 0, :] / temp_nd[:, 0, np.newaxis]
-    gain_yy = deltas[:, 1, :] / temp_nd[:, 1, np.newaxis]
-    phi = -np.arctan2(deltas[:, 3, :], deltas[:, 2, :])
-    return timestamps, gain_xx, gain_yy, stats.minimise_angle_wrap(phi)
+    gain_xx = deltas[:, :, 0] / temp_nd[np.newaxis, :, 0]
+    gain_yy = deltas[:, :, 1] / temp_nd[np.newaxis, :, 1]
+    phi = -np.arctan2(deltas[:, :, 3], deltas[:, :, 2])
+    return timestamps, gain_xx, gain_yy, stats.minimise_angle_wrap(phi, axis=1)
 
-def calibrate(dataset, max_degree=1, randomise=False, **kwargs):
-    """Calibrate.
+def calibrate(dataset, randomise=False, **kwargs):
+    """Calibrate X and Y gains and relative phase, based on noise injection.
     
     Parameters
     ----------
@@ -190,39 +190,27 @@ def calibrate(dataset, max_degree=1, randomise=False, **kwargs):
     """
     dataset.convert_to_coherency()
     nd_jump_times, nd_jump_power = estimate_nd_jumps(dataset, **kwargs)
-    gains = np.dstack([p.mu for p in nd_jump_power])
+    gains = np.concatenate([p.mu[np.newaxis] for p in nd_jump_power])
     if randomise:
-        gains += np.dstack([p.sigma for p in nd_jump_power]) * np.random.standard_normal(gains.shape)
+        gains += np.concatenate([p.sigma[np.newaxis] for p in nd_jump_power]) * \
+                 np.random.standard_normal(gains.shape)
     temp_nd = dataset.noise_diode_data.temperature(dataset.freqs, randomise)
-    gains[:, :2, :] /= temp_nd[:, :, np.newaxis]
-    interp = fitting.Independent1DFit(fitting.Polynomial1DFit(max_degree=max_degree), axis=2)
-    interp.fit(np.array(nd_jump_times), gains)
+    gains[:, :, :2] /= temp_nd[np.newaxis, :, :]
+    # Do a very simple zeroth-order fitting for now, as gains are usually very stable
+    smooth_gains = np.expand_dims(gains.mean(axis=0), axis=0)
+#    interp = fitting.Independent1DFit(fitting.Polynomial1DFit(max_degree=max_degree), axis=0)
+#    interp.fit(np.array(nd_jump_times), gains)
     for ss in dataset.subscans:
-        smooth_gains = interp(ss.timestamps)
-    
-# plots
-# import glob
-# pl.figure()
-# pl.clf()
-# for f in glob.glob('xdm/*/*_0000.fits'):
-#     d = dataset.DataSet(f)
-#     nd_transition, nd_delta_power = gaincal.estimate_nd_jumps(d)
-#     delta = nd_delta_power[0]
-#     xx = 0.5*(delta[:,0].mu + delta[:,1].mu)
-#     yy = 0.5*(delta[:,0].mu - delta[:,1].mu)
-#     ss = d.scans[0].subscans[0]
-#     tnd = d.noise_diode_data.temperature(ss.freqs)
-#     gx2 = xx / tnd[0, :]
-#     gy2 = yy / tnd[1, :]
-#     phi = -np.arctan2(delta[:,3].mu, delta[:,2].mu)
-#     non_rfi = list(set(range(1024)) - set(ss.rfi_channels))
-#     pl.subplot(311); pl.plot(ss.freqs / 1e9, 10*np.log10(gx2), 'b'); pl.plot(ss.freqs[non_rfi] / 1e9, 10*np.log10(gx2[non_rfi]), 'ob')
-#     pl.subplot(312); pl.plot(ss.freqs / 1e9, 10*np.log10(gy2), 'b'); pl.plot(ss.freqs[non_rfi] / 1e9, 10*np.log10(gy2[non_rfi]), 'ob')
-#     angles = coord.rad2deg(phi)
-#     angles = angles % 360.0
-#     pl.subplot(313); pl.plot(ss.freqs / 1e9, angles, 'b'); pl.plot(ss.freqs[non_rfi] / 1e9, angles[non_rfi], 'ob')
-#     pl.subplot(311); pl.xticks([]); pl.ylabel('dB'); pl.title('XX power gain'); pl.axis([1.4, 1.6, 10, 20])
-#     pl.subplot(312); pl.xticks([]); pl.ylabel('dB'); pl.title('YY power gain'); pl.axis([1.4, 1.6, 10, 20])
-#     pl.subplot(313); pl.xlabel('Frequency (GHz)'); pl.ylabel('degrees'); pl.title('Phase difference of Y relative to X'); pl.axis([1.4, 1.6, 150, 240])
-#     raw_input()
-#     
+#        smooth_gains = interp(ss.timestamps)
+        # Scale XX and YY with respective power gains
+        ss.data[:, :, :2] /= smooth_gains[:, :, :2]
+        u, v = ss.data[:, :, 2].copy(), ss.data[:, :, 3].copy()
+        # Rotate U and V, using K cos(phi) and -K sin(phi) terms
+        ss.data[:, :, 2] =  smooth_gains[:, :, 2] * u + smooth_gains[:, :, 3] * v
+        ss.data[:, :, 3] = -smooth_gains[:, :, 3] * u + smooth_gains[:, :, 2] * v
+        # Divide U and V by g_x g_y, as well as length of sin + cos terms above
+        gain_xy = np.sqrt(smooth_gains[:, :, 0] * smooth_gains[:, :, 1] * 
+                          (smooth_gains[:, :, 2] ** 2 + smooth_gains[:, :, 3] ** 2))
+        ss.data[:, :, 2:] /= gain_xy[:, :, np.newaxis]
+    dataset.data_unit = 'K'
+    return dataset

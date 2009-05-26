@@ -134,7 +134,12 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
             nth_str = ['', '2nd', '3rd'][channel_skip - 1]
         else:
             nth_str = '%dth' % channel_skip
-        waterfall_title = 'Raw %s power in every %s channel' % (pol, nth_str)
+        if dataset.data_unit == 'Jy':
+            waterfall_title = '%s flux density in every %s channel' % (pol, nth_str)
+        if dataset.data_unit == 'K':
+            waterfall_title = '%s temperature in every %s channel' % (pol, nth_str)
+        else:
+            waterfall_title = 'Raw %s power in every %s channel' % (pol, nth_str)
         if pol == 'XX':
             if title:
                 title_obj = axis.set_title(title + '\n' + waterfall_title + '\n')
@@ -187,8 +192,12 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
             pl.setp(axis.get_yticklabels(), visible=False)
         else:
             pl.setp(axis.get_yticklabels(), visible=False)
-            axis.set_xlabel('Raw power')
-    
+            if dataset.data_unit == 'Jy':
+                axis.set_xlabel('Flux density (Jy)')
+            elif dataset.data_unit == 'K':
+                axis.set_xlabel('Temperature (K)')
+            else:
+                axis.set_xlabel('Raw power')
     # Fix limits globally
     tLimits = np.array(tLimits)
     yRange = channel_freqs_GHz.max() - channel_freqs_GHz.min()
