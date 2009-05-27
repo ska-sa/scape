@@ -17,7 +17,7 @@ Functionality: beam/baseline fitting, instant mount coords, ...
 
 import numpy as np
 
-import coord
+from .coord import construct_source
 
 class SpectralConfig(object):
     """Container for spectral configuration of correlator.
@@ -85,6 +85,6 @@ class Scan(object):
     def __init__(self, subscanlist, target):
         self.subscans = subscanlist
         # Interpret source name string and return relevant object
-        self.target = coord.construct_source(target)
+        self.target = construct_source(target)
         # self.target_coords = coord.sphere_to_plane(self.target, self.antenna,
         #                                            pointing['az'], pointing['el'], timestamps)

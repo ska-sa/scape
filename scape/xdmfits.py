@@ -17,12 +17,13 @@ import os.path
 import pyfits
 import numpy as np
 # Needed for pickled target and mount objects
+# pylint: disable-msg=W0611
 import acsm
 
-import coord
-from subscan import SubScan
-from scan import Scan, SpectralConfig
-import gaincal
+from .coord import deg2rad
+from .subscan import SubScan
+from .scan import Scan, SpectralConfig
+from .gaincal import NoiseDiodeBase, NoiseDiodeNotFound
 
 logger = logging.getLogger("scape.xdmfits")
 
@@ -32,7 +33,7 @@ default_nd_filename = None
 #--- CLASS :  NoiseDiodeXDM
 #--------------------------------------------------------------------------------------------------
 
-class NoiseDiodeXDM(gaincal.NoiseDiodeBase):
+class NoiseDiodeXDM(NoiseDiodeBase):
     """A container for noise diode calibration data (XDM FITS version).
     
     This allows the (randomised) calculation of the noise diode temperature from
@@ -57,6 +58,7 @@ class NoiseDiodeXDM(gaincal.NoiseDiodeBase):
         If the noise diode tables are not present in the FITS file
     
     """
+    # pylint: disable-msg=W0231
     def __init__(self, filename, feed_id=None):
         # Open FITS file
         try:
@@ -73,14 +75,14 @@ class NoiseDiodeXDM(gaincal.NoiseDiodeBase):
                 table_x = hdu['CAL_TEMP_B%dP1' % feed_id].data
                 table_y = hdu['CAL_TEMP_B%dP2' % feed_id].data
             except KeyError:
-                raise gaincal.NoiseDiodeNotFound('Noise diode tables not found in FITS file')
+                raise NoiseDiodeNotFound('Noise diode tables not found in FITS file')
         else:
             # Load cal FITS file tables instead, which will have feed ID specified externally
             # nd_type = hdu[0].header.get('NAME')
             if (len(hdu) != 5) or \
                (hdu[1].name != 'CAL_TEMP_B0P1') or (hdu[2].name != 'CAL_TEMP_B0P2') or \
                (hdu[3].name != 'CAL_TEMP_B1P1') or (hdu[4].name != 'CAL_TEMP_B1P2'):
-                raise gaincal.NoiseDiodeNotFound('Noise diode tables not found in FITS file')
+                raise NoiseDiodeNotFound('Noise diode tables not found in FITS file')
             if feed_id not in [0, 1]:
                 msg = 'Feed ID should be 0 (main feed) or 1 (offset feed)'
                 logger.error(msg)
@@ -101,6 +103,7 @@ class NoiseDiodeXDM(gaincal.NoiseDiodeBase):
 def _acsm_target_name(target):
     """Extract target name from ACSM target object."""
     ref_target = target.get_reference_target()
+    # pylint: disable-msg=W0212
     if ref_target._name:
         name = ref_target._name
     else:
@@ -168,7 +171,7 @@ def load_subscan(filename):
         data = np.dstack([hdu['MSDATA'].data.field('XX'), hdu['MSDATA'].data.field('YY'),
                           2.0 * hdu['MSDATA'].data.field('XY').real, 2.0 * hdu['MSDATA'].data.field('XY').imag])
     timestamps = np.arange(num_samples) * sample_period + start_time + start_time_offset
-    pointing = np.rec.fromarrays([coord.deg2rad(hdu['MSDATA'].data.field(s)) 
+    pointing = np.rec.fromarrays([deg2rad(hdu['MSDATA'].data.field(s)) 
                                   for s in ['AzAng', 'ElAng', 'RotAng']],
                                  names=['az', 'el', 'rot'])
     flags = np.rec.fromarrays([np.array(hdu['MSDATA'].data.field(s), 'bool')
@@ -260,7 +263,7 @@ def load_dataset(data_filename, nd_filename=None):
                 try:
                     nd_data = NoiseDiodeXDM(nd_filename, feed_id)
                     logger.info("Loaded alternate noise diode characteristics from %s" % nd_filename)
-                except gaincal.NoiseDiodeNotFound:
+                except NoiseDiodeNotFound:
                     logger.warning("Could not load noise diode data from " + nd_filename)
                     # Don't try to load this file again
                     nd_filename = None
@@ -269,7 +272,7 @@ def load_dataset(data_filename, nd_filename=None):
                 try:
                     nd_data = NoiseDiodeXDM(data_filename)
                     logger.info("Loaded noise diode characteristics from %s" % fits_file)
-                except gaincal.NoiseDiodeNotFound:
+                except NoiseDiodeNotFound:
                     pass
         logger.info("Loaded %s: %s '%s' (%d samps, %d chans, %d pols)" % 
                     (os.path.basename(fits_file), sub.label, target,

@@ -60,6 +60,7 @@ class MuSigmaArray(np.ndarray):
         """Object creation, which casts the mu array to the current subclass."""
         return np.asarray(mu).view(cls)
     
+    # pylint: disable-msg=E0211,E0202,W0612,W0142,W0613
     def mu():
         """Class method which creates mean property.
         
@@ -85,6 +86,7 @@ class MuSigmaArray(np.ndarray):
     # Normal access to the object also provides the mean.
     mu = property(**mu())
     
+    # pylint: disable-msg=E0211,E0202,W0612,W0142,W0212
     def sigma():
         """Class method which creates sigma property.
         

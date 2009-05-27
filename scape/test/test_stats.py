@@ -1,4 +1,5 @@
 """Tests for the stats module."""
+# pylint: disable-msg=C0103,W0212,R0904
 
 import copy
 import unittest
@@ -10,10 +11,10 @@ class MuSigmaArrayTestCases(unittest.TestCase):
     def setUp(self):
         self.scalar_mu = 0
         self.scalar_sigma = 1
-        self.vector_mu = [0,0,0]
-        self.vector_sigma = [1,1,1]
-        self.array_mu = np.zeros((2,3))
-        self.array_sigma = np.ones((2,3))
+        self.vector_mu = [0, 0, 0]
+        self.vector_sigma = [1, 1, 1]
+        self.array_mu = np.zeros((2, 3))
+        self.array_sigma = np.ones((2, 3))
     
     def test_scalar(self):
         ms_scalar = stats.MuSigmaArray(self.scalar_mu, self.scalar_sigma)
@@ -22,7 +23,7 @@ class MuSigmaArrayTestCases(unittest.TestCase):
         np.testing.assert_equal(ms_scalar.sigma, self.scalar_sigma)
     
     def test_vector(self):
-        self.assertRaises(TypeError, stats.MuSigmaArray, [1,1,1], [2,2])
+        self.assertRaises(TypeError, stats.MuSigmaArray, [1, 1, 1], [2, 2])
         ms_vector = stats.MuSigmaArray(self.vector_mu, self.vector_sigma)
         np.testing.assert_array_equal(ms_vector, self.vector_mu)
         np.testing.assert_array_equal(ms_vector.mu, self.vector_mu)
@@ -47,12 +48,12 @@ class MuSigmaArrayTestCases(unittest.TestCase):
         np.testing.assert_array_equal(ms_array.sigma, ms_array_shallow.sigma)
         np.testing.assert_array_equal(ms_array.mu, ms_array_deep.mu)
         np.testing.assert_array_equal(ms_array.sigma, ms_array_deep.sigma)
-        ms_array[0,0] = 1
-        ms_array.sigma[0,0] = 0
+        ms_array[0, 0] = 1
+        ms_array.sigma[0, 0] = 0
         np.testing.assert_array_equal(ms_array.mu, ms_array_shallow.mu)
         np.testing.assert_array_equal(ms_array.sigma, ms_array_shallow.sigma)
-        self.assertNotEqual(ms_array.mu[0,0], ms_array_deep.mu[0,0])
-        self.assertNotEqual(ms_array.sigma[0,0], ms_array_deep.sigma[0,0])
+        self.assertNotEqual(ms_array.mu[0, 0], ms_array_deep.mu[0, 0])
+        self.assertNotEqual(ms_array.sigma[0, 0], ms_array_deep.sigma[0, 0])
     
     def test_stack(self):
         ms_scalar = stats.MuSigmaArray([self.scalar_mu], [self.scalar_sigma])

@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib as mpl
 import pylab as pl
 
-import stats
+from .stats import remove_spikes
 
 logger = logging.getLogger("scape.plots")
 
@@ -83,7 +83,7 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
     for n, ss in enumerate(subscans):
         time_origin = min(time_origin, ss.timestamps.min())
         for pol in ['XX', 'YY']:
-            smoothed_power = stats.remove_spikes(ss.coherency(pol))
+            smoothed_power = remove_spikes(ss.coherency(pol))
             channel_min = smoothed_power.min(axis=0)
             data_min[pol][n] = np.where(channel_min < data_min[pol][n], channel_min, data_min[pol][n])
             channel_max = smoothed_power.max(axis=0)
@@ -103,7 +103,7 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
         axis = axes_list[axis_ind]
         all_subscans = []
         for scan_ind, s in enumerate(dataset.scans):
-            for subscan_ind, ss in enumerate(s.subscans):
+            for ss in s.subscans:
                 # Grey out RFI-tagged channels using alpha transparency
                 if ss.label == 'scan':
                     colors = [(0.0, 0.0, 1.0, 1.0 - 0.6 * (chan in dataset.rfi_channels)) for chan in channel_list]

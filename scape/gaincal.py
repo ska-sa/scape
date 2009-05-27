@@ -2,8 +2,9 @@
 
 import numpy as np
 
-import fitting
-import stats
+from .fitting import Spline1DFit
+from .fitting import randomise as fitting_randomise
+from .stats import MuSigmaArray, robust_mu_sigma, minimise_angle_wrap
 
 #--------------------------------------------------------------------------------------------------
 #--- CLASS :  NoiseDiodeBase
@@ -57,12 +58,12 @@ class NoiseDiodeBase(object):
         
         """
         # Fit a spline to noise diode power spectrum measurements, with optional perturbation
-        interp_x, interp_y = fitting.Spline1DFit(), fitting.Spline1DFit()
+        interp_x, interp_y = Spline1DFit(), Spline1DFit()
         interp_x.fit(self.table_x[:, 0], self.table_x[:, 1])
         interp_y.fit(self.table_y[:, 0], self.table_y[:, 1])
         if randomise:
-            interp_x = fitting.randomise(interp_x, self.table_x[:, 0], self.table_x[:, 1], 'shuffle')
-            interp_y = fitting.randomise(interp_y, self.table_y[:, 0], self.table_y[:, 1], 'shuffle')
+            interp_x = fitting_randomise(interp_x, self.table_x[:, 0], self.table_x[:, 1], 'shuffle')
+            interp_y = fitting_randomise(interp_y, self.table_y[:, 0], self.table_y[:, 1], 'shuffle')
         # Evaluate the smoothed spectrum at the desired frequencies
         return np.dstack((interp_x(freqs), interp_y(freqs))).squeeze()
 
@@ -120,13 +121,13 @@ def estimate_nd_jumps(dataset, min_samples=10, jump_significance=10.0):
                     # Calculate mean and standard deviation of the *averaged* power data in the two segments.
                     # Use robust estimators to suppress spikes and transients in data. Since the estimated mean
                     # of data is less variable than the data itself, we have to divide the data sigma by sqrt(N).
-                    nd_off = stats.robust_mu_sigma(ss.data[off_segment, :, :])    
+                    nd_off = robust_mu_sigma(ss.data[off_segment, :, :])    
                     nd_off.sigma /= np.sqrt(len(off_segment))
-                    nd_on = stats.robust_mu_sigma(ss.data[on_segment, :, :])
+                    nd_on = robust_mu_sigma(ss.data[on_segment, :, :])
                     nd_on.sigma /= np.sqrt(len(on_segment))
                     # Obtain mean and standard deviation of difference between averaged power in the segments
-                    nd_delta = stats.MuSigmaArray(nd_on.mu - nd_off.mu,
-                                                  np.sqrt(nd_on.sigma ** 2 + nd_off.sigma ** 2))
+                    nd_delta = MuSigmaArray(nd_on.mu - nd_off.mu,
+                                            np.sqrt(nd_on.sigma ** 2 + nd_off.sigma ** 2))
                     # Only keep jumps with significant change in power
                     # This discards segments where noise diode did not fire as expected
                     if np.mean(np.abs(nd_delta.mu / nd_delta.sigma), axis=0).max() > jump_significance:
@@ -173,10 +174,15 @@ def estimate_gain(dataset, **kwargs):
     gain_xx = deltas[:, :, 0] / temp_nd[np.newaxis, :, 0]
     gain_yy = deltas[:, :, 1] / temp_nd[np.newaxis, :, 1]
     phi = -np.arctan2(deltas[:, :, 3], deltas[:, :, 2])
-    return timestamps, gain_xx, gain_yy, stats.minimise_angle_wrap(phi, axis=1)
+    return timestamps, gain_xx, gain_yy, minimise_angle_wrap(phi, axis=1)
 
 def calibrate(dataset, randomise=False, **kwargs):
     """Calibrate X and Y gains and relative phase, based on noise injection.
+    
+    This converts the raw power measurements in the data set to temperatures,
+    based on the change in levels caused by switching the noise diode on and off.
+    At the same time it corrects for different gains in the X and Y polarisation
+    receiver chains and for relative phase shifts between them.
     
     Parameters
     ----------
@@ -189,7 +195,7 @@ def calibrate(dataset, randomise=False, **kwargs):
     
     """
     dataset.convert_to_coherency()
-    nd_jump_times, nd_jump_power = estimate_nd_jumps(dataset, **kwargs)
+    nd_jump_power = estimate_nd_jumps(dataset, **kwargs)[1]
     gains = np.concatenate([p.mu[np.newaxis] for p in nd_jump_power])
     if randomise:
         gains += np.concatenate([p.sigma[np.newaxis] for p in nd_jump_power]) * \

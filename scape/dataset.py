@@ -4,17 +4,17 @@ import os.path
 
 import numpy as np
 
-import scan
-import coord
+from .scan import Scan
+from .coord import antenna_catalogue
 
 # Try to import all available formats
 try:
-    import xdmfits
+    from .xdmfits import load_dataset as xdmfits_dataset
     xdmfits_found = True
 except ImportError:
     xdmfits_found = False
 try:
-    import hdf5
+    from .hdf5 import load_dataset as hdf5_dataset
     hdf5_found = True
 except ImportError:
     hdf5_found = False
@@ -77,18 +77,18 @@ class DataSet(object):
             if ext == '.fits':
                 if not xdmfits_found:
                     raise ImportError('XDM FITS support could not be loaded - please check xdmfits module')
-                scanlist, data_unit, spectral, antenna, nd_data = xdmfits.load_dataset(filename)
+                scanlist, data_unit, spectral, antenna, nd_data = xdmfits_dataset(filename)
             elif (ext == '.h5') or (ext == '.hdf5'):
                 if not hdf5_found:
                     raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
-                scanlist, data_unit, spectral, antenna, nd_data = hdf5.load_dataset(filename)
+                scanlist, data_unit, spectral, antenna, nd_data = hdf5_dataset(filename)
             else:
                 raise ValueError("File extension '%s' not understood" % ext)
         self.scans = scanlist
         self.data_unit = data_unit
         self.spectral = spectral
         try:
-            self.antenna = coord.antenna_catalogue[antenna]
+            self.antenna = antenna_catalogue[antenna]
         except KeyError:
             raise KeyError("Unknown antenna '%s'" % antenna)
         self.noise_diode_data = nd_data
@@ -100,6 +100,7 @@ class DataSet(object):
     # Provide properties to access the attributes of the spectral configuration directly
     # This uses the same trick as in stats.MuSigmaArray to create the properties, which
     # leads to less class namespace clutter, but more pylint uneasiness (shame).
+    # pylint: disable-msg=E0211,E0202,W0612,W0142
     def freqs():
         """Class method which creates freqs property."""
         doc = 'Centre frequency of each channel/band, in Hz.'
@@ -110,6 +111,7 @@ class DataSet(object):
         return locals()
     freqs = property(**freqs())
     
+    # pylint: disable-msg=E0211,E0202,W0612,W0142
     def bandwidths():
         """Class method which creates bandwidths property."""
         doc = 'Bandwidth of each channel/band, in Hz.'
@@ -120,6 +122,7 @@ class DataSet(object):
         return locals()
     bandwidths = property(**bandwidths())
     
+    # pylint: disable-msg=E0211,E0202,W0612,W0142
     def rfi_channels():
         """Class method which creates rfi_channels property."""
         doc = 'List of RFI-flagged channels.'
@@ -130,6 +133,7 @@ class DataSet(object):
         return locals()
     rfi_channels = property(**rfi_channels())
     
+    # pylint: disable-msg=E0211,E0202,W0612,W0142
     def channels_per_band():
         """Class method which creates channels_per_band property."""
         doc = 'List of channel index lists, one per frequency band.'
@@ -140,6 +144,7 @@ class DataSet(object):
         return locals()
     channels_per_band = property(**channels_per_band())
     
+    # pylint: disable-msg=E0211,E0202,W0612,W0142
     def dump_rate():
         """Class method which creates dump_rate property."""
         doc = 'Correlator dump rate, in Hz.'
@@ -232,7 +237,7 @@ class DataSet(object):
                 if (labelkeep is None) or (ss.label in labelkeep):
                     subscanlist.append(ss.select(timekeep, freqkeep, copy))
             if subscanlist:
-                scanlist.append(scan.Scan(subscanlist, s.target.name))
+                scanlist.append(Scan(subscanlist, s.target.name))
         return DataSet(None, scanlist, self.data_unit, self.spectral.select(freqkeep),
                        self.antenna.name, self.noise_diode_data)
     
