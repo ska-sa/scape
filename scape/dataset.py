@@ -1,11 +1,13 @@
 """Container for the data of a single-dish experiment."""
 
 import os.path
+import logging
 
 import numpy as np
 
 from .scan import Scan
 from .coord import antenna_catalogue
+from .gaincal import calibrate_gain
 
 # Try to import all available formats
 try:
@@ -18,6 +20,8 @@ try:
     hdf5_found = True
 except ImportError:
     hdf5_found = False
+
+logger = logging.getLogger("scape.dataset")
 
 class DataSet(object):
     """Container for the data of a single-dish experiment.
@@ -44,6 +48,8 @@ class DataSet(object):
         Name of antenna that produced the data set
     nd_data : :class:`gaincal.NoiseDiodeBase` object, optional
         Noise diode model
+    kwargs : dict, optional
+        Extra keyword arguments are passed to selected :func:`load_dataset` function
     
     Attributes
     ----------
@@ -71,17 +77,18 @@ class DataSet(object):
         If the antenna name is unknown
     
     """
-    def __init__(self, filename, scanlist=None, data_unit=None, spectral=None, antenna=None, nd_data=None):
+    def __init__(self, filename, scanlist=None, data_unit=None, spectral=None,
+                 antenna=None, nd_data=None, **kwargs):
         if filename:
             ext = os.path.splitext(filename)[1]
             if ext == '.fits':
                 if not xdmfits_found:
                     raise ImportError('XDM FITS support could not be loaded - please check xdmfits module')
-                scanlist, data_unit, spectral, antenna, nd_data = xdmfits_dataset(filename)
+                scanlist, data_unit, spectral, antenna, nd_data = xdmfits_dataset(filename, **kwargs)
             elif (ext == '.h5') or (ext == '.hdf5'):
                 if not hdf5_found:
                     raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
-                scanlist, data_unit, spectral, antenna, nd_data = hdf5_dataset(filename)
+                scanlist, data_unit, spectral, antenna, nd_data = hdf5_dataset(filename, **kwargs)
             else:
                 raise ValueError("File extension '%s' not understood" % ext)
         self.scans = scanlist
@@ -248,41 +255,31 @@ class DataSet(object):
         DataSet.__init__(self, None, d.scans, d.data_unit, d.spectral, d.antenna.name, d.noise_diode_data)
         return self
     
-    def convert_power_to_temp(self, func):
-        """Convert raw power into temperature (K) using conversion function.
-
-        The main parameter is a callable object with the signature
-        ``factor = func(time)``, which provides an interpolated conversion
-        factor function. The conversion factor returned by func should be
-        an array of shape (*T*, *F*, 4), where *T* is the number of timestamps
-        and *F* is the number of channels. This will be multiplied with the
-        power data in coherency form to obtain temperatures. This should be
-        called *before* merge_channels_into_bands and
-        fit_and_subtract_baseline, as gain calibration should happen on the
-        finest available frequency scale.
-
+    def convert_power_to_temperature(self, randomise=False, **kwargs):
+        """Convert raw power into temperature (K) based on noise injection.
+        
+        This converts the raw power measurements in the data set to temperatures,
+        based on the change in levels caused by switching the noise diode on and
+        off. At the same time it corrects for different gains in the X and Y
+        polarisation receiver chains and for relative phase shifts between them.
+        It should be called *before* :meth:`merge_channels_into_bands`, as gain
+        calibration should happen on the finest available frequency scale.
+        
         Parameters
         ----------
-        func : function, signature ``factor = func(time)``
-            The power-to-temperature conversion factor as a function of time
+        randomise : {False, True}, optional
+            True if noise diode data and smoothing should be randomised
+        kwargs : dict, optional
+            Extra keyword arguments are passed to underlying :mod:`gaincal` functions
 
         """
-        if func is None:
-            return self
         # Only operate on raw data
         if self.data_unit != 'raw':
             logger.warning("Expected raw power data to convert to temperature, got data with units '" +
                            self.data_unit + "' instead.")
             return self
-        originally_stokes = self.is_stokes
-        # Convert coherency power to temperature, and restore Stokes/coherency status
-        self.convert_to_coherency()
-        self.data *= func(self.timestamps)
-        if originally_stokes:
-            self.convert_to_stokes()
-        self.data_unit = 'K'
-        return self
-
+        return calibrate_gain(self, randomise, **kwargs)
+    
     def merge_channels_into_bands(self):
         """Merge frequency channels into bands.
 
@@ -290,21 +287,15 @@ class DataSet(object):
         merged and averaged within each band. Each band contains the average
         power of its constituent channels. The average power is simpler to use
         than the total power in each band, as total power is dependent on the
-        bandwidth of each band. The channels_per_band mapping contains a list
-        of lists of channel indices, indicating which channels belong to each
-        band. This method should be called *after* convert_power_to_temp and
-        *before* fit_and_subtract_baseline.
-
+        bandwidth of each band. This method should be called *after*
+        :meth:`convert_power_to_temperature`.
+        
         """
-        # Merge and average power data into new array (keep same type as original data, which may be complex)
-        band_data = np.zeros((self.data.shape[0], len(self.channels_per_band), 4),
-                             dtype=self.data.dtype)
-        for band_index, band_channels in enumerate(self.channels_per_band):
-            band_data[:, band_index, :] = self.data[:, band_channels, :].mean(axis=1)
-        self.data = band_data
-        # Each band centre frequency is the mean of the corresponding channel centre frequencies
-        self.freqs = np.array([self.freqs[chans].mean() for chans in self.channels_per_band], dtype='double')
-        # Each band bandwidth is the sum of the corresponding channel bandwidths
-        self.bandwidths = np.array([self.bandwidths[chans].sum() for chans in self.channels_per_band],
-                                   dtype='double')
+        for ss in self.subscans:
+            # Merge and average power data into new array
+            band_data = np.zeros((ss.data.shape[0], len(self.channels_per_band), 4), dtype=ss.data.dtype)
+            for band_index, band_channels in enumerate(self.channels_per_band):
+                band_data[:, band_index, :] = ss.data[:, band_channels, :].mean(axis=1)
+            ss.data = band_data
+        self.spectral.merge()
         return self

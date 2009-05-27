@@ -176,7 +176,7 @@ def estimate_gain(dataset, **kwargs):
     phi = -np.arctan2(deltas[:, :, 3], deltas[:, :, 2])
     return timestamps, gain_xx, gain_yy, minimise_angle_wrap(phi, axis=1)
 
-def calibrate(dataset, randomise=False, **kwargs):
+def calibrate_gain(dataset, randomise=False, **kwargs):
     """Calibrate X and Y gains and relative phase, based on noise injection.
     
     This converts the raw power measurements in the data set to temperatures,

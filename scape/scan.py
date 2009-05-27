@@ -70,6 +70,28 @@ class SpectralConfig(object):
                               [[freqkeep.index(n) for n in (set(chanlist) & set(freqkeep))] 
                                for chanlist in self.channels_per_band],
                               self.dump_rate)
+    
+    def merge(self):
+        """Merge frequency channels into bands.
+        
+        This applies the :attr:`channels_per_band` mapping to the rest of the
+        frequency data. Each band centre frequency is the mean of the
+        corresponding channel group's frequencies, while the band bandwidth is
+        the sum of the corresponding channel group's bandwidths. Any band
+        containing an RFI-flagged channel is RFI-flagged too, and the
+        channels_per_band mapping becomes one-to-one after the merge.
+         
+        """
+        # Each band centre frequency is the mean of the corresponding channel centre frequencies
+        self.freqs = np.array([self.freqs[chans].mean() for chans in self.channels_per_band], dtype='double')
+        # Each band bandwidth is the sum of the corresponding channel bandwidths
+        self.bandwidths = np.array([self.bandwidths[chans].sum() for chans in self.channels_per_band],
+                                   dtype='double')
+        # If the band contains *any* RFI-flagged channel, it is RFI-flagged too
+        self.rfi_channels = np.array([(len(set(chans) & set(self.rfi_channels)) > 0) 
+                                      for chans in self.channels_per_band], dtype='bool').nonzero()[0].tolist()
+        self.channels_per_band = np.arange(len(self.freqs))[:, np.newaxis].tolist()
+        return self
 
 class Scan(object):
     """Container for the data of a single scan.
