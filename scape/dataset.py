@@ -291,6 +291,8 @@ class DataSet(object):
         :meth:`convert_power_to_temperature`.
         
         """
+        # Prune all empty bands
+        self.channels_per_band = [chans for chans in self.channels_per_band if len(chans) > 0]
         for ss in self.subscans:
             # Merge and average power data into new array
             band_data = np.zeros((ss.data.shape[0], len(self.channels_per_band), 4), dtype=ss.data.dtype)
