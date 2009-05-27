@@ -1,5 +1,6 @@
 import unittest
 import test_projection
+import test_stats
 
 def suite():
     loader = unittest.TestLoader()
