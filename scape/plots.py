@@ -54,7 +54,7 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
     
     """
     if not channel_skip:
-        channel_skip = len(dataset.freqs) // 32
+        channel_skip = max(len(dataset.freqs) // 32, 1)
     if fig is None:
         fig = pl.gcf()
     # Set up axes: one figure with custom subfigures for waterfall and spectrum plots, with shared x and y axes
@@ -97,7 +97,7 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
     scale = 0.08 * num_channels
     
     # Plot of raw XX and YY power in all channels
-    tLimits, pLimits = [], []
+    t_limits, p_limits = [], []
     for axis_ind, pol in enumerate(['XX', 'YY']):
         # Time-frequency waterfall plots
         axis = axes_list[axis_ind]
@@ -115,23 +115,30 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
                             (ss.coherency(pol) - data_min[pol][np.newaxis, :]) / \
                             (data_max[pol][np.newaxis, :] - data_min[pol][np.newaxis, :])
                 segments = [np.vstack((time_line, norm_power[:, chan])).transpose() for chan in channel_list]
-                lines = mpl.collections.LineCollection(segments, colors=colors, offsets=offsets)
-                lines.set_linewidth(0.5)
-                axis.add_collection(lines)
-                tLimits += [time_line.min(), time_line.max()]
+                if len(segments) > 1:
+                    lines = mpl.collections.LineCollection(segments, colors=colors, offsets=offsets)
+                    lines.set_linewidth(0.5)
+                    axis.add_collection(lines)
+                else:
+                    axis.plot(segments[0][:, 0] + offsets.squeeze()[0], 
+                              segments[0][:, 1] + offsets.squeeze()[1], color=colors[0], lw=0.5)
+                t_limits += [time_line.min(), time_line.max()]
                 all_subscans.append(ss.coherency(pol))
             # Add scan target name and partition lines between scans
             if s.subscans:
-                start_time_ind = len(tLimits) - 2 * len(s.subscans)
+                start_time_ind = len(t_limits) - 2 * len(s.subscans)
                 if scan_ind >= 1:
-                    border_time = (tLimits[start_time_ind - 1] + tLimits[start_time_ind]) / 2.0
+                    border_time = (t_limits[start_time_ind - 1] + t_limits[start_time_ind]) / 2.0
                     axis.plot([border_time, border_time], [0.0, 10.0 * channel_freqs_GHz.max()], '--k')
-                axis.text((tLimits[start_time_ind] + tLimits[-1]) / 2.0,
+                axis.text((t_limits[start_time_ind] + t_limits[-1]) / 2.0,
                           offsets[0, 1] - scale * dataset.bandwidths[0] / 1e9, s.target.name,
                           ha='center', va='bottom', clip_on=True)
         # Set up title and axis labels
-        if channel_skip <= 3:
-            nth_str = ['', '2nd', '3rd'][channel_skip - 1]
+        if channel_skip <= 13:
+            nth_str = ['', '', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', 
+                       '9th', '10th', '11th', '12th', '13th'][channel_skip]
+        elif channel_skip % 10 <= 3:
+            nth_str = str(channel_skip) + ['th', 'st', 'nd', 'rd'][channel_skip % 10]
         else:
             nth_str = '%dth' % channel_skip
         if dataset.data_unit == 'Jy':
@@ -184,7 +191,7 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
         # second_axis.set_ylabel('Channel number')
         # second_axis.set_yticks(channel_freqs_GHz[channel_list])
         # second_axis.set_yticklabels([str(chan) for chan in channel_list])
-        pLimits += [all_subscans.min(), all_subscans.max()]
+        p_limits += [all_subscans.min(), all_subscans.max()]
         axis.set_title('%s power spectrum' % pol)
         if pol == 'XX':
             # This is more elaborate because the subplot axes are shared
@@ -199,13 +206,15 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
             else:
                 axis.set_xlabel('Raw power')
     # Fix limits globally
-    tLimits = np.array(tLimits)
-    yRange = channel_freqs_GHz.max() - channel_freqs_GHz.min()
+    t_limits = np.array(t_limits)
+    y_range = channel_freqs_GHz.max() - channel_freqs_GHz.min()
+    if y_range < channel_bandwidths_GHz[0]:
+        y_range = 10.0 * channel_bandwidths_GHz[0]
     for axis in axes_list[:2]:
-        axis.set_xlim(tLimits.min(), tLimits.max())
-        axis.set_ylim(channel_freqs_GHz.min() - 0.1 * yRange, channel_freqs_GHz.max() + 0.1 * yRange)
-    pLimits = np.array(pLimits)
+        axis.set_xlim(t_limits.min(), t_limits.max())
+        axis.set_ylim(channel_freqs_GHz.min() - 0.1 * y_range, channel_freqs_GHz.max() + 0.1 * y_range)
+    p_limits = np.array(p_limits)
     for axis in axes_list[2:]:
-        axis.set_xlim(pLimits.min(), pLimits.max())
+        axis.set_xlim(p_limits.min(), p_limits.max())
         
     return axes_list
