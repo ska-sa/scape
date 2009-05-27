@@ -85,7 +85,6 @@ class RemoveSpikesTestCases(unittest.TestCase):
         y_dirty[np.random.randint(N)] += 100
         y_dirty[np.random.randint(N)] += 100
         y_clean = stats.remove_spikes(y_dirty, outlier_sigma=5.0)
-        import pylab as pl
         spikes = np.where(y_clean != y_dirty)[0]
         # This test is currently failing, but I'm unsure if it should succeed
         # TODO: More checking required...
