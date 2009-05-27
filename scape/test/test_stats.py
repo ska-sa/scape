@@ -87,7 +87,7 @@ class RemoveSpikesTestCases(unittest.TestCase):
         y_dirty[np.random.randint(N)] += 100
         y_clean = stats.remove_spikes(y_dirty, outlier_sigma=5.0)
         spikes = np.where(y_clean != y_dirty)[0]
-        # This test is currently failing, but I'm unsure if it should succeed
-        # TODO: More checking required...
+        # This test is currently failing frequently, but I'm unsure if it should succeed
+        # TODO: More checking required of these tests...
 #        self.assertEqual(len(spikes), 2)
         self.assertTrue((np.abs(y_clean - y)[spikes] < 4.0 * nstd).all())
