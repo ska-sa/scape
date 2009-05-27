@@ -395,7 +395,6 @@ def remove_spikes(data, axis=0, kernel_size=7, outlier_sigma=5.0):
     .. todo::
     
        TODO: Make this more like a Hampel filter by making MAD time-variable too.
-       TODO: Change np.median() use, which now accepts an axis parameter.
     
     """
     data = np.atleast_1d(data)
@@ -405,14 +404,8 @@ def remove_spikes(data, axis=0, kernel_size=7, outlier_sigma=5.0):
     filtered_data = signal.medfilt(data, kernel)
     # The deviation is measured relative to the local median in the signal
     abs_dev = np.abs(data - filtered_data)
-    # Rearrange axes so that desired one is first (needed because np.median() does not accept an axis param)
-    trans = np.arange(data.ndim, dtype='int32')
-    trans[axis] = 0
-    trans[0] = axis
-    tile = np.ones(data.ndim, dtype='int32')
-    tile[0] = data.shape[axis]
-    # Calculate median absolute deviation (MAD), and tile it back to original shape of data
-    med_abs_dev = np.tile(np.median(abs_dev.transpose(trans)), tile).transpose(trans)
+    # Calculate median absolute deviation (MAD)
+    med_abs_dev = np.expand_dims(np.median(abs_dev, axis), axis)
 #    med_abs_dev = signal.medfilt(abs_dev, kernel)
     # Assuming normally distributed deviations, this is a robust estimator of the standard deviation 
     estm_stdev = 1.4826 * med_abs_dev
