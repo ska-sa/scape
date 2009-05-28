@@ -1,3 +1,3 @@
-"""The Single-Dish Continuum Analysis PackagE."""
+"""The Single-dish Continuum Analysis PackagE."""
 
 from .dataset import DataSet

@@ -23,6 +23,10 @@ except ImportError:
 
 logger = logging.getLogger("scape.dataset")
 
+#--------------------------------------------------------------------------------------------------
+#--- CLASS :  DataSet
+#--------------------------------------------------------------------------------------------------
+
 class DataSet(object):
     """Container for the data of a single-dish experiment.
     

@@ -18,6 +18,10 @@ Functionality: power conversion,...
 
 import numpy as np
 
+#--------------------------------------------------------------------------------------------------
+#--- CLASS :  SubScan
+#--------------------------------------------------------------------------------------------------
+
 class SubScan(object):
     """Container for the data of a single subscan.
 
