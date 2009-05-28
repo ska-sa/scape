@@ -7,19 +7,19 @@ from .fitting import randomise as fitting_randomise
 from .stats import MuSigmaArray, robust_mu_sigma, minimise_angle_wrap
 
 #--------------------------------------------------------------------------------------------------
-#--- CLASS :  NoiseDiodeBase
+#--- CLASS :  NoiseDiodeModel
 #--------------------------------------------------------------------------------------------------
 
 class NoiseDiodeNotFound(Exception):
     """No noise diode characteristics were found in data file."""
     pass
 
-class NoiseDiodeBase(object):
-    """Base class for containers of noise diode calibration data.
+class NoiseDiodeModel(object):
+    """Container for noise diode calibration data.
     
     This allows different noise diode data formats to co-exist in the code.
     
-    Attributes
+    Parameters
     ----------
     table_x : real array, shape (N, 2)
         Table containing frequencies [Hz] in the first column and measured
@@ -29,9 +29,9 @@ class NoiseDiodeBase(object):
         temperatures [K] in the second column, for port 2 or H (Y polarisation)
     
     """
-    def __init__(self):
-        self.table_x = self.table_y = None
-        raise NotImplementedError
+    def __init__(self, table_x=None, table_y=None):
+        self.table_x = table_x
+        self.table_y = table_y
     
     def temperature(self, freqs, randomise=False):
         """Obtain noise diode temperature at given frequencies.

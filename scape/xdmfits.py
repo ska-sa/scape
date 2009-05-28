@@ -23,7 +23,7 @@ import acsm
 from .coord import deg2rad
 from .subscan import SubScan
 from .scan import Scan, SpectralConfig
-from .gaincal import NoiseDiodeBase, NoiseDiodeNotFound
+from .gaincal import NoiseDiodeModel, NoiseDiodeNotFound
 
 logger = logging.getLogger("scape.xdmfits")
 
@@ -33,7 +33,7 @@ default_nd_filename = None
 #--- CLASS :  NoiseDiodeXDM
 #--------------------------------------------------------------------------------------------------
 
-class NoiseDiodeXDM(NoiseDiodeBase):
+class NoiseDiodeXDM(NoiseDiodeModel):
     """A container for noise diode calibration data (XDM FITS version).
     
     This allows the (randomised) calculation of the noise diode temperature from
@@ -58,8 +58,8 @@ class NoiseDiodeXDM(NoiseDiodeBase):
         If the noise diode tables are not present in the FITS file
     
     """
-    # pylint: disable-msg=W0231
     def __init__(self, filename, feed_id=None):
+        NoiseDiodeModel.__init__(self)
         # Open FITS file
         try:
             hdu = pyfits.open(filename)
