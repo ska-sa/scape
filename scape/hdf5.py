@@ -15,10 +15,10 @@ from .scan import SpectralConfig, Scan
 #--- FUNCTIONS
 #--------------------------------------------------------------------------------------------------
 
-def load_dataset(data_filename):
+def load_dataset(filename):
     """Load data set from HDF5 file.
     
-    This loads a Scape dataset from HDF5 file.
+    This loads a data set from an HDF5 file.
     
     Parameters
     ----------
@@ -35,12 +35,11 @@ def load_dataset(data_filename):
         Spectral configuration object
     antenna : string
         Name of antenna that produced the data set
-    nd_data : :class:`NoiseDiodeXDM` object
+    nd_data : :class:`NoiseDiodeModel` object
         Noise diode model
     
     """
-    with h5py.File(data_filename, 'r') as f:
-        
+    with h5py.File(filename, 'r') as f:
         # top level attributes
         pointing_model = f['pointing_model'].value  # TODO return this as well
         data_unit = f.attrs['data_unit']
@@ -50,7 +49,7 @@ def load_dataset(data_filename):
         # CorrelatorConfig stuff
         center_freqs = f['CorrelatorConfig']['center_freqs'].value
         bandwidths = f['CorrelatorConfig']['bandwidths'].value
-        rfi_channels = f['CorrelatorConfig']['rfi_channels'].value.tolist()
+        rfi_channels = f['CorrelatorConfig']['rfi_channels'].value.nonzero()[0].tolist()
         dump_rate = f['CorrelatorConfig'].attrs['dump_rate']
         spectral = SpectralConfig(center_freqs, bandwidths, rfi_channels, [], dump_rate) # TODO remove channels_per_band empty_list
          
@@ -61,7 +60,6 @@ def load_dataset(data_filename):
 
         # scans
         scanlist = []
- 
         for s in f['Scans']:
             scan_target = f['Scans'][s].attrs['target']
             scan_comment = f['Scans'][s].attrs['comment'] # TODO: do something with this
@@ -88,21 +86,16 @@ def load_dataset(data_filename):
 def save_dataset(dataset, filename):
     """Save data set to HDF5 file.
     
+    This will overwrite any existing file with the same name.
+    
     Parameters
     ----------
     dataset : :class:`dataset.DataSet` object
         Data set object to save
-    data_filename : string
+    filename : string
         Name of output HDF5 file
     
-    Raises
-    ------
-    ValueError
-        If file already exists
-    
     """
-    if os.path.exists(filename):
-        raise ValueError('File %s already exists - please remove first!' % filename)
     with h5py.File(filename, 'w') as f:
         f['/'].create_dataset('pointing_model', data=np.zeros(16))
         f['/'].attrs['data_unit'] = dataset.data_unit
@@ -112,7 +105,9 @@ def save_dataset(dataset, filename):
         spectral_group = f.create_group('CorrelatorConfig')
         spectral_group.create_dataset('center_freqs', data=dataset.spectral.freqs, compression='gzip')
         spectral_group.create_dataset('bandwidths', data=dataset.spectral.bandwidths, compression='gzip')
-        spectral_group.create_dataset('rfi_channels', data=np.array(dataset.spectral.rfi_channels))
+        rfi_flags = np.tile(False, len(dataset.spectral.freqs))
+        rfi_flags[dataset.spectral.rfi_channels] = True
+        spectral_group.create_dataset('rfi_channels', data=rfi_flags)
         spectral_group.attrs['dump_rate'] = dataset.spectral.dump_rate
         
         nd_group = f.create_group('NoiseDiodeModel')
