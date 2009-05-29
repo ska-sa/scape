@@ -8,19 +8,17 @@ import h5py
 import numpy as np
 
 from .gaincal import NoiseDiodeModel
+from .subscan import SubScan
+from .scan import SpectralConfig, Scan
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTIONS
 #--------------------------------------------------------------------------------------------------
 
 def load_dataset(data_filename):
-    """Load data set from XDM FITS file series.
+    """Load data set from HDF5 file.
     
-    This loads the XDM data set starting at the given filename and consisting of
-    consecutively numbered FITS files. The noise diode model can also be
-    overridden. Since this function is usually not called directly, but via the
-    :class:`dataset.DataSet` initialiser, the noise diode file should rather be
-    assigned to :data:`default_nd_filename`.
+    This loads a Scape dataset from HDF5 file.
     
     Parameters
     ----------
@@ -41,7 +39,50 @@ def load_dataset(data_filename):
         Noise diode model
     
     """
-    pass
+    with h5py.File(data_filename, 'r') as f:
+        
+        # top level attributes
+        pointing_model = f['pointing_model'].value  # TODO return this as well
+        data_unit = f.attrs['data_unit']
+        antenna = f.attrs['antenna']
+        comment = f.attrs['comment'] # TODO return this as well
+
+        # CorrelatorConfig stuff
+        center_freqs = f['CorrelatorConfig']['center_freqs'].value
+        bandwidths = f['CorrelatorConfig']['bandwidths'].value
+        rfi_channels = f['CorrelatorConfig']['rfi_channels'].value.tolist()
+        dump_rate = f['CorrelatorConfig'].attrs['dump_rate']
+        spectral = SpectralConfig(center_freqs, bandwidths, rfi_channels, [], dump_rate) # TODO remove channels_per_band empty_list
+         
+        # noise diode model
+        temperature_x = f['NoiseDiodeModel']['temperature_x'].value
+        temperature_y = f['NoiseDiodeModel']['temperature_y'].value
+        nd_data = NoiseDiodeModel(temperature_x, temperature_y)
+
+        # scans
+        scanlist = []
+ 
+        for s in f['Scans']:
+            scan_target = f['Scans'][s].attrs['target']
+            scan_comment = f['Scans'][s].attrs['comment'] # TODO: do something with this
+     
+            sslist = []
+            for ss in f['Scans'][s]:
+                ss_complex_data = f['Scans'][s][ss]['data'].value
+                ss_data = np.dstack([ss_complex_data['XX'].real, ss_complex_data['YY'].real, 
+                                     2.0 * ss_complex_data['XY'].real, 2.0 * ss_complex_data['XY'].imag])
+                ss_timestamps = f['Scans'][s][ss]['timestamps'].value
+                ss_pointing = f['Scans'][s][ss]['pointing'].value
+                ss_flags = f['Scans'][s][ss]['flags'].value
+                ss_environment = f['Scans'][s][ss]['environment'].value
+                ss_label = f['Scans'][s][ss].attrs['label']
+                ss_comment = f['Scans'][s][ss].attrs['comment'] # TODO: do something with this
+
+                sslist.append(SubScan(ss_data, False, ss_timestamps, ss_pointing, ss_flags, ss_label, data_filename))
+
+            scanlist.append(Scan(sslist,scan_target))
+
+        return scanlist, data_unit, spectral, antenna, nd_data
 
 
 def save_dataset(dataset, filename):
