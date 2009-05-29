@@ -76,7 +76,8 @@ def load_dataset(filename):
                 ss_label = f['Scans'][s][ss].attrs['label']
                 ss_comment = f['Scans'][s][ss].attrs['comment'] # TODO: do something with this
 
-                sslist.append(SubScan(ss_data, False, ss_timestamps, ss_pointing, ss_flags, ss_label, data_filename))
+                sslist.append(SubScan(ss_data, False, ss_timestamps, ss_pointing, ss_flags,
+                                      ss_label, filename + '/Scans/%s/%s' % (s, ss)))
 
             scanlist.append(Scan(sslist,scan_target))
 
