@@ -108,6 +108,12 @@ class DataSet(object):
         self.subscans = []
         for s in self.scans:
             self.subscans.extend(s.subscans)
+        # Calculate target coordinates for all subscans. This functionality is here at the highest level
+        # because it involves interaction between the DataSet, Scan and SubScan levels, while the results
+        # need to be stored at a SubScan level.
+        for s in self.scans:
+            for ss in s.subscans:
+                ss.calc_target_coords(s.target, self.antenna)
     
     # Provide properties to access the attributes of the spectral configuration directly
     # This uses the same trick as in stats.MuSigmaArray to create the properties, which

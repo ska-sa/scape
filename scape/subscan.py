@@ -18,6 +18,8 @@ Functionality: power conversion,...
 
 import numpy as np
 
+from .coord import sphere_to_plane
+
 #--------------------------------------------------------------------------------------------------
 #--- CLASS :  SubScan
 #--------------------------------------------------------------------------------------------------
@@ -64,9 +66,11 @@ class SubScan(object):
         Subscan label, used to distinguish e.g. normal and cal subscans
     path : string
         Filename or HDF5 path from which subscan was loaded
+    target_coords : real array, shape (2, *T*)
+        Coordinates on projected plane, with target as reference, in radians
     
     """
-    def __init__(self, data, is_stokes, timestamps, pointing, flags, label, path):
+    def __init__(self, data, is_stokes, timestamps, pointing, flags, label, path, target_coords=None):
         self.data = data
         self.is_stokes = is_stokes
         self.timestamps = timestamps
@@ -74,6 +78,28 @@ class SubScan(object):
         self.flags = flags
         self.label = label
         self.path = path
+        self.target_coords = target_coords
+    
+    def calc_target_coords(self, target, antenna):
+        """Calculate target coordinates, based on target and antenna objects.
+        
+        Parameters
+        ----------
+        target : :class:`coord.Source` object
+            Target object which is scanned across, obtained from Scan
+        antenna : :class:`coord.Antenna` object
+            Antenna object for antenna that does scanning, obtained from DataSet
+        
+        Returns
+        -------
+        target_coords : real array, shape (2, *T*)
+            Coordinates on projected plane, with target as reference, in radians
+
+        """
+        target_x, target_y = sphere_to_plane(target, antenna, 
+                                             self.pointing['az'], self.pointing['el'], self.timestamps)
+        self.target_coords = np.vstack((target_x, target_y))
+        return self.target_coords
     
     def coherency(self, key):
         """Calculate specific coherency from data.
@@ -223,8 +249,11 @@ class SubScan(object):
                 elif np.asarray(freqkeep).dtype == 'bool':
                     freqkeep = np.asarray(freqkeep).nonzero()[0]
                 selected_data = self.data[np.atleast_2d(timekeep).transpose(), np.atleast_2d(freqkeep), :]
-            return SubScan(selected_data, self.is_stokes, self.timestamps[timekeep], 
-                           self.pointing[timekeep], self.flags[timekeep], self.label, self.path)
+            target_coords = self.target_coords
+            if target_coords:
+               target_coords = target_coords[:, timekeep] 
+            return SubScan(selected_data, self.is_stokes, self.timestamps[timekeep], self.pointing[timekeep],
+                           self.flags[timekeep], self.label, self.path, target_coords)
         # Create a shallow view of data matrix via a masked array or view
         else:
             # If data matrix is kept intact, rather just return a view instead of masked array
@@ -249,4 +278,4 @@ class SubScan(object):
                 keep3d = np.kron(timekeep3d, np.kron(freqkeep3d, polkeep3d))
                 selected_data = np.ma.array(self.data, mask=~keep3d)
             return SubScan(selected_data, self.is_stokes, self.timestamps, self.pointing, self.flags,
-                           self.label, self.path)
+                           self.label, self.path, self.target_coords)
