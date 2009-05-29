@@ -69,14 +69,14 @@ def save_dataset(dataset, filename):
         f['/'].attrs['comment'] = ''
         
         spectral_group = f.create_group('CorrelatorConfig')
-        spectral_group.create_dataset('center_freqs', data=dataset.spectral.freqs)
-        spectral_group.create_dataset('bandwidths', data=dataset.spectral.bandwidths)
+        spectral_group.create_dataset('center_freqs', data=dataset.spectral.freqs, compression='gzip')
+        spectral_group.create_dataset('bandwidths', data=dataset.spectral.bandwidths, compression='gzip')
         spectral_group.create_dataset('rfi_channels', data=np.array(dataset.spectral.rfi_channels))
         spectral_group.attrs['dump_rate'] = dataset.spectral.dump_rate
         
         nd_group = f.create_group('NoiseDiodeModel')
-        nd_group.create_dataset('temperature_x', data=dataset.noise_diode_data.table_x)
-        nd_group.create_dataset('temperature_y', data=dataset.noise_diode_data.table_y)
+        nd_group.create_dataset('temperature_x', data=dataset.noise_diode_data.table_x, compression='gzip')
+        nd_group.create_dataset('temperature_y', data=dataset.noise_diode_data.table_y, compression='gzip')
         
         scans_group = f.create_group('Scans')
         for scan_ind, s in enumerate(dataset.scans):            
@@ -87,19 +87,18 @@ def save_dataset(dataset, filename):
             for subscan_ind, ss in enumerate(s.subscans):
                 subscan_group = scan_group.create_group('SubScan%d' % subscan_ind)
                 
-                if ss.is_stokes:
-                    data_view = np.rec.fromarrays(ss.data.transpose((2, 0, 1)), names=['I', 'Q', 'U', 'V'])
-                else:
-                    data_view = np.rec.fromarrays(ss.data.transpose((2, 0, 1)), names=['XX', 'YY', 'U', 'V'])
-                subscan_group.create_dataset('data', data=data_view, compression='gzip')
-                subscan_group.create_dataset('timestamps', data=ss.timestamps)
-                subscan_group.create_dataset('pointing', data=ss.pointing)
-                subscan_group.create_dataset('flags', data=ss.flags)
+                coherency_order = ['XX', 'YY', 'XY', 'YX']
+                complex_data = np.rec.fromarrays([ss.coherency(key) for key in coherency_order], 
+                                                 names=coherency_order, formats=['complex64'] * 4)
+                subscan_group.create_dataset('data', data=complex_data, compression='gzip')
+                subscan_group.create_dataset('timestamps', data=ss.timestamps, compression='gzip')
+                subscan_group.create_dataset('pointing', data=ss.pointing, compression='gzip')
+                subscan_group.create_dataset('flags', data=ss.flags, compression='gzip')
                 # Dummy environmental data for now
                 num_samples = len(ss.timestamps)
                 enviro = np.rec.fromarrays([np.zeros(num_samples), np.zeros(num_samples), np.zeros(num_samples)],
                                            names=['temperature','pressure', 'humidity'])
-                subscan_group.create_dataset('environment', data=enviro)
+                subscan_group.create_dataset('environment', data=enviro, compression='gzip')
                 
                 subscan_group.attrs['label'] = ss.label
                 subscan_group.attrs['comment'] = ''
