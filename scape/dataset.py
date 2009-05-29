@@ -11,12 +11,13 @@ from .gaincal import calibrate_gain
 
 # Try to import all available formats
 try:
-    from .xdmfits import load_dataset as xdmfits_dataset
+    from .xdmfits import load_dataset as xdmfits_load
     xdmfits_found = True
 except ImportError:
     xdmfits_found = False
 try:
-    from .hdf5 import load_dataset as hdf5_dataset
+    from .hdf5 import load_dataset as hdf5_load
+    from .hdf5 import save_dataset as hdf5_save
     hdf5_found = True
 except ImportError:
     hdf5_found = False
@@ -88,11 +89,11 @@ class DataSet(object):
             if ext == '.fits':
                 if not xdmfits_found:
                     raise ImportError('XDM FITS support could not be loaded - please check xdmfits module')
-                scanlist, data_unit, spectral, antenna, nd_data = xdmfits_dataset(filename, **kwargs)
+                scanlist, data_unit, spectral, antenna, nd_data = xdmfits_load(filename, **kwargs)
             elif (ext == '.h5') or (ext == '.hdf5'):
                 if not hdf5_found:
                     raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
-                scanlist, data_unit, spectral, antenna, nd_data = hdf5_dataset(filename, **kwargs)
+                scanlist, data_unit, spectral, antenna, nd_data = hdf5_load(filename, **kwargs)
             else:
                 raise ValueError("File extension '%s' not understood" % ext)
         self.scans = scanlist
@@ -175,6 +176,41 @@ class DataSet(object):
         """Convert power data to Stokes parameter format."""
         for ss in self.subscans:
             ss.convert_to_stokes()
+    
+    def save(self, filename, **kwargs):
+        """Save data set object to file.
+        
+        This automatically figures out which file format to use based on the
+        file extension.
+        
+        Parameters
+        ----------
+        filename : string
+            Name of output file
+        kwargs : dict, optional
+            Extra keyword arguments are passed on to underlying save function
+        
+        Raises
+        ------
+        IOError
+            If output file already exists
+        ValueError
+            If file extension is unknown or unsupported
+        ImportError
+            If file extension is known, but appropriate module would not import
+        
+        """
+        if os.path.exists(filename):
+            raise IOError('File %s already exists - please remove first!' % filename)
+        ext = os.path.splitext(filename)[1]
+        if ext == '.fits':
+            raise ValueError('XDM FITS writing support not implemented')
+        elif (ext == '.h5') or (ext == '.hdf5'):
+            if not hdf5_found:
+                raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
+            hdf5_save(self, filename, **kwargs)
+        else:
+            raise ValueError("File extension '%s' not understood" % ext)
     
     def select(self, labelkeep=None, flagkeep=None, freqkeep=None, copy=False):
         """Select subset of data set, based on subscan label, flags and frequency.
