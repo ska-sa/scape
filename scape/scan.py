@@ -1,16 +1,16 @@
-"""Container for the data of a single subscan.
+"""Container for the data of a single scan.
 
-A *subscan* is the *minimal amount of data taking that can be commanded at the
-script level,* in accordance with the ALMA Science Data Model. This includes
-a single linear sweep across a source, one line in an OTF map, a single
-pointing for Tsys measurement, a noise diode on-off measurement, etc. It
+A *scan* is the *minimal amount of data taking that can be commanded at the
+script level,* which corresponds to the *subscan* of the ALMA Science Data Model.
+This includes a single linear sweep across a source, one line in an OTF map, a
+single pointing for Tsys measurement, a noise diode on-off measurement, etc. It
 contains several *integrations*, or correlator samples, and forms part of an
-overall *scan*.
+overall *compound scan*.
 
-This module provides the :class:`SubScan` class, which encapsulates all data
-and actions related to a single subscan across a point source, or a single
-subscan at a certain pointing. All actions requiring more than one subscan are
-grouped together in :class:`scan.Scan` instead.
+This module provides the :class:`Scan` class, which encapsulates all data
+and actions related to a single scan across a point source, or a single
+scan at a certain pointing. All actions requiring more than one scan are
+grouped together in :class:`compoundscan.CompoundScan` instead.
 
 Functionality: power conversion,...
 
@@ -21,11 +21,11 @@ import numpy as np
 from .coord import sphere_to_plane
 
 #--------------------------------------------------------------------------------------------------
-#--- CLASS :  SubScan
+#--- CLASS :  Scan
 #--------------------------------------------------------------------------------------------------
 
-class SubScan(object):
-    """Container for the data of a single subscan.
+class Scan(object):
+    """Container for the data of a single scan.
 
     The main data member of this class is the 3-D :attr:`data` array, which
     stores power (autocorrelation) measurements as a function of time, frequency
@@ -63,9 +63,9 @@ class SubScan(object):
         Flags, with one record per integration. The field names correspond with
         the flag names.
     label : string
-        Subscan label, used to distinguish e.g. normal and cal subscans
+        Scan label, used to distinguish e.g. normal and cal scans
     path : string
-        Filename or HDF5 path from which subscan was loaded
+        Filename or HDF5 path from which scan was loaded
     target_coords : real array, shape (2, *T*)
         Coordinates on projected plane, with target as reference, in radians
     
@@ -86,7 +86,7 @@ class SubScan(object):
         Parameters
         ----------
         target : :class:`coord.Source` object
-            Target object which is scanned across, obtained from Scan
+            Target object which is scanned across, obtained from CompoundScan
         antenna : :class:`coord.Antenna` object
             Antenna object for antenna that does scanning, obtained from DataSet
         
@@ -205,7 +205,7 @@ class SubScan(object):
     def select(self, timekeep=None, freqkeep=None, copy=False):
         """Select a subset of time and frequency indices in data matrix.
         
-        This creates a new :class:`SubScan` object that contains a subset of the
+        This creates a new :class:`Scan` object that contains a subset of the
         rows and columns of the data matrix. This allows time samples and/or
         frequency channels/bands to be discarded. If *copy* is False, the data
         is selected via a masked array or view, and the returned object is a
@@ -223,12 +223,12 @@ class SubScan(object):
             (either integer indices or booleans that are True for the values to
             be kept). The default is None, which keeps everything.
         copy : {False, True}, optional
-            True if the new subscan is a copy, False if it is a view
+            True if the new scan is a copy, False if it is a view
         
         Returns
         -------
-        sub : :class:`SubScan` object
-            Subscan with reduced data matrix (either masked array or smaller copy)
+        scan : :class:`Scan` object
+            Scan with reduced data matrix (either masked array or smaller copy)
         
         """
         # Use advanced indexing to create a smaller copy of the data matrix
@@ -252,7 +252,7 @@ class SubScan(object):
             target_coords = self.target_coords
             if not target_coords is None:
                target_coords = target_coords[:, timekeep] 
-            return SubScan(selected_data, self.is_stokes, self.timestamps[timekeep], self.pointing[timekeep],
+            return Scan(selected_data, self.is_stokes, self.timestamps[timekeep], self.pointing[timekeep],
                            self.flags[timekeep], self.label, self.path, target_coords)
         # Create a shallow view of data matrix via a masked array or view
         else:
@@ -277,5 +277,5 @@ class SubScan(object):
                 polkeep3d = np.atleast_3d([True, True, True, True]).transpose((0, 2, 1))
                 keep3d = np.kron(timekeep3d, np.kron(freqkeep3d, polkeep3d))
                 selected_data = np.ma.array(self.data, mask=~keep3d)
-            return SubScan(selected_data, self.is_stokes, self.timestamps, self.pointing, self.flags,
+            return Scan(selected_data, self.is_stokes, self.timestamps, self.pointing, self.flags,
                            self.label, self.path, self.target_coords)

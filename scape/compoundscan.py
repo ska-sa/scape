@@ -1,14 +1,14 @@
-"""Container for the data of a single scan.
+"""Container for the data of a compound scan.
 
-A *scan* is the *lowest-level object normally used by an observer,* in
-accordance with the ALMA Science Data Model. This is normally done on a single
-source, and includes a complete raster map of a source, a cross-hair pointing
-scan, a focus scan, a gain curve scan, a holography scan, etc. It contains
-several *subscans* and forms part of an overall *experiment*.
+A *compound scan* is the *lowest-level object normally used by an observer,*
+which corresponds to the *scan* of the ALMA Science Data Model. This is normally
+done on a single source. Examples include a complete raster map of a source, a
+cross-hair pointing scan, a focus scan, a gain curve scan, a holography scan,
+etc. It contains one or more *scans* and forms part of an overall *experiment*.
 
-This module provides the :class:`Scan` class, which encapsulates all data
-and actions related to a single scan of a point source, or a single scan at a
-certain pointing. All actions requiring more than one scan are
+This module provides the :class:`CompoundScan` class, which encapsulates all
+data and actions related to a compound scan of a point source, or a compund scan
+at a certain pointing. All actions requiring more than one compound scan are
 grouped together in :class:`DataSet` instead.
 
 Functionality: beam/baseline fitting, instant mount coords, ...
@@ -112,24 +112,24 @@ class SpectralConfig(object):
         return self
 
 #--------------------------------------------------------------------------------------------------
-#--- CLASS :  Scan
+#--- CLASS :  CompoundScan
 #--------------------------------------------------------------------------------------------------
 
-class Scan(object):
-    """Container for the data of a single scan.
+class CompoundScan(object):
+    """Container for the data of a compound scan.
     
     Parameters
     ----------
-    subscanlist : list of :class:`subscan.SubScan` objects
-        List of subscan objects
+    scanlist : list of :class:`scan.Scan` objects
+        List of scan objects
     target : string
-        Name of the target of this scan
+        Name of the target of this compound scan
     fitted_beam : :class:`beam_baseline.BeamBaselineComboFit` object, optional
         Object that describes fitted beam and baseline
     
     """
-    def __init__(self, subscanlist, target, fitted_beam=None):
-        self.subscans = subscanlist
+    def __init__(self, scanlist, target, fitted_beam=None):
+        self.scans = scanlist
         # Interpret source name string and return relevant object
         self.target = construct_source(target)
         self.fitted_beam = fitted_beam

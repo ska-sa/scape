@@ -1,8 +1,8 @@
 """Read XDM FITS files.
 
 The XDM data set consists of a sequence of consecutively numbered FITS files,
-one per subscan. The scans are indicated by assigning the same 'experiment
-sequence number' to a group of subscans. The noise diode model is stored in
+one per scan. The compound scans are indicated by assigning the same 'experiment
+sequence number' to a group of scans. The noise diode model is stored in
 the first FITS file in the sequence.
 
 Only reading is supported, to encourage a move to later file formats.
@@ -21,8 +21,8 @@ import numpy as np
 import acsm
 
 from .coord import deg2rad
-from .subscan import SubScan
-from .scan import Scan, SpectralConfig
+from .scan import Scan
+from .compoundscan import CompoundScan, SpectralConfig
 from .gaincal import NoiseDiodeModel, NoiseDiodeNotFound
 
 logger = logging.getLogger("scape.xdmfits")
@@ -116,8 +116,8 @@ def _acsm_target_name(target):
         return "Az: %s:%s:%s El: %s:%s:%s" % match.groups()
     return name
     
-def load_subscan(filename):
-    """Load subscan from single XDM FITS file.
+def load_scan(filename):
+    """Load scan from single XDM FITS file.
     
     Parameters
     ----------
@@ -126,18 +126,18 @@ def load_subscan(filename):
     
     Returns
     -------
-    sub : :class:`subscan.SubScan` object
-        SubScan based on file
+    scan : :class:`scan.Scan` object
+        Scan based on file
     data_unit : {'raw', 'K', 'Jy'}
         Physical unit of power data
-    spectral : :class:`scan.SpectralConfig` object
+    spectral : :class:`compoundscan.SpectralConfig` object
         Spectral configuration
     target : string
-        Name of the target of this subscan
+        Name of the target of this scan
     antenna : string
-        Name of antenna that did the subscan
+        Name of antenna that did the scan
     exp_seq_num : int
-        Experiment sequence number associated with subscan
+        Experiment sequence number associated with scan
     feed_id : int
         Index of feed used (0 for main feed or 1 for offset feed)
     
@@ -195,7 +195,7 @@ def load_subscan(filename):
     mount = cPickle.loads(hdu['OBJECTS'].data.field('Mount')[0])
     antenna = mount.get_decorated_coordinate_system().get_attribute('position').get_description().split()[0]
         
-    return SubScan(data, is_stokes, timestamps, pointing, flags, label, path), \
+    return Scan(data, is_stokes, timestamps, pointing, flags, label, path), \
            data_unit, spectral, target, antenna, exp_seq_num, feed_id
 
 def load_dataset(data_filename, nd_filename=None):
@@ -216,11 +216,11 @@ def load_dataset(data_filename, nd_filename=None):
     
     Returns
     -------
-    scanlist : list of :class:`scan.Scan` objects
-        List of scans
+    compscanlist : list of :class:`compoundscan.CompoundScan` objects
+        List of compound scans
     data_unit : {'raw', 'K', 'Jy'}
         Physical unit of power data
-    spectral : :class:`scan.SpectralConfig` object
+    spectral : :class:`compoundscan.SpectralConfig` object
         Spectral configuration object
     antenna : string
         Name of antenna that produced the data set
@@ -244,17 +244,17 @@ def load_dataset(data_filename, nd_filename=None):
     while os.path.exists('%s_%04d.fits' % (prefix, file_counter)):
         filelist.append('%s_%04d.fits' % (prefix, file_counter))
         file_counter += 1
-    # Group all FITS files (= subscans) with the same experiment sequence number into a scan
-    subscanlists, targets = {}, {}
+    # Group all FITS files (= scans) with the same experiment sequence number into a compound scan
+    scanlists, targets = {}, {}
     nd_data = None
     for fits_file in filelist:
-        sub, data_unit, spectral, target, antenna, exp_seq_num, feed_id = load_subscan(fits_file)
-        if subscanlists.has_key(exp_seq_num):
-            subscanlists[exp_seq_num].append(sub)
+        scan, data_unit, spectral, target, antenna, exp_seq_num, feed_id = load_scan(fits_file)
+        if scanlists.has_key(exp_seq_num):
+            scanlists[exp_seq_num].append(scan)
         else:
-            subscanlists[exp_seq_num] = [sub]
+            scanlists[exp_seq_num] = [scan]
         assert not targets.has_key(exp_seq_num) or targets[exp_seq_num] == target, \
-               "Each subscan in a scan is required to have the same target"
+               "Each scan in a compound scan is required to have the same target"
         targets[exp_seq_num] = target
         # Load noise diode characteristics if available
         if nd_data is None:
@@ -275,10 +275,10 @@ def load_dataset(data_filename, nd_filename=None):
                 except NoiseDiodeNotFound:
                     pass
         logger.info("Loaded %s: %s '%s' (%d samps, %d chans, %d pols)" % 
-                    (os.path.basename(fits_file), sub.label, target,
-                     sub.data.shape[0], sub.data.shape[1], sub.data.shape[2]))
-    # Assemble Scan objects from subscan lists
-    scanlist = []
-    for esn, subscanlist in subscanlists.iteritems():
-        scanlist.append(Scan(subscanlist, targets[esn]))
-    return scanlist, data_unit, spectral, antenna, nd_data
+                    (os.path.basename(fits_file), scan.label, target,
+                     scan.data.shape[0], scan.data.shape[1], scan.data.shape[2]))
+    # Assemble CompoundScan objects from scan lists
+    compscanlist = []
+    for esn, scanlist in scanlists.iteritems():
+        compscanlist.append(CompoundScan(scanlist, targets[esn]))
+    return compscanlist, data_unit, spectral, antenna, nd_data

@@ -80,23 +80,23 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
                                   sharex=axes_list[2], sharey=axes_list[0]))
     
     # Use relative time axis and obtain data limits (of smoothed data) per channel
-    subscans = dataset.subscans
-    if not subscans:
+    scans = dataset.scans
+    if not scans:
         logger.error('Data set is empty')
         return
     channel_freqs_GHz = dataset.freqs / 1e9
     channel_bandwidths_GHz = dataset.bandwidths / 1e9
     rfi_channels = dataset.rfi_channels
     num_channels = len(channel_freqs_GHz)
-    data_min = {'XX': np.tile(np.inf, (len(subscans), num_channels)), 
-                'YY': np.tile(np.inf, (len(subscans), num_channels))}
-    data_max = {'XX': np.zeros((len(subscans), num_channels)),
-                'YY': np.zeros((len(subscans), num_channels))}
+    data_min = {'XX': np.tile(np.inf, (len(scans), num_channels)), 
+                'YY': np.tile(np.inf, (len(scans), num_channels))}
+    data_max = {'XX': np.zeros((len(scans), num_channels)),
+                'YY': np.zeros((len(scans), num_channels))}
     time_origin = np.double(np.inf)
-    for n, ss in enumerate(subscans):
-        time_origin = min(time_origin, ss.timestamps.min())
+    for n, scan in enumerate(scans):
+        time_origin = min(time_origin, scan.timestamps.min())
         for pol in ['XX', 'YY']:
-            smoothed_power = remove_spikes(ss.coherency(pol))
+            smoothed_power = remove_spikes(scan.coherency(pol))
             channel_min = smoothed_power.min(axis=0)
             data_min[pol][n] = np.where(channel_min < data_min[pol][n], channel_min, data_min[pol][n])
             channel_max = smoothed_power.max(axis=0)
@@ -114,18 +114,18 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
     for ax_ind, pol in enumerate(['XX', 'YY']):
         # Time-frequency waterfall plots
         ax = axes_list[ax_ind]
-        all_subscans = []
-        for scan_ind, s in enumerate(dataset.scans):
-            for ss in s.subscans:
+        all_scans = []
+        for compscan_ind, compscan in enumerate(dataset.compscans):
+            for scan in compscan.scans:
                 # Grey out RFI-tagged channels using alpha transparency
-                if ss.label == 'scan':
+                if scan.label == 'scan':
                     colors = [(0.0, 0.0, 1.0, 1.0 - 0.6 * (chan in dataset.rfi_channels)) for chan in channel_list]
                 else:
                     colors = [(0.0, 0.0, 0.0, 1.0 - 0.6 * (chan in dataset.rfi_channels)) for chan in channel_list]
-                time_line = ss.timestamps - time_origin
+                time_line = scan.timestamps - time_origin
                 # Normalise the data in each channel to lie between 0 and (channel bandwidth * scale)
                 norm_power = scale * (dataset.bandwidths[np.newaxis, :] / 1e9) * \
-                            (ss.coherency(pol) - data_min[pol][np.newaxis, :]) / \
+                            (scan.coherency(pol) - data_min[pol][np.newaxis, :]) / \
                             (data_max[pol][np.newaxis, :] - data_min[pol][np.newaxis, :])
                 segments = [np.vstack((time_line, norm_power[:, chan])).transpose() for chan in channel_list]
                 if len(segments) > 1:
@@ -136,15 +136,15 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
                     ax.plot(segments[0][:, 0] + offsets.squeeze()[0], 
                             segments[0][:, 1] + offsets.squeeze()[1], color=colors[0], lw=0.5)
                 t_limits += [time_line.min(), time_line.max()]
-                all_subscans.append(ss.coherency(pol))
-            # Add scan target name and partition lines between scans
-            if s.subscans:
-                start_time_ind = len(t_limits) - 2 * len(s.subscans)
-                if scan_ind >= 1:
+                all_scans.append(scan.coherency(pol))
+            # Add compound scan target name and partition lines between compound scans
+            if compscan.scans:
+                start_time_ind = len(t_limits) - 2 * len(compscan.scans)
+                if compscan_ind >= 1:
                     border_time = (t_limits[start_time_ind - 1] + t_limits[start_time_ind]) / 2.0
                     ax.plot([border_time, border_time], [0.0, 10.0 * channel_freqs_GHz.max()], '--k')
                 ax.text((t_limits[start_time_ind] + t_limits[-1]) / 2.0,
-                        offsets[0, 1] - scale * dataset.bandwidths[0] / 1e9, s.target.name,
+                        offsets[0, 1] - scale * dataset.bandwidths[0] / 1e9, compscan.target.name,
                         ha='center', va='bottom', clip_on=True)
         # Set up title and axis labels
         nth_str = ''
@@ -174,14 +174,14 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
         ax.set_ylabel('Frequency (GHz)')
         # Power spectrum box plots, with bar plot behind it indicating min-to-max data range
         ax = axes_list[ax_ind + 2]
-        all_subscans = np.concatenate(all_subscans, axis=0)
+        all_scans = np.concatenate(all_scans, axis=0)
         rfi_channel_list = list(set(channel_list) & set(rfi_channels))
         non_rfi_channel_list = list(set(channel_list) - set(rfi_channel_list))
         # Do RFI and non-RFI channels separately, in order to grey out the RFI channels (boxplot constraint)
         for rfi_flag, channels in enumerate([non_rfi_channel_list, rfi_channel_list]):
             if len(channels) == 0:
                 continue
-            chan_data = all_subscans[:, channels]
+            chan_data = all_scans[:, channels]
             ax.bar(chan_data.min(axis=0), channel_skip * channel_bandwidths_GHz[channels],
                    chan_data.max(axis=0) - chan_data.min(axis=0), channel_freqs_GHz[channels],
                    color='b', alpha=(0.5 - 0.2 * rfi_flag), linewidth=0, align='center', orientation='horizontal')
@@ -200,7 +200,7 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
         # second_axis.set_ylabel('Channel number')
         # second_axis.set_yticks(channel_freqs_GHz[channel_list])
         # second_axis.set_yticklabels([str(chan) for chan in channel_list])
-        p_limits += [all_subscans.min(), all_subscans.max()]
+        p_limits += [all_scans.min(), all_scans.max()]
         ax.set_title('%s power spectrum' % pol)
         if pol == 'XX':
             # This is more elaborate because the subplot axes are shared
@@ -232,17 +232,17 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
 #--- FUNCTION :  fitted_beam_scans
 #--------------------------------------------------------------------------------------------------
 
-def fitted_beam_scans(scan, band=0, fig=None):
+def fitted_beam_scans(compscan, band=0, fig=None):
     """Plot beam pattern fitted to multiple scans through a single point source.
     
-    This plots time series plots of the subscans comprising a scan, with the
-    beam and baseline fits superimposed. It highlights the success of the beam
-    and baseline fitting procedure.
+    This plots time series plots of the scans comprising a compound scan, with
+    the beam and baseline fits superimposed. It highlights the success of the
+    beam and baseline fitting procedure.
     
     Parameters
     ----------
-    scan : :class:`scan.Scan` object
-        Scan object to plot
+    compscan : :class:`compoundscan.CompoundScan` object
+        Compound scan object to plot
     band : int, optional
         Frequency band to plot
     fig : :class:`matplotlib.figure.Figure` object, optional
@@ -256,20 +256,20 @@ def fitted_beam_scans(scan, band=0, fig=None):
     """
     if fig is None:
         fig = plt.gcf()
-    # Set up axes: one figure, with one set of axes per subscan
+    # Set up axes: one figure, with one set of axes per scan
     axes_list = []
-    time_origin = np.array([ss.timestamps.min() for ss in scan.subscans]).min()
+    time_origin = np.array([scan.timestamps.min() for scan in compscan.scans]).min()
     power_limits = []
     
-    for n, ss in enumerate(scan.subscans):
-        measured_power = ss.stokes('I')[:, band]
-        time_line = ss.timestamps - time_origin
+    for n, scan in enumerate(compscan.scans):
+        measured_power = scan.stokes('I')[:, band]
+        time_line = scan.timestamps - time_origin
         smooth_power = remove_spikes(measured_power)
         power_limits.extend([smooth_power.min(), smooth_power.max()])
-        ax = plt.subplot(len(scan.subscans), 1, n + 1)
-        if scan.fitted_beam:
-            fitted_power = scan.fitted_beam(ss.target_coords.transpose())
-            baseline_power = scan.fitted_beam.baseline(ss.target_coords.transpose())
+        ax = plt.subplot(len(compscan.scans), 1, n + 1)
+        if compscan.fitted_beam:
+            fitted_power = compscan.fitted_beam(scan.target_coords.transpose())
+            baseline_power = compscan.fitted_beam.baseline(scan.target_coords.transpose())
             ax.plot(time_line, baseline_power, 'r', lw=2)
             ax.plot(time_line, fitted_power, 'r', lw=2)
         ax.plot(time_line, measured_power, 'b')
@@ -278,7 +278,7 @@ def fitted_beam_scans(scan, band=0, fig=None):
     ylim = (min(power_limits), 1.1 * max(power_limits) - 0.1 * min(power_limits))
     for n, ax in enumerate(axes_list):
         ax.set_ylim(ylim)
-        if n == len(scan.subscans) - 1:
+        if n == len(compscan.scans) - 1:
             ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
         ax.set_ylabel('Power')
     return axes_list
@@ -412,7 +412,7 @@ def gaussian_ellipses(mean, cov, contour=0.5, num_points=200):
     cov = np.asarray(cov)
     contour = np.atleast_1d(np.asarray(contour))
     if (mean.shape != (2,)) or (cov.shape != (2, 2)):
-        raise ValueError('Mean and covariance should be 2-dimensional, with shapes (2,) and (2,2) instead of'
+        raise ValueError('Mean and covariance should be 2-dimensional, with shapes (2,) and (2, 2) instead of'
                          + str(mean.shape) + ' and ' + str(cov.shape))
     # Create parametric circle
     t = np.linspace(0.0, 2.0 * np.pi, num_points)
@@ -431,7 +431,7 @@ def gaussian_ellipses(mean, cov, contour=0.5, num_points=200):
 #--- FUNCTION :  fitted_beam_target
 #--------------------------------------------------------------------------------------------------
 
-def fitted_beam_target(scan, band=0, ax=None):
+def fitted_beam_target(compscan, band=0, ax=None):
     """Plot beam pattern fitted to multiple scans through a single point source.
     
     This plots contour ellipses of a Gaussian beam function fitted to multiple
@@ -441,8 +441,8 @@ def fitted_beam_target(scan, band=0, ax=None):
     
     Parameters
     ----------
-    scan : :class:`scan.Scan` object
-        Scan object to plot
+    compscan : :class:`compoundscan.CompoundScan` object
+        Compound scan object to plot
     band : int, optional
         Frequency band to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
@@ -457,20 +457,20 @@ def fitted_beam_target(scan, band=0, ax=None):
     if ax is None:
         ax = plt.gca()
     # Extract total power and target coordinates (in degrees) of all scans
-    total_power = np.hstack([ss.stokes('I')[:, band] for ss in scan.subscans])
-    target_coords = rad2deg(np.hstack([ss.target_coords for ss in scan.subscans]))
+    total_power = np.hstack([scan.stokes('I')[:, band] for scan in compscan.scans])
+    target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans]))
     
     # Show the locations of the scan samples themselves, with marker sizes indicating power values
     plot_marker_3d(target_coords[0], target_coords[1], total_power, ax=ax)
     # Plot the fitted Gaussian beam function as contours
-    if scan.fitted_beam:
+    if compscan.fitted_beam:
         ell_type, center_type = 'r-', 'r+'
-        ellipses = gaussian_ellipses(scan.fitted_beam.beam_center,
-                                     np.diag(fwhm_to_sigma(scan.fitted_beam.beam_width) ** 2.0),
+        ellipses = gaussian_ellipses(compscan.fitted_beam.beam_center,
+                                     np.diag(fwhm_to_sigma(compscan.fitted_beam.beam_width) ** 2.0),
                                      contour=[0.5, 0.1])
         for ellipse in ellipses:
             ax.plot(rad2deg(ellipse[:, 0]), rad2deg(ellipse[:, 1]), ell_type, lw=2)
-        ax.plot([rad2deg(scan.fitted_beam.beam_center[0])], [rad2deg(scan.fitted_beam.beam_center[1])],
+        ax.plot([rad2deg(compscan.fitted_beam.beam_center[0])], [rad2deg(compscan.fitted_beam.beam_center[1])],
                 center_type, ms=12, aa=False, mew=2)
     
     # Axis settings and labels

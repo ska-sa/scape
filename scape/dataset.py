@@ -5,7 +5,7 @@ import logging
 
 import numpy as np
 
-from .scan import Scan
+from .compoundscan import CompoundScan
 from .coord import antenna_catalogue, lightspeed
 from .gaincal import calibrate_gain
 from .beam_baseline import fit_beam_and_baseline
@@ -37,22 +37,22 @@ class DataSet(object):
     to use, based on the file extension. If the filename is blank, the
     :class:`DataSet` can also be directly initialised from its constituent
     parts, which is useful for simulations and creating the data sets from
-    scratch. The :class:`DataSet` object contains a list of scans, as well as
-    the spectral configuration, antenna details and noise diode characteristics.
+    scratch. The :class:`DataSet` object contains a list of compound scans, as
+    well as the spectral configuration, antenna details and noise diode model.
     
     Parameters
     ----------
     filename : string
         Name of data set file, or blank string if the other parameters are given
-    scanlist : list of :class:`scan.Scan` objects, optional
-        List of scans
+    compscanlist : list of :class:`compoundscan.CompoundScan` objects, optional
+        List of compound scans
     data_unit : {'raw', 'K', 'Jy'}, optional
         Physical unit of power data
-    spectral : :class:`scan.SpectralConfig` object, optional
+    spectral : :class:`compoundscan.SpectralConfig` object, optional
         Spectral configuration object
     antenna : string, optional
         Name of antenna that produced the data set
-    nd_data : :class:`gaincal.NoiseDiodeBase` object, optional
+    nd_data : :class:`gaincal.NoiseDiodeModel` object, optional
         Noise diode model
     kwargs : dict, optional
         Extra keyword arguments are passed to selected :func:`load_dataset` function
@@ -70,8 +70,8 @@ class DataSet(object):
         channels belong to each band (same as in *spectral*)
     dump_rate : float
         Correlator dump rate, in Hz (same as in *spectral*)
-    subscans : list of :class:`subscan.SubScan` objects
-        Flattened list of all subscans in data set
+    scans : list of :class:`scan.Scan` objects
+        Flattened list of all scans in data set
     
     Raises
     ------
@@ -83,21 +83,21 @@ class DataSet(object):
         If the antenna name is unknown
     
     """
-    def __init__(self, filename, scanlist=None, data_unit=None, spectral=None,
+    def __init__(self, filename, compscanlist=None, data_unit=None, spectral=None,
                  antenna=None, nd_data=None, **kwargs):
         if filename:
             ext = os.path.splitext(filename)[1]
             if ext == '.fits':
                 if not xdmfits_found:
                     raise ImportError('XDM FITS support could not be loaded - please check xdmfits module')
-                scanlist, data_unit, spectral, antenna, nd_data = xdmfits_load(filename, **kwargs)
+                compscanlist, data_unit, spectral, antenna, nd_data = xdmfits_load(filename, **kwargs)
             elif (ext == '.h5') or (ext == '.hdf5'):
                 if not hdf5_found:
                     raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
-                scanlist, data_unit, spectral, antenna, nd_data = hdf5_load(filename, **kwargs)
+                compscanlist, data_unit, spectral, antenna, nd_data = hdf5_load(filename, **kwargs)
             else:
                 raise ValueError("File extension '%s' not understood" % ext)
-        self.scans = scanlist
+        self.compscans = compscanlist
         self.data_unit = data_unit
         self.spectral = spectral
         try:
@@ -105,16 +105,16 @@ class DataSet(object):
         except KeyError:
             raise KeyError("Unknown antenna '%s'" % antenna)
         self.noise_diode_data = nd_data
-        # Create subscan list
-        self.subscans = []
-        for s in self.scans:
-            self.subscans.extend(s.subscans)
-        # Calculate target coordinates for all subscans. This functionality is here at the highest level
-        # because it involves interaction between the DataSet, Scan and SubScan levels, while the results
-        # need to be stored at a SubScan level.
-        for s in self.scans:
-            for ss in s.subscans:
-                ss.calc_target_coords(s.target, self.antenna)
+        # Create scan list
+        self.scans = []
+        for compscan in self.compscans:
+            self.scans.extend(compscan.scans)
+        # Calculate target coordinates for all scans. This functionality is here at the highest level
+        # because it involves interaction between the DataSet, CompoundScan and Scan levels, while the results
+        # need to be stored at a Scan level.
+        for compscan in self.compscans:
+            for scan in compscan.scans:
+                scan.calc_target_coords(compscan.target, self.antenna)
     
     # Provide properties to access the attributes of the spectral configuration directly
     # This uses the same trick as in stats.MuSigmaArray to create the properties, which
@@ -176,13 +176,13 @@ class DataSet(object):
     
     def convert_to_coherency(self):
         """Convert power data to coherency format."""
-        for ss in self.subscans:
-            ss.convert_to_coherency()
+        for scan in self.scans:
+            scan.convert_to_coherency()
     
     def convert_to_stokes(self):
         """Convert power data to Stokes parameter format."""
-        for ss in self.subscans:
-            ss.convert_to_stokes()
+        for scan in self.scans:
+            scan.convert_to_stokes()
     
     def save(self, filename, **kwargs):
         """Save data set object to file.
@@ -220,13 +220,13 @@ class DataSet(object):
             raise ValueError("File extension '%s' not understood" % ext)
     
     def select(self, labelkeep=None, flagkeep=None, freqkeep=None, copy=False):
-        """Select subset of data set, based on subscan label, flags and frequency.
+        """Select subset of data set, based on scan label, flags and frequency.
         
         This returns a data set with a possibly reduced number of time samples,
-        frequency channels/bands and subscans, based on the selection criteria.
-        Since each subscan potentially has a different number of time samples,
+        frequency channels/bands and scans, based on the selection criteria.
+        Since each scan potentially has a different number of time samples,
         it is less useful to filter directly on sample index. Instead, the
-        flags are used to select a subset of time samples in each subscan. The
+        flags are used to select a subset of time samples in each scan. The
         list of flags are ANDed together to determine which parts are kept. It
         is also possible to invert flags by prepending a ~ (tilde) character.
         
@@ -238,10 +238,10 @@ class DataSet(object):
         Parameters
         ----------
         labelkeep : list of strings, optional
-            All subscans with labels in this list will be kept. The default is
+            All scans with labels in this list will be kept. The default is
             None, which means all labels are kept.
         flagkeep : list of strings, optional
-            List of flags used to select time ranges in each subscan. The time
+            List of flags used to select time ranges in each scan. The time
             samples for which all the flags in the list are true are kept.
             Individual flags can be negated by prepending a ~ (tilde) character.
             The default is None, which means all time samples are kept.
@@ -250,12 +250,12 @@ class DataSet(object):
             (either integer indices or booleans that are True for the values to
             be kept). The default is None, which keeps all channels/bands.
         copy : {False, True}, optional
-            True if the new subscan is a copy, False if it is a view
+            True if the new scan is a copy, False if it is a view
         
         Returns
         -------
         dataset : :class:`DataSet` object
-            Data set with selection of subscans with possibly smaller data arrays.
+            Data set with selection of scans with possibly smaller data arrays.
         
         Raises
         ------
@@ -263,16 +263,16 @@ class DataSet(object):
             If flag in *flagkeep* is unknown
         
         """
-        scanlist = []
-        for s in self.scans:
-            subscanlist = []
-            for ss in s.subscans:
+        compscanlist = []
+        for compscan in self.compscans:
+            scanlist = []
+            for scan in compscan.scans:
                 # Convert flag selection to time sample selection
                 if flagkeep is None:
                     timekeep = None
                 else:
                     # By default keep all time samples
-                    timekeep = np.tile(True, len(ss.timestamps))
+                    timekeep = np.tile(True, len(scan.timestamps))
                     for flag in flagkeep:
                         invert = False
                         # Flags prepended with ~ get inverted
@@ -281,25 +281,25 @@ class DataSet(object):
                             flag = flag[1:]
                         # Ignore unknown flags
                         try:
-                            flag_data = ss.flags[flag]
+                            flag_data = scan.flags[flag]
                         except KeyError:
                             raise KeyError("Unknown flag '%s'" % flag)
                         if invert:
                             timekeep &= ~flag_data
                         else:
                             timekeep &= flag_data
-                if (labelkeep is None) or (ss.label in labelkeep):
-                    subscanlist.append(ss.select(timekeep, freqkeep, copy))
-            if subscanlist:
-                scanlist.append(Scan(subscanlist, s.target.name))
-        return DataSet(None, scanlist, self.data_unit, self.spectral.select(freqkeep),
+                if (labelkeep is None) or (scan.label in labelkeep):
+                    scanlist.append(scan.select(timekeep, freqkeep, copy))
+            if scanlist:
+                compscanlist.append(CompoundScan(scanlist, compscan.target.name))
+        return DataSet(None, compscanlist, self.data_unit, self.spectral.select(freqkeep),
                        self.antenna.name, self.noise_diode_data)
     
     def remove_rfi_channels(self):
         """Remove RFI-flagged channels from data set, returning a copy."""
         non_rfi = list(set(range(len(self.freqs))) - set(self.rfi_channels))
         d = self.select(freqkeep=non_rfi, copy=True)
-        DataSet.__init__(self, None, d.scans, d.data_unit, d.spectral, d.antenna.name, d.noise_diode_data)
+        DataSet.__init__(self, None, d.compscans, d.data_unit, d.spectral, d.antenna.name, d.noise_diode_data)
         return self
     
     def convert_power_to_temperature(self, randomise=False, **kwargs):
@@ -340,21 +340,21 @@ class DataSet(object):
         """
         # Prune all empty bands
         self.channels_per_band = [chans for chans in self.channels_per_band if len(chans) > 0]
-        for ss in self.subscans:
+        for scan in self.scans:
             # Merge and average power data into new array
-            band_data = np.zeros((ss.data.shape[0], len(self.channels_per_band), 4), dtype=ss.data.dtype)
+            band_data = np.zeros((scan.data.shape[0], len(self.channels_per_band), 4), dtype=scan.data.dtype)
             for band_index, band_channels in enumerate(self.channels_per_band):
-                band_data[:, band_index, :] = ss.data[:, band_channels, :].mean(axis=1)
-            ss.data = band_data
+                band_data[:, band_index, :] = scan.data[:, band_channels, :].mean(axis=1)
+            scan.data = band_data
         self.spectral.merge()
         return self
     
     def fit_beams_and_baselines(self, band=0):
-        """Simultaneously fit beams and baselines to all scans.
+        """Simultaneously fit beams and baselines to all compound scans.
         
         This fits a beam pattern and baseline to the total power data of all the
-        subscans comprising each scan, and stores the resulting fitted function
-        in each Scan object. Only one frequency band is used.
+        scans comprising each compound scan, and stores the resulting fitted function
+        in each CompoundScan object. Only one frequency band is used.
         
         Parameters
         ----------
@@ -369,6 +369,6 @@ class DataSet(object):
         """
         # Beamwidth for circular dish is lambda / D
         expected_width = 1.22 * lightspeed / self.freqs[band] / self.antenna.diameter
-        for scan in self.scans:
-            scan.fitted_beam = fit_beam_and_baseline(scan, expected_width, band)
+        for compscan in self.compscans:
+            compscan.fitted_beam = fit_beam_and_baseline(compscan, expected_width, band)
         return self

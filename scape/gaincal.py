@@ -99,31 +99,31 @@ def estimate_nd_jumps(dataset, min_samples=10, jump_significance=10.0):
     
     """
     nd_jump_times, nd_jump_power = [], []
-    for ss in dataset.subscans:
+    for scan in dataset.scans:
         # Find indices where noise diode flag changes value
-        jumps = (np.diff(ss.flags['nd_on']).nonzero()[0] + 1).tolist()
+        jumps = (np.diff(scan.flags['nd_on']).nonzero()[0] + 1).tolist()
         if jumps:
             before_jump = [0] + jumps[:-1]
             at_jump = jumps
-            after_jump = jumps[1:] + [len(ss.timestamps)]
+            after_jump = jumps[1:] + [len(scan.timestamps)]
             # For every jump, obtain segments before and after jump with constant noise diode state
             for start, mid, end in zip(before_jump, at_jump, after_jump):
                 # Restrict these segments to indices where data is valid
-                before_segment = ss.flags['valid'][start:mid].nonzero()[0] + start
-                after_segment = ss.flags['valid'][mid:end].nonzero()[0] + mid
+                before_segment = scan.flags['valid'][start:mid].nonzero()[0] + start
+                after_segment = scan.flags['valid'][mid:end].nonzero()[0] + mid
                 if (len(before_segment) > min_samples) and (len(after_segment) > min_samples):
                     # Utilise both off -> on and on -> off transitions 
                     # (mid is the first sample of the segment after the jump)
-                    if ss.flags['nd_on'][mid]:
+                    if scan.flags['nd_on'][mid]:
                         off_segment, on_segment = before_segment, after_segment
                     else:
                         on_segment, off_segment = before_segment, after_segment
                     # Calculate mean and standard deviation of the *averaged* power data in the two segments.
                     # Use robust estimators to suppress spikes and transients in data. Since the estimated mean
                     # of data is less variable than the data itself, we have to divide the data sigma by sqrt(N).
-                    nd_off = robust_mu_sigma(ss.data[off_segment, :, :])    
+                    nd_off = robust_mu_sigma(scan.data[off_segment, :, :])
                     nd_off.sigma /= np.sqrt(len(off_segment))
-                    nd_on = robust_mu_sigma(ss.data[on_segment, :, :])
+                    nd_on = robust_mu_sigma(scan.data[on_segment, :, :])
                     nd_on.sigma /= np.sqrt(len(on_segment))
                     # Obtain mean and standard deviation of difference between averaged power in the segments
                     nd_delta = MuSigmaArray(nd_on.mu - nd_off.mu,
@@ -131,7 +131,7 @@ def estimate_nd_jumps(dataset, min_samples=10, jump_significance=10.0):
                     # Only keep jumps with significant change in power
                     # This discards segments where noise diode did not fire as expected
                     if np.mean(np.abs(nd_delta.mu / nd_delta.sigma), axis=0).max() > jump_significance:
-                        nd_jump_times.append(ss.timestamps[mid])
+                        nd_jump_times.append(scan.timestamps[mid])
                         nd_jump_power.append(nd_delta)
     return nd_jump_times, nd_jump_power
 
@@ -206,17 +206,17 @@ def calibrate_gain(dataset, randomise=False, **kwargs):
     smooth_gains = np.expand_dims(gains.mean(axis=0), axis=0)
 #    interp = fitting.Independent1DFit(fitting.Polynomial1DFit(max_degree=max_degree), axis=0)
 #    interp.fit(np.array(nd_jump_times), gains)
-    for ss in dataset.subscans:
-#        smooth_gains = interp(ss.timestamps)
+    for scan in dataset.scans:
+#        smooth_gains = interp(scan.timestamps)
         # Scale XX and YY with respective power gains
-        ss.data[:, :, :2] /= smooth_gains[:, :, :2]
-        u, v = ss.data[:, :, 2].copy(), ss.data[:, :, 3].copy()
+        scan.data[:, :, :2] /= smooth_gains[:, :, :2]
+        u, v = scan.data[:, :, 2].copy(), scan.data[:, :, 3].copy()
         # Rotate U and V, using K cos(phi) and -K sin(phi) terms
-        ss.data[:, :, 2] =  smooth_gains[:, :, 2] * u + smooth_gains[:, :, 3] * v
-        ss.data[:, :, 3] = -smooth_gains[:, :, 3] * u + smooth_gains[:, :, 2] * v
+        scan.data[:, :, 2] =  smooth_gains[:, :, 2] * u + smooth_gains[:, :, 3] * v
+        scan.data[:, :, 3] = -smooth_gains[:, :, 3] * u + smooth_gains[:, :, 2] * v
         # Divide U and V by g_x g_y, as well as length of sin + cos terms above
         gain_xy = np.sqrt(smooth_gains[:, :, 0] * smooth_gains[:, :, 1] * 
                           (smooth_gains[:, :, 2] ** 2 + smooth_gains[:, :, 3] ** 2))
-        ss.data[:, :, 2:] /= gain_xy[:, :, np.newaxis]
+        scan.data[:, :, 2:] /= gain_xy[:, :, np.newaxis]
     dataset.data_unit = 'K'
     return dataset

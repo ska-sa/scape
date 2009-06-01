@@ -188,18 +188,18 @@ class BeamBaselineComboFit(ScatterFit):
 #--- FUNCTION :  fit_beam_and_baseline
 #--------------------------------------------------------------------------------------------------
 
-def fit_beam_and_baseline(scan, expected_width, band=0):
-    """Simultaneously fit beam and baseline to all subscans in a scan.
+def fit_beam_and_baseline(compscan, expected_width, band=0):
+    """Simultaneously fit beam and baseline to all scans in a compound scan.
     
     This fits a beam pattern and baseline to the total power data in all the
-    subscans comprising the scan, as a function of the two-dimensional target
-    coordinates. Only one frequency band is used. The power data is smoothed
-    before fitting to remove spikes.
+    scans comprising the compound scan, as a function of the two-dimensional
+    target coordinates. Only one frequency band is used. The power data is
+    smoothed before fitting to remove spikes.
     
     Parameters
     ----------
-    scan : :class:`scan.Scan` object
-        Scan data used to fit beam and baseline
+    compscan : :class:`compoundscan.CompoundScan` object
+        Compound scan data used to fit beam and baseline
     expected_width : float
         Expected beamwidth based on antenna diameter, expressed as FWHM in radians
     band : int, optional
@@ -224,8 +224,8 @@ def fit_beam_and_baseline(scan, expected_width, band=0):
        vol. 278, 2002.
     
     """
-    total_power = np.hstack([remove_spikes(ss.stokes('I')[:, band]) for ss in scan.subscans])
-    target_coords = np.hstack([ss.target_coords for ss in scan.subscans])
+    total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
+    target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
     peak_ind = total_power.argmax()
     peak_val = total_power[peak_ind]
     peak_pos = target_coords[:, peak_ind]
