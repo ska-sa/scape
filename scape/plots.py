@@ -225,3 +225,138 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
         axis.set_xlim(p_limits.min(), p_limits.max())
         
     return axes_list
+
+
+#---------------------------------------------------------------------------------------------------------
+#--- FUNCTION :  plot_marker_3d
+#---------------------------------------------------------------------------------------------------------
+
+## Pseudo-3D plot that plots markers at given x-y positions, with marker size determined by z values.
+# This is an alternative to pcolor, with the advantage that the x and y values do not need to be on
+# a regular grid, and that it is easier to compare the relative size of z values. The disadvantage is
+# that the markers may have excessive overlap or very small sizes, which obscures the plot. This can
+# be controlled by the maxSize and minSize parameters.
+#
+# @param axis       Matplotlib axes object associated with a matplotlib Figure
+# @param x          Array of x coordinates of markers
+# @param y          Array of y coordinates of markers
+# @param z          Array of z heights, transformed to marker size
+# @param maxSize    The radius of the biggest marker, relative to the average spacing between markers
+# @param minSize    The radius of the smallest marker, relative to the average spacing between markers
+# @param markerType Type of marker ('circle' [default], or 'asterisk')
+# @param numLines   Number of lines in asterisk [8]
+# @param kwargs     Dictionary containing extra keyword arguments, which are passed on to plot() or add_patch()
+# @return Handle of asterisk line object, or list of circle patches
+# pylint: disable-msg=W0142
+def plot_marker_3d(axis, x, y, z, maxSize=0.75, minSize=0.05, markerType='circle', numLines=8, **kwargs):
+    x = np.asarray(x)
+    y = np.asarray(y)
+    z = np.asarray(z)
+    assert maxSize >= minSize, "In plot_marker_3d, minSize should not be bigger than maxSize."
+    
+    # Normalise z to lie between 0 and 1
+    zMinInd, zMaxInd = z.argmin(), z.argmax()
+    z = (z - z[zMinInd]) / (z[zMaxInd] - z[zMinInd])
+    # Threshold z, so that the minimum size will have the desired ratio to the maximum size
+    z[z < minSize/maxSize] = minSize/maxSize
+    # Determine median spacing between vectors
+    minDist = np.zeros(len(x))
+    for ind in xrange(len(x)):
+        distSq = (x - x[ind]) ** 2 + (y - y[ind]) ** 2
+        minDist[ind] = np.sqrt(distSq[distSq > 0].min())
+    # Scale z so that maximum value is desired factor of median spacing
+    z *= maxSize * np.median(minDist)
+    
+    if markerType == 'asterisk':
+        # Use random initial angles so that asterisks don't overlap in regular pattern, which obscures their size
+        ang = np.pi*np.random.random_sample(z.shape)
+        xAsterisks = []
+        yAsterisks = []
+        # pylint: disable-msg=W0612
+        for side in range(numLines):
+            xDash = np.vstack((x - z*np.cos(ang), x + z*np.cos(ang), np.tile(np.nan, x.shape))).transpose()
+            yDash = np.vstack((y - z*np.sin(ang), y + z*np.sin(ang), np.tile(np.nan, y.shape))).transpose()
+            xAsterisks += xDash.ravel().tolist()
+            yAsterisks += yDash.ravel().tolist()
+            ang += np.pi / numLines
+        # All asterisks form part of one big line...
+        return axis.plot(xAsterisks, yAsterisks, **kwargs)
+        
+    elif markerType == 'circle':
+        # Add a circle patch for each marker
+        for ind in xrange(len(x)):
+            axis.add_patch(patches.Circle((x[ind], y[ind]), z[ind], **kwargs))
+        return axis.patches
+        
+    else:
+        raise ValueError, "Unknown marker type '" + markerType + "'"
+
+
+## Plot beam pattern fitted to multiple scans through a single point source, in target space.
+# This plots contour ellipses of a Gaussian beam function fitted to multiple scans through a point source,
+# as well as the power values of the scans themselves as a pseudo-3D plot. It highlights the success of the
+# beam fitting procedure.
+# @param figColorList   List of matplotlib Figure objects to contain plots (one per frequency band)
+# @param calibScanList  List of SingleDishData objects of calibrated main scans (one per scan)
+# @param beamFuncList   List of Gaussian beam functions and valid flags (one per band)
+# @param expName        Title of experiment
+# @return axesColorList List of matplotlib Axes objects, one per plot
+# pylint: disable-msg=R0912,R0913,R0914,R0915
+def plot_beam_pattern_target(figColorList, calibScanList, beamFuncList, expName):
+    # Set up axes
+    axesColorList = []
+    # Use the frequency bands of the first scan as reference for the rest
+    plotFreqs = calibScanList[0].freqs_Hz / 1e9   # Hz to GHz
+    numBands = len(plotFreqs)
+    # One figure per frequency band
+    for band in range(numBands):
+        axesColorList.append(figColorList[band].add_subplot(1, 1, 1))
+    
+    # Extract total power and target coordinates (in degrees) of all scans
+    totalPower = []
+    targetCoords = []
+    for scan in calibScanList:
+        totalPower.append(scan.stokes('I'))
+        targetCoords.append(rad_to_deg(scan.targetCoords[:, :2]))
+    # Also extract beam centres, in order to unwrap them with the rest of angle data
+    for band in range(numBands):
+        targetCoords.append(rad_to_deg(np.atleast_2d(beamFuncList[band][0].mean)))
+    totalPower = np.concatenate(totalPower)
+    targetCoords = np.concatenate(targetCoords)
+    # Unwrap all angle coordinates in the plot concurrently, to prevent bad plots
+    # (this is highly unlikely, as the target coordinate space is typically centred around the origin)
+    targetCoords = np.array([misc.unwrap_angles(ang) for ang in targetCoords.transpose()]).transpose()
+    beamCentres = targetCoords[-numBands:]
+    targetCoords = targetCoords[:-numBands]
+    
+    # Iterate through figures (one per band)
+    for band in range(numBands):
+        axis = axesColorList[band]
+        power = totalPower[:, band]
+        # Show the locations of the scan samples themselves, with marker sizes indicating power values
+        vis.plot_marker_3d(axis, targetCoords[:, 0], targetCoords[:, 1], power)
+        # Plot the fitted Gaussian beam function as contours
+        if beamFuncList[band][1]:
+            ellType, centerType = 'r-', 'r+'
+        else:
+            ellType, centerType = 'y-', 'y+'
+        ellipses = misc.gaussian_ellipses(deg_to_rad(beamCentres[band]), np.diag(beamFuncList[band][0].var), \
+                                          contour=[0.5, 0.1])
+        for ellipse in ellipses:
+            axis.plot(rad_to_deg(ellipse[:, 0]), rad_to_deg(ellipse[:, 1]), ellType, lw=2)
+        axis.plot([beamCentres[band][0]], [beamCentres[band][1]], centerType, ms=12, aa=False, mew=2)
+    
+    # Axis settings and labels
+    for band in range(numBands):
+        axis = axesColorList[band]
+        xRange = [targetCoords[:, 0].min(), targetCoords[:, 0].max()]
+        yRange = [targetCoords[:, 1].min(), targetCoords[:, 1].max()]
+        if not np.any(np.isnan(xRange + yRange)):
+            axis.set_xlim(xRange)
+            axis.set_ylim(yRange)
+        axis.set_aspect('equal')
+        axis.set_xlabel('Target coord 1 (deg)')
+        axis.set_ylabel('Target coord 2 (deg)')
+        axis.set_title(expName + ' : Beam fitted in band %d : %3.3f GHz' % (band, plotFreqs[band]))
+    
+    return axesColorList
