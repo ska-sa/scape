@@ -6,8 +6,9 @@ import logging
 import numpy as np
 
 from .scan import Scan
-from .coord import antenna_catalogue
+from .coord import antenna_catalogue, lightspeed
 from .gaincal import calibrate_gain
+from .beam_baseline import fit_beam_and_baseline
 
 # Try to import all available formats
 try:
@@ -346,4 +347,28 @@ class DataSet(object):
                 band_data[:, band_index, :] = ss.data[:, band_channels, :].mean(axis=1)
             ss.data = band_data
         self.spectral.merge()
+        return self
+    
+    def fit_beams_and_baselines(self, band=0):
+        """Simultaneously fit beams and baselines to all scans.
+        
+        This fits a beam pattern and baseline to the total power data of all the
+        subscans comprising each scan, and stores the resulting fitted function
+        in each Scan object. Only one frequency band is used.
+        
+        Parameters
+        ----------
+        band : int, optional
+            Frequency band in which to fit beam and baseline
+        
+        Returns
+        -------
+        dataset : :class:`DataSet` object
+            Data set with fitted beam/baseline functions added
+        
+        """
+        # Beamwidth for circular dish is lambda / D
+        expected_width = 1.22 * lightspeed / self.freqs[band] / self.antenna.diameter
+        for scan in self.scans:
+            scan.fitted_beam = fit_beam_and_baseline(scan, expected_width, band)
         return self
