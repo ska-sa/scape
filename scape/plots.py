@@ -13,12 +13,12 @@ from .coord import rad2deg
 
 logger = logging.getLogger("scape.plots")
 
-def _shrink_axes(axes, shift=0.075):
+def _shrink_axes(ax, shift=0.075):
     """Shrink axes on the left to leave more space for labels.
     
     Parameters
     ----------
-    axes : :class:`matplotlib.axes.Axes` object
+    ax : :class:`matplotlib.axes.Axes` object
         Matplotlib Axes object
     shift : float
         Amount to advance left border of axes (axes width will decrease by same
@@ -26,13 +26,13 @@ def _shrink_axes(axes, shift=0.075):
     
     Returns
     -------
-    axes : :class:`matplotlib.axes.Axes` object
+    ax : :class:`matplotlib.axes.Axes` object
         Adjusted axes object
     
     """
-    pos = axes.get_position().bounds
-    axes.set_position([pos[0] + shift, pos[1], pos[2] - shift, pos[3]])
-    return axes
+    pos = ax.get_position().bounds
+    ax.set_position([pos[0] + shift, pos[1], pos[2] - shift, pos[3]])
+    return ax
 
 def ordinal_suffix(n):
     """Returns the ordinal suffix of integer *n* as a string."""
@@ -111,9 +111,9 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
     
     # Plot of raw XX and YY power in all channels
     t_limits, p_limits = [], []
-    for axis_ind, pol in enumerate(['XX', 'YY']):
+    for ax_ind, pol in enumerate(['XX', 'YY']):
         # Time-frequency waterfall plots
-        axis = axes_list[axis_ind]
+        ax = axes_list[ax_ind]
         all_subscans = []
         for scan_ind, s in enumerate(dataset.scans):
             for ss in s.subscans:
@@ -131,10 +131,10 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
                 if len(segments) > 1:
                     lines = mpl.collections.LineCollection(segments, colors=colors, offsets=offsets)
                     lines.set_linewidth(0.5)
-                    axis.add_collection(lines)
+                    ax.add_collection(lines)
                 else:
-                    axis.plot(segments[0][:, 0] + offsets.squeeze()[0], 
-                              segments[0][:, 1] + offsets.squeeze()[1], color=colors[0], lw=0.5)
+                    ax.plot(segments[0][:, 0] + offsets.squeeze()[0], 
+                            segments[0][:, 1] + offsets.squeeze()[1], color=colors[0], lw=0.5)
                 t_limits += [time_line.min(), time_line.max()]
                 all_subscans.append(ss.coherency(pol))
             # Add scan target name and partition lines between scans
@@ -142,10 +142,10 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
                 start_time_ind = len(t_limits) - 2 * len(s.subscans)
                 if scan_ind >= 1:
                     border_time = (t_limits[start_time_ind - 1] + t_limits[start_time_ind]) / 2.0
-                    axis.plot([border_time, border_time], [0.0, 10.0 * channel_freqs_GHz.max()], '--k')
-                axis.text((t_limits[start_time_ind] + t_limits[-1]) / 2.0,
-                          offsets[0, 1] - scale * dataset.bandwidths[0] / 1e9, s.target.name,
-                          ha='center', va='bottom', clip_on=True)
+                    ax.plot([border_time, border_time], [0.0, 10.0 * channel_freqs_GHz.max()], '--k')
+                ax.text((t_limits[start_time_ind] + t_limits[-1]) / 2.0,
+                        offsets[0, 1] - scale * dataset.bandwidths[0] / 1e9, s.target.name,
+                        ha='center', va='bottom', clip_on=True)
         # Set up title and axis labels
         nth_str = ''
         if channel_skip > 1:
@@ -158,22 +158,22 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
             waterfall_title = 'Raw %s power in every %s channel' % (pol, nth_str)
         if pol == 'XX':
             if title:
-                title_obj = axis.set_title(title + '\n' + waterfall_title + '\n')
+                title_obj = ax.set_title(title + '\n' + waterfall_title + '\n')
             else:
-                title_obj = axis.set_title(waterfall_title + '\n')
+                title_obj = ax.set_title(waterfall_title + '\n')
             extra_title = '\n\nGreyed-out channels are RFI-flagged'
             # This is more elaborate because the subplot axes are shared
-            plt.setp(axis.get_xticklabels(), visible=False)
+            plt.setp(ax.get_xticklabels(), visible=False)
         else:
-            title_obj = axis.set_title(waterfall_title + '\n')
+            title_obj = ax.set_title(waterfall_title + '\n')
             extra_title = '\n(blue = normal scans, black = cal/Tsys scans)'
-            axis.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
+            ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
         # Shrink the font of the second line of the title to make it fit
         title_pos = title_obj.get_position()
-        axis.text(title_pos[0], title_pos[1], extra_title, fontsize='smaller', transform=axis.transAxes, ha='center')
-        axis.set_ylabel('Frequency (GHz)')
+        ax.text(title_pos[0], title_pos[1], extra_title, fontsize='smaller', transform=ax.transAxes, ha='center')
+        ax.set_ylabel('Frequency (GHz)')
         # Power spectrum box plots, with bar plot behind it indicating min-to-max data range
-        axis = axes_list[axis_ind + 2]
+        ax = axes_list[ax_ind + 2]
         all_subscans = np.concatenate(all_subscans, axis=0)
         rfi_channel_list = list(set(channel_list) & set(rfi_channels))
         non_rfi_channel_list = list(set(channel_list) - set(rfi_channel_list))
@@ -182,57 +182,112 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
             if len(channels) == 0:
                 continue
             chan_data = all_subscans[:, channels]
-            axis.bar(chan_data.min(axis=0), channel_skip * channel_bandwidths_GHz[channels],
-                     chan_data.max(axis=0) - chan_data.min(axis=0), channel_freqs_GHz[channels],
-                     color='b', alpha=(0.5 - 0.2 * rfi_flag), linewidth=0, align='center', orientation='horizontal')
-            handles = axis.boxplot(chan_data, vert=0, positions=channel_freqs_GHz[channels], sym='',
-                                   widths=channel_skip * channel_bandwidths_GHz[channels])
+            ax.bar(chan_data.min(axis=0), channel_skip * channel_bandwidths_GHz[channels],
+                   chan_data.max(axis=0) - chan_data.min(axis=0), channel_freqs_GHz[channels],
+                   color='b', alpha=(0.5 - 0.2 * rfi_flag), linewidth=0, align='center', orientation='horizontal')
+            handles = ax.boxplot(chan_data, vert=0, positions=channel_freqs_GHz[channels], sym='',
+                                 widths=channel_skip * channel_bandwidths_GHz[channels])
             plt.setp(handles['whiskers'], linestyle='-')
             if rfi_flag:
                 plt.setp([h for h in mpl.cbook.flatten(handles.itervalues())], alpha=0.4)
             # Restore yticks corrupted by boxplot
-            axis.yaxis.set_major_locator(mpl.ticker.AutoLocator())
-        axis.set_xscale('log')
+            ax.yaxis.set_major_locator(mpl.ticker.AutoLocator())
+        ax.set_xscale('log')
         # Add extra ticks on the right to indicate channel numbers
-        # second_axis = axis.twinx()
+        # second_axis = ax.twinx()
         # second_axis.yaxis.tick_right()
         # second_axis.yaxis.set_label_position('right')
         # second_axis.set_ylabel('Channel number')
         # second_axis.set_yticks(channel_freqs_GHz[channel_list])
         # second_axis.set_yticklabels([str(chan) for chan in channel_list])
         p_limits += [all_subscans.min(), all_subscans.max()]
-        axis.set_title('%s power spectrum' % pol)
+        ax.set_title('%s power spectrum' % pol)
         if pol == 'XX':
             # This is more elaborate because the subplot axes are shared
-            plt.setp(axis.get_xticklabels(), visible=False)
-            plt.setp(axis.get_yticklabels(), visible=False)
+            plt.setp(ax.get_xticklabels(), visible=False)
+            plt.setp(ax.get_yticklabels(), visible=False)
         else:
-            plt.setp(axis.get_yticklabels(), visible=False)
+            plt.setp(ax.get_yticklabels(), visible=False)
             if dataset.data_unit == 'Jy':
-                axis.set_xlabel('Flux density (Jy)')
+                ax.set_xlabel('Flux density (Jy)')
             elif dataset.data_unit == 'K':
-                axis.set_xlabel('Temperature (K)')
+                ax.set_xlabel('Temperature (K)')
             else:
-                axis.set_xlabel('Raw power')
+                ax.set_xlabel('Raw power')
     # Fix limits globally
     t_limits = np.array(t_limits)
     y_range = channel_freqs_GHz.max() - channel_freqs_GHz.min()
     if y_range < channel_bandwidths_GHz[0]:
         y_range = 10.0 * channel_bandwidths_GHz[0]
-    for axis in axes_list[:2]:
-        axis.set_xlim(t_limits.min(), t_limits.max())
-        axis.set_ylim(channel_freqs_GHz.min() - 0.1 * y_range, channel_freqs_GHz.max() + 0.1 * y_range)
+    for ax in axes_list[:2]:
+        ax.set_xlim(t_limits.min(), t_limits.max())
+        ax.set_ylim(channel_freqs_GHz.min() - 0.1 * y_range, channel_freqs_GHz.max() + 0.1 * y_range)
     p_limits = np.array(p_limits)
-    for axis in axes_list[2:]:
-        axis.set_xlim(p_limits.min(), p_limits.max())
+    for ax in axes_list[2:]:
+        ax.set_xlim(p_limits.min(), p_limits.max())
         
+    return axes_list
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  fitted_beam_scans
+#--------------------------------------------------------------------------------------------------
+
+def fitted_beam_scans(scan, band=0, fig=None):
+    """Plot beam pattern fitted to multiple scans through a single point source.
+    
+    This plots time series plots of the subscans comprising a scan, with the
+    beam and baseline fits superimposed. It highlights the success of the beam
+    and baseline fitting procedure.
+    
+    Parameters
+    ----------
+    scan : :class:`scan.Scan` object
+        Scan object to plot
+    band : int, optional
+        Frequency band to plot
+    fig : :class:`matplotlib.figure.Figure` object, optional
+        Matplotlib Figure object to contain plots (default is current figure)
+    
+    Returns
+    -------
+    axes_list : list of :class:`matplotlib.axes.Axes` objects
+        List of matplotlib Axes objects, one per plot
+    
+    """
+    if fig is None:
+        fig = plt.gcf()
+    # Set up axes: one figure, with one set of axes per subscan
+    axes_list = []
+    time_origin = np.array([ss.timestamps.min() for ss in scan.subscans]).min()
+    power_limits = []
+    
+    for n, ss in enumerate(scan.subscans):
+        measured_power = ss.stokes('I')[:, band]
+        time_line = ss.timestamps - time_origin
+        smooth_power = remove_spikes(measured_power)
+        power_limits.extend([smooth_power.min(), smooth_power.max()])
+        ax = plt.subplot(len(scan.subscans), 1, n + 1)
+        if scan.fitted_beam:
+            fitted_power = scan.fitted_beam(ss.target_coords.transpose())
+            baseline_power = scan.fitted_beam.baseline(ss.target_coords.transpose())
+            ax.plot(time_line, baseline_power, 'r', lw=2)
+            ax.plot(time_line, fitted_power, 'r', lw=2)
+        ax.plot(time_line, measured_power, 'b')
+        axes_list.append(ax)
+    
+    ylim = (min(power_limits), 1.1 * max(power_limits) - 0.1 * min(power_limits))
+    for n, ax in enumerate(axes_list):
+        ax.set_ylim(ylim)
+        if n == len(scan.subscans) - 1:
+            ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
+        ax.set_ylabel('Power')
     return axes_list
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_marker_3d
 #---------------------------------------------------------------------------------------------------------
 
-def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter', num_lines=8, axes=None, **kwargs):
+def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter', num_lines=8, ax=None, **kwargs):
     """Pseudo-3D scatter plot using marker size to indicate height.
     
     This plots markers at given ``(x, y)`` positions, with marker size determined
@@ -259,7 +314,7 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
         Type of marker
     num_lines : int, optional
         Number of lines in asterisk
-    axes : :class:`matplotlib.axes.Axes` object, optional
+    ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
     kwargs : dict, optional
         Extra keyword arguments are passed on to underlying plot function
@@ -277,8 +332,8 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
     """
     x, y, z = np.asarray(x), np.asarray(y), np.asarray(z)
     assert max_size >= min_size, "In plot_marker_3d, min_size should not be bigger than max_size."
-    if axes is None:
-        axes = plt.gca()
+    if ax is None:
+        ax = plt.gca()
     
     # Normalise z to lie between 0 and 1
     z = (z - z.min()) / (z.max() - z.min())
@@ -303,23 +358,23 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
             y_asterisks += y_dash.ravel().tolist()
             ang += np.pi / num_lines
         # All asterisks form part of one big line...
-        return axes.plot(x_asterisks, y_asterisks, **kwargs)
+        return ax.plot(x_asterisks, y_asterisks, **kwargs)
         
     elif marker_type == 'circle':
         # Add a circle patch for each marker
         for ind in xrange(len(x)):
-            axes.add_patch(mpl.patches.Circle((x[ind], y[ind]), z[ind], **kwargs))
-        return axes.patches
+            ax.add_patch(mpl.patches.Circle((x[ind], y[ind]), z[ind], **kwargs))
+        return ax.patches
     
     elif marker_type == 'scatter':
         # Get axes size in points
-        points_per_axis = axes.get_position().extents[2:] * axes.get_figure().get_size_inches() * 72.0
+        points_per_axis = ax.get_position().extents[2:] * ax.get_figure().get_size_inches() * 72.0
         # Get points per data units in x and y directions
         x_range, y_range = 1.1 * (x.max() - x.min()), 1.1 * (y.max() - y.min())
         points_per_data = points_per_axis / np.array((x_range, y_range))
         # Scale according to largest data axis
         z *= points_per_data.min()
-        return axes.scatter(x, y, 20.0 * z ** 2, **kwargs)
+        return ax.scatter(x, y, 20.0 * z ** 2, **kwargs)
         
     else:
         raise ValueError("Unknown marker type '" + marker_type + "'")
@@ -373,10 +428,10 @@ def gaussian_ellipses(mean, cov, contour=0.5, num_points=200):
     return np.array(ellipses)
 
 #--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  fitted_beam_single
+#--- FUNCTION :  fitted_beam_target
 #--------------------------------------------------------------------------------------------------
 
-def fitted_beam_single(scan, band=0, axes=None):
+def fitted_beam_target(scan, band=0, ax=None):
     """Plot beam pattern fitted to multiple scans through a single point source.
     
     This plots contour ellipses of a Gaussian beam function fitted to multiple
@@ -390,23 +445,23 @@ def fitted_beam_single(scan, band=0, axes=None):
         Scan object to plot
     band : int, optional
         Frequency band to plot
-    axes : :class:`matplotlib.axes.Axes` object, optional
+    ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
     
     Returns
     -------
-    axes : :class:`matplotlib.axes.Axes` object
+    ax : :class:`matplotlib.axes.Axes` object
         Matplotlib Axes object representing plot
     
     """
-    if axes is None:
-        axes = plt.gca()
+    if ax is None:
+        ax = plt.gca()
     # Extract total power and target coordinates (in degrees) of all scans
     total_power = np.hstack([ss.stokes('I')[:, band] for ss in scan.subscans])
     target_coords = rad2deg(np.hstack([ss.target_coords for ss in scan.subscans]))
     
     # Show the locations of the scan samples themselves, with marker sizes indicating power values
-    plot_marker_3d(target_coords[0], target_coords[1], total_power, axes=axes)
+    plot_marker_3d(target_coords[0], target_coords[1], total_power, ax=ax)
     # Plot the fitted Gaussian beam function as contours
     if scan.fitted_beam:
         ell_type, center_type = 'r-', 'r+'
@@ -414,18 +469,18 @@ def fitted_beam_single(scan, band=0, axes=None):
                                      np.diag(fwhm_to_sigma(scan.fitted_beam.beam_width) ** 2.0),
                                      contour=[0.5, 0.1])
         for ellipse in ellipses:
-            axes.plot(rad2deg(ellipse[:, 0]), rad2deg(ellipse[:, 1]), ell_type, lw=2)
-        axes.plot([rad2deg(scan.fitted_beam.beam_center[0])], [rad2deg(scan.fitted_beam.beam_center[1])],
-                  center_type, ms=12, aa=False, mew=2)
+            ax.plot(rad2deg(ellipse[:, 0]), rad2deg(ellipse[:, 1]), ell_type, lw=2)
+        ax.plot([rad2deg(scan.fitted_beam.beam_center[0])], [rad2deg(scan.fitted_beam.beam_center[1])],
+                center_type, ms=12, aa=False, mew=2)
     
     # Axis settings and labels
     x_range = [target_coords[0].min(), target_coords[0].max()]
     y_range = [target_coords[1].min(), target_coords[1].max()]
     if not np.any(np.isnan(x_range + y_range)):
         extra_space = 0.2 * max(x_range[1] - x_range[0], y_range[1] - y_range[0])
-        axes.set_xlim(x_range + extra_space * np.array([-1.0, 1.0]))
-        axes.set_ylim(y_range + extra_space * np.array([-1.0, 1.0]))
-    axes.set_aspect('equal')
-    axes.set_xlabel('x (deg)')
-    axes.set_ylabel('y (deg)')
-    return axes
+        ax.set_xlim(x_range + extra_space * np.array([-1.0, 1.0]))
+        ax.set_ylim(y_range + extra_space * np.array([-1.0, 1.0]))
+    ax.set_aspect('equal')
+    ax.set_xlabel('x (deg)')
+    ax.set_ylabel('y (deg)')
+    return ax
