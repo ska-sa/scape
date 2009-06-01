@@ -5,7 +5,7 @@ import logging
 
 import numpy as np
 import matplotlib as mpl
-import pylab as pl
+import matplotlib.pyplot as plt
 
 from .stats import remove_spikes
 
@@ -32,6 +32,17 @@ def _shrink_axes(axes, shift=0.075):
     axes.set_position([pos[0] + shift, pos[1], pos[2] - shift, pos[3]])
     return axes
 
+def ordinal_suffix(n):
+    """Returns the ordinal suffix of integer *n* as a string."""
+    if n % 100 in [11, 12, 13]:
+        return 'th'
+    else:
+        return {1 : 'st', 2 : 'nd', 3 : 'rd'}.get(n % 10, 'th')
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  waterfall
+#--------------------------------------------------------------------------------------------------
+
 def waterfall(dataset, title='', channel_skip=None, fig=None):
     """Waterfall plot of power data as a function of time and frequency.
     
@@ -56,7 +67,7 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
     if not channel_skip:
         channel_skip = max(len(dataset.freqs) // 32, 1)
     if fig is None:
-        fig = pl.gcf()
+        fig = plt.gcf()
     # Set up axes: one figure with custom subfigures for waterfall and spectrum plots, with shared x and y axes
     axes_list = []
     axes_list.append(fig.add_axes([0.125, 6 / 11., 0.6, 4 / 11.]))
@@ -134,13 +145,9 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
                           offsets[0, 1] - scale * dataset.bandwidths[0] / 1e9, s.target.name,
                           ha='center', va='bottom', clip_on=True)
         # Set up title and axis labels
-        if channel_skip <= 13:
-            nth_str = ['', '', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', 
-                       '9th', '10th', '11th', '12th', '13th'][channel_skip]
-        elif channel_skip % 10 <= 3:
-            nth_str = str(channel_skip) + ['th', 'st', 'nd', 'rd'][channel_skip % 10]
-        else:
-            nth_str = '%dth' % channel_skip
+        nth_str = ''
+        if channel_skip > 1:
+            nth_str = '%d%s' % (channel_skip, ordinal_suffix(channel_skip))
         if dataset.data_unit == 'Jy':
             waterfall_title = '%s flux density in every %s channel' % (pol, nth_str)
         if dataset.data_unit == 'K':
@@ -154,7 +161,7 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
                 title_obj = axis.set_title(waterfall_title + '\n')
             extra_title = '\n\nGreyed-out channels are RFI-flagged'
             # This is more elaborate because the subplot axes are shared
-            pl.setp(axis.get_xticklabels(), visible=False)
+            plt.setp(axis.get_xticklabels(), visible=False)
         else:
             title_obj = axis.set_title(waterfall_title + '\n')
             extra_title = '\n(blue = normal scans, black = cal/Tsys scans)'
@@ -178,9 +185,9 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
                      color='b', alpha=(0.5 - 0.2 * rfi_flag), linewidth=0, align='center', orientation='horizontal')
             handles = axis.boxplot(chan_data, vert=0, positions=channel_freqs_GHz[channels], sym='',
                                    widths=channel_skip * channel_bandwidths_GHz[channels])
-            pl.setp(handles['whiskers'], linestyle='-')
+            plt.setp(handles['whiskers'], linestyle='-')
             if rfi_flag:
-                pl.setp([h for h in mpl.cbook.flatten(handles.itervalues())], alpha=0.4)
+                plt.setp([h for h in mpl.cbook.flatten(handles.itervalues())], alpha=0.4)
             # Restore yticks corrupted by boxplot
             axis.yaxis.set_major_locator(mpl.ticker.AutoLocator())
         axis.set_xscale('log')
@@ -195,10 +202,10 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
         axis.set_title('%s power spectrum' % pol)
         if pol == 'XX':
             # This is more elaborate because the subplot axes are shared
-            pl.setp(axis.get_xticklabels(), visible=False)
-            pl.setp(axis.get_yticklabels(), visible=False)
+            plt.setp(axis.get_xticklabels(), visible=False)
+            plt.setp(axis.get_yticklabels(), visible=False)
         else:
-            pl.setp(axis.get_yticklabels(), visible=False)
+            plt.setp(axis.get_yticklabels(), visible=False)
             if dataset.data_unit == 'Jy':
                 axis.set_xlabel('Flux density (Jy)')
             elif dataset.data_unit == 'K':
