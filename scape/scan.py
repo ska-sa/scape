@@ -19,8 +19,17 @@ import numpy as np
 
 from .coord import construct_source
 
+#--------------------------------------------------------------------------------------------------
+#--- CLASS :  SpectralConfig
+#--------------------------------------------------------------------------------------------------
+
 class SpectralConfig(object):
     """Container for spectral configuration of correlator.
+    
+    This is a convenience container for all the items related to the correlator
+    configuration, such as channel centre frequencies and bandwidths. It
+    simplifies the copying of these bits of data, while they are usually also
+    found together in use.
     
     Parameters
     ----------
@@ -35,6 +44,15 @@ class SpectralConfig(object):
         channels belong to each band
     dump_rate : float
         Correlator dump rate, in Hz
+    
+    Notes
+    -----
+    This class should ideally be grouped with :class:`dataset.DataSet`, as that
+    is where it is stored in the data set hierarchy. The problem is that the
+    file readers also need to instantiate this class, which will lead to
+    circular imports if this class is stored in the :mod:`dataset` module. If
+    the functionality of this class grows, it might be useful to move it to
+    its own module.
     
     """
     def __init__(self, freqs, bandwidths, rfi_channels, channels_per_band, dump_rate):
@@ -93,6 +111,10 @@ class SpectralConfig(object):
         self.channels_per_band = np.arange(len(self.freqs))[:, np.newaxis].tolist()
         return self
 
+#--------------------------------------------------------------------------------------------------
+#--- CLASS :  Scan
+#--------------------------------------------------------------------------------------------------
+
 class Scan(object):
     """Container for the data of a single scan.
     
@@ -102,11 +124,12 @@ class Scan(object):
         List of subscan objects
     target : string
         Name of the target of this scan
+    fitted_beam : :class:`beam_baseline.BeamBaselineComboFit` object, optional
+        Object that describes fitted beam and baseline
     
     """
-    def __init__(self, subscanlist, target):
+    def __init__(self, subscanlist, target, fitted_beam=None):
         self.subscans = subscanlist
         # Interpret source name string and return relevant object
         self.target = construct_source(target)
-        # self.target_coords = coord.sphere_to_plane(self.target, self.antenna,
-        #                                            pointing['az'], pointing['el'], timestamps)
+        self.fitted_beam = fitted_beam
