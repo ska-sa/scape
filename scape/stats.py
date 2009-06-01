@@ -401,7 +401,8 @@ def remove_spikes(data, axis=0, kernel_size=7, outlier_sigma=5.0):
     # Median filter data along the desired axis, with given kernel size
     kernel = np.ones(data.ndim, dtype='int32')
     kernel[axis] = kernel_size
-    filtered_data = signal.medfilt(data, kernel)
+    # Medfilt now seems to upcast 32-bit floats to doubles - convert it back to floats...
+    filtered_data = np.asarray(signal.medfilt(data, kernel), data.dtype)
     # The deviation is measured relative to the local median in the signal
     abs_dev = np.abs(data - filtered_data)
     # Calculate median absolute deviation (MAD)
