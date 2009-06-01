@@ -250,7 +250,7 @@ class SubScan(object):
                     freqkeep = np.asarray(freqkeep).nonzero()[0]
                 selected_data = self.data[np.atleast_2d(timekeep).transpose(), np.atleast_2d(freqkeep), :]
             target_coords = self.target_coords
-            if target_coords:
+            if not target_coords is None:
                target_coords = target_coords[:, timekeep] 
             return SubScan(selected_data, self.is_stokes, self.timestamps[timekeep], self.pointing[timekeep],
                            self.flags[timekeep], self.label, self.path, target_coords)
