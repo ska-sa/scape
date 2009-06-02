@@ -351,6 +351,7 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
         # Use random initial angles so that asterisks don't overlap in regular pattern, which obscures their size
         ang = np.pi * np.random.random_sample(z.shape)
         x_asterisks, y_asterisks = [], []
+        # pylint: disable-msg=W0612
         for side in range(num_lines):
             x_dash = np.vstack((x - z * np.cos(ang), x + z * np.cos(ang), np.tile(np.nan, x.shape))).transpose()
             y_dash = np.vstack((y - z * np.sin(ang), y + z * np.sin(ang), np.tile(np.nan, y.shape))).transpose()

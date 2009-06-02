@@ -251,9 +251,9 @@ class Scan(object):
                 selected_data = self.data[np.atleast_2d(timekeep).transpose(), np.atleast_2d(freqkeep), :]
             target_coords = self.target_coords
             if not target_coords is None:
-               target_coords = target_coords[:, timekeep] 
+                target_coords = target_coords[:, timekeep] 
             return Scan(selected_data, self.is_stokes, self.timestamps[timekeep], self.pointing[timekeep],
-                           self.flags[timekeep], self.label, self.path, target_coords)
+                        self.flags[timekeep], self.label, self.path, target_coords)
         # Create a shallow view of data matrix via a masked array or view
         else:
             # If data matrix is kept intact, rather just return a view instead of masked array
@@ -278,4 +278,4 @@ class Scan(object):
                 keep3d = np.kron(timekeep3d, np.kron(freqkeep3d, polkeep3d))
                 selected_data = np.ma.array(self.data, mask=~keep3d)
             return Scan(selected_data, self.is_stokes, self.timestamps, self.pointing, self.flags,
-                           self.label, self.path, self.target_coords)
+                        self.label, self.path, self.target_coords)

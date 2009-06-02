@@ -2,8 +2,6 @@
 
 from __future__ import with_statement
 
-import os.path
-
 import h5py
 import numpy as np
 
