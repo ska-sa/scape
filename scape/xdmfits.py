@@ -22,7 +22,7 @@ import acsm
 
 from .coord import deg2rad
 from .scan import Scan
-from .compoundscan import CompoundScan, SpectralConfig
+from .compoundscan import CompoundScan, CorrelatorConfig
 from .gaincal import NoiseDiodeModel, NoiseDiodeNotFound
 
 logger = logging.getLogger("scape.xdmfits")
@@ -130,8 +130,8 @@ def load_scan(filename):
         Scan based on file
     data_unit : {'raw', 'K', 'Jy'}
         Physical unit of power data
-    spectral : :class:`compoundscan.SpectralConfig` object
-        Spectral configuration
+    corrconf : :class:`compoundscan.CorrelatorConfig` object
+        Correlator configuration
     target : string
         Name of the target of this scan
     antenna : string
@@ -188,15 +188,14 @@ def load_scan(filename):
     # The FITS file doesn't like empty lists, so an empty list is represented by [-1] (an invalid index)
     # Therefore, remove any invalid indices, as a further safeguard
     rfi_channels = [x for x in rfi_channels if (x >= 0) and (x < len(freqs))]
-    channels_per_band = [x.tolist() for x in hdu['BANDS'].data.field('Channels')]
-    spectral = SpectralConfig(freqs, bandwidths, rfi_channels, channels_per_band, dump_rate)
+    corrconf = CorrelatorConfig(freqs, bandwidths, rfi_channels, dump_rate)
     
     target = _acsm_target_name(cPickle.loads(hdu['OBJECTS'].data.field('Target')[0]))
     mount = cPickle.loads(hdu['OBJECTS'].data.field('Mount')[0])
     antenna = mount.get_decorated_coordinate_system().get_attribute('position').get_description().split()[0]
         
     return Scan(data, is_stokes, timestamps, pointing, flags, label, path), \
-           data_unit, spectral, target, antenna, exp_seq_num, feed_id
+           data_unit, corrconf, target, antenna, exp_seq_num, feed_id
 
 def load_dataset(data_filename, nd_filename=None):
     """Load data set from XDM FITS file series.
@@ -220,8 +219,8 @@ def load_dataset(data_filename, nd_filename=None):
         List of compound scans
     data_unit : {'raw', 'K', 'Jy'}
         Physical unit of power data
-    spectral : :class:`compoundscan.SpectralConfig` object
-        Spectral configuration object
+    corrconf : :class:`compoundscan.CorrelatorConfig` object
+        Correlator configuration object
     antenna : string
         Name of antenna that produced the data set
     nd_data : :class:`NoiseDiodeXDM` object
@@ -248,7 +247,7 @@ def load_dataset(data_filename, nd_filename=None):
     scanlists, targets = {}, {}
     nd_data = None
     for fits_file in filelist:
-        scan, data_unit, spectral, target, antenna, exp_seq_num, feed_id = load_scan(fits_file)
+        scan, data_unit, corrconf, target, antenna, exp_seq_num, feed_id = load_scan(fits_file)
         if scanlists.has_key(exp_seq_num):
             scanlists[exp_seq_num].append(scan)
         else:
@@ -281,4 +280,4 @@ def load_dataset(data_filename, nd_filename=None):
     compscanlist = []
     for esn, scanlist in scanlists.iteritems():
         compscanlist.append(CompoundScan(scanlist, targets[esn]))
-    return compscanlist, data_unit, spectral, antenna, nd_data
+    return compscanlist, data_unit, corrconf, antenna, nd_data

@@ -7,7 +7,7 @@ import numpy as np
 
 from .gaincal import NoiseDiodeModel
 from .scan import Scan
-from .compoundscan import SpectralConfig, CompoundScan
+from .compoundscan import CorrelatorConfig, CompoundScan
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTIONS
@@ -29,8 +29,8 @@ def load_dataset(filename):
         List of compound scans
     data_unit : {'raw', 'K', 'Jy'}
         Physical unit of power data
-    spectral : :class:`compoundscan.SpectralConfig` object
-        Spectral configuration object
+    corrconf : :class:`compoundscan.CorrelatorConfig` object
+        Correlator configuration object
     antenna : string
         Name of antenna that produced the data set
     nd_data : :class:`NoiseDiodeModel` object
@@ -49,7 +49,7 @@ def load_dataset(filename):
         bandwidths = f['CorrelatorConfig']['bandwidths'].value
         rfi_channels = f['CorrelatorConfig']['rfi_channels'].value.nonzero()[0].tolist()
         dump_rate = f['CorrelatorConfig'].attrs['dump_rate']
-        spectral = SpectralConfig(center_freqs, bandwidths, rfi_channels, [], dump_rate) # TODO remove channels_per_band empty_list
+        corrconf = CorrelatorConfig(center_freqs, bandwidths, rfi_channels, dump_rate)
         
         # noise diode model
         temperature_x = f['NoiseDiodeModel']['temperature_x'].value
@@ -79,7 +79,7 @@ def load_dataset(filename):
             
             compscanlist.append(CompoundScan(scanlist, compscan_target))
         
-        return compscanlist, data_unit, spectral, antenna, nd_data
+        return compscanlist, data_unit, corrconf, antenna, nd_data
 
 
 def save_dataset(dataset, filename):
@@ -101,13 +101,13 @@ def save_dataset(dataset, filename):
         f['/'].attrs['antenna'] = dataset.antenna.name
         f['/'].attrs['comment'] = ''
         
-        spectral_group = f.create_group('CorrelatorConfig')
-        spectral_group.create_dataset('center_freqs', data=dataset.spectral.freqs, compression='gzip')
-        spectral_group.create_dataset('bandwidths', data=dataset.spectral.bandwidths, compression='gzip')
-        rfi_flags = np.tile(False, len(dataset.spectral.freqs))
-        rfi_flags[dataset.spectral.rfi_channels] = True
-        spectral_group.create_dataset('rfi_channels', data=rfi_flags)
-        spectral_group.attrs['dump_rate'] = dataset.spectral.dump_rate
+        corrconf_group = f.create_group('CorrelatorConfig')
+        corrconf_group.create_dataset('center_freqs', data=dataset.corrconf.freqs, compression='gzip')
+        corrconf_group.create_dataset('bandwidths', data=dataset.corrconf.bandwidths, compression='gzip')
+        rfi_flags = np.tile(False, len(dataset.corrconf.freqs))
+        rfi_flags[dataset.corrconf.rfi_channels] = True
+        corrconf_group.create_dataset('rfi_channels', data=rfi_flags)
+        corrconf_group.attrs['dump_rate'] = dataset.corrconf.dump_rate
         
         nd_group = f.create_group('NoiseDiodeModel')
         nd_group.create_dataset('temperature_x', data=dataset.noise_diode_data.table_x, compression='gzip')

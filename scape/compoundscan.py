@@ -20,10 +20,10 @@ import numpy as np
 from .coord import construct_source
 
 #--------------------------------------------------------------------------------------------------
-#--- CLASS :  SpectralConfig
+#--- CLASS :  CorrelatorConfig
 #--------------------------------------------------------------------------------------------------
 
-class SpectralConfig(object):
+class CorrelatorConfig(object):
     """Container for spectral configuration of correlator.
     
     This is a convenience container for all the items related to the correlator
@@ -39,9 +39,6 @@ class SpectralConfig(object):
         Sequence of channel/band bandwidths, in Hz
     rfi_channels : list of ints
         RFI-flagged channel indices
-    channels_per_band : List of lists of ints
-        List of lists of channel indices (one list per band), indicating which
-        channels belong to each band
     dump_rate : float
         Correlator dump rate, in Hz
     
@@ -55,12 +52,11 @@ class SpectralConfig(object):
     its own module.
     
     """
-    def __init__(self, freqs, bandwidths, rfi_channels, channels_per_band, dump_rate):
+    def __init__(self, freqs, bandwidths, rfi_channels, dump_rate):
         # Keep as doubles to prevent precision issues
         self.freqs = np.asarray(freqs, dtype='double')
         self.bandwidths = np.asarray(bandwidths, dtype='double')
         self.rfi_channels = rfi_channels
-        self.channels_per_band = channels_per_band
         self.dump_rate = dump_rate
     
     def select(self, freqkeep=None):
@@ -75,40 +71,42 @@ class SpectralConfig(object):
         
         Returns
         -------
-        spectral : :class:`SpectralConfig` object
-            Spectral configuration object with subset of channels/bands
+        corrconf : :class:`CorrelatorConfig` object
+            Correlator configuration object with subset of channels/bands
         
         """
         if freqkeep is None:
             return self
         elif np.asarray(freqkeep).dtype == 'bool':
             freqkeep = np.asarray(freqkeep).nonzero()[0]
-        return SpectralConfig(self.freqs[freqkeep], self.bandwidths[freqkeep],
-                              [freqkeep.index(n) for n in (set(self.rfi_channels) & set(freqkeep))],
-                              [[freqkeep.index(n) for n in (set(chanlist) & set(freqkeep))] 
-                               for chanlist in self.channels_per_band],
-                              self.dump_rate)
+        return CorrelatorConfig(self.freqs[freqkeep], self.bandwidths[freqkeep],
+                                [freqkeep.index(n) for n in (set(self.rfi_channels) & set(freqkeep))],
+                                self.dump_rate)
     
-    def merge(self):
+    def merge(self, channels_per_band):
         """Merge frequency channels into bands.
         
-        This applies the :attr:`channels_per_band` mapping to the rest of the
-        frequency data. Each band centre frequency is the mean of the
-        corresponding channel group's frequencies, while the band bandwidth is
-        the sum of the corresponding channel group's bandwidths. Any band
-        containing an RFI-flagged channel is RFI-flagged too, and the
-        channels_per_band mapping becomes one-to-one after the merge.
-         
+        This applies the *channels_per_band* mapping to the frequency data.
+        Each band centre frequency is the mean of the corresponding channel
+        group's frequencies, while the band bandwidth is the sum of the
+        corresponding channel group's bandwidths. Any band containing an
+        RFI-flagged channel is RFI-flagged too.
+        
+        Parameters
+        ----------
+        channels_per_band : List of lists of ints, optional
+            List of lists of channel indices (one list per band), indicating
+            which channels are averaged together to form each band.
+        
         """
         # Each band centre frequency is the mean of the corresponding channel centre frequencies
-        self.freqs = np.array([self.freqs[chans].mean() for chans in self.channels_per_band], dtype='double')
+        self.freqs = np.array([self.freqs[chans].mean() for chans in channels_per_band], dtype='double')
         # Each band bandwidth is the sum of the corresponding channel bandwidths
-        self.bandwidths = np.array([self.bandwidths[chans].sum() for chans in self.channels_per_band],
+        self.bandwidths = np.array([self.bandwidths[chans].sum() for chans in channels_per_band],
                                    dtype='double')
         # If the band contains *any* RFI-flagged channel, it is RFI-flagged too
         self.rfi_channels = np.array([(len(set(chans) & set(self.rfi_channels)) > 0) 
-                                      for chans in self.channels_per_band], dtype='bool').nonzero()[0].tolist()
-        self.channels_per_band = np.arange(len(self.freqs))[:, np.newaxis].tolist()
+                                      for chans in channels_per_band], dtype='bool').nonzero()[0].tolist()
         return self
 
 #--------------------------------------------------------------------------------------------------
