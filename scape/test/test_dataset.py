@@ -46,4 +46,7 @@ class SaveLoadTestCases(unittest.TestCase):
             pass
     
     def tearDown(self):
-        os.remove(self.filename)
+        try:
+            os.remove(self.filename)
+        except OSError:
+            pass
