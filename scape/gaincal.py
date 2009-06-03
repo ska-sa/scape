@@ -21,17 +21,29 @@ class NoiseDiodeModel(object):
     
     Parameters
     ----------
-    table_x : real array, shape (N, 2)
+    temperature_x : real array, shape (N, 2)
         Table containing frequencies [Hz] in the first column and measured
         temperatures [K] in the second column, for port 1 or V (X polarisation)
-    table_y : real array, shape (N, 2)
+    temperature_y : real array, shape (N, 2)
         Table containing frequencies [Hz] in the first column and measured
         temperatures [K] in the second column, for port 2 or H (Y polarisation)
     
     """
-    def __init__(self, table_x=None, table_y=None):
-        self.table_x = table_x
-        self.table_y = table_y
+    def __init__(self, temperature_x=None, temperature_y=None):
+        self.temperature_x = temperature_x
+        self.temperature_y = temperature_y
+    
+    def __eq__(self, other):
+        """Equality comparison operator."""
+        if not np.all(self.temperature_x == other.temperature_x):
+            return False
+        if not np.all(self.temperature_y == other.temperature_y):
+            return False
+        return True
+    
+    def __ne__(self, other):
+        """Inequality comparison operator."""
+        return not self.__eq__(other)
     
     def temperature(self, freqs, randomise=False):
         """Obtain noise diode temperature at given frequencies.
@@ -59,11 +71,11 @@ class NoiseDiodeModel(object):
         """
         # Fit a spline to noise diode power spectrum measurements, with optional perturbation
         interp_x, interp_y = Spline1DFit(), Spline1DFit()
-        interp_x.fit(self.table_x[:, 0], self.table_x[:, 1])
-        interp_y.fit(self.table_y[:, 0], self.table_y[:, 1])
+        interp_x.fit(self.temperature_x[:, 0], self.temperature_x[:, 1])
+        interp_y.fit(self.temperature_y[:, 0], self.temperature_y[:, 1])
         if randomise:
-            interp_x = fitting_randomise(interp_x, self.table_x[:, 0], self.table_x[:, 1], 'shuffle')
-            interp_y = fitting_randomise(interp_y, self.table_y[:, 0], self.table_y[:, 1], 'shuffle')
+            interp_x = fitting_randomise(interp_x, self.temperature_x[:, 0], self.temperature_x[:, 1], 'shuffle')
+            interp_y = fitting_randomise(interp_y, self.temperature_y[:, 0], self.temperature_y[:, 1], 'shuffle')
         # Evaluate the smoothed spectrum at the desired frequencies
         return np.dstack((interp_x(freqs), interp_y(freqs))).squeeze()
 

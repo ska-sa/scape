@@ -2,12 +2,16 @@
 
 from __future__ import with_statement
 
+import logging
+
 import h5py
 import numpy as np
 
 from .gaincal import NoiseDiodeModel
 from .scan import Scan
 from .compoundscan import CorrelatorConfig, CompoundScan
+
+logger = logging.getLogger("scape.hdf5")
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTIONS
@@ -38,25 +42,32 @@ def load_dataset(filename):
     
     """
     with h5py.File(filename, 'r') as f:
-        # top level attributes
         pointing_model = f['pointing_model'].value  # TODO return this as well
         data_unit = f.attrs['data_unit']
         antenna = f.attrs['antenna']
         comment = f.attrs['comment'] # TODO return this as well
         
-        # CorrelatorConfig stuff
-        center_freqs = f['CorrelatorConfig']['center_freqs'].value
-        bandwidths = f['CorrelatorConfig']['bandwidths'].value
+        # If center_freqs dataset is available, use it - otherwise, reconstruct it from DBE attributes
+        center_freqs = f['CorrelatorConfig'].get('center_freqs', None)
+        if center_freqs:
+            center_freqs = center_freqs.value
+            bandwidths = f['CorrelatorConfig']['bandwidths'].value
+        else:
+            band_center = f['CorrelatorConfig'].attrs['center_frequency_hz']
+            channel_bw = f['CorrelatorConfig'].attrs['bandwidth_hz']
+            num_chans = f['CorrelatorConfig'].attrs['num_freq_channels']
+            center_freqs = np.arange(band_center - (channel_bw * num_chans / 2.0) + channel_bw / 2.0,
+                                     band_center + (channel_bw * num_chans / 2.0) + channel_bw / 2.0,
+                                     channel_bw, dtype=np.float64)
+            bandwidths = np.tile(channel_bw, num_chans, dtype=np.float64)
         rfi_channels = f['CorrelatorConfig']['rfi_channels'].value.nonzero()[0].tolist()
         dump_rate = f['CorrelatorConfig'].attrs['dump_rate']
         corrconf = CorrelatorConfig(center_freqs, bandwidths, rfi_channels, dump_rate)
         
-        # noise diode model
         temperature_x = f['NoiseDiodeModel']['temperature_x'].value
         temperature_y = f['NoiseDiodeModel']['temperature_y'].value
         nd_data = NoiseDiodeModel(temperature_x, temperature_y)
         
-        # compound scans
         compscanlist = []
         for compscan in f['Scans']:
             compscan_target = f['Scans'][compscan].attrs['target']
@@ -64,10 +75,21 @@ def load_dataset(filename):
             
             scanlist = []
             for scan in f['Scans'][compscan]:
-                scan_complex_data = f['Scans'][compscan][scan]['data'].value
-                scan_data = np.dstack([scan_complex_data['XX'].real, scan_complex_data['YY'].real,
-                                     2.0 * scan_complex_data['XY'].real, 2.0 * scan_complex_data['XY'].imag])
-                scan_timestamps = f['Scans'][compscan][scan]['timestamps'].value
+                complex_data = f['Scans'][compscan][scan]['data'].value
+                assert complex_data.dtype.fields.has_key('XX'), "Power data is not in coherency form"
+                # Load power data either in complex64 form or uint32 form
+                if complex_data.dtype.fields['XX'][0] == np.complex64:
+                    scan_data = np.dstack([complex_data['XX'].real, complex_data['YY'].real,
+                                           2.0 * complex_data['XY'].real, 2.0 * complex_data['XY'].imag])
+                else:
+                    if complex_data.view(np.uint32).max() > 2 ** 24:
+                        logger.warning('Uint32 data too large to be accurately represented as 32-bit floats')
+                    scan_data = np.dstack([complex_data['XX']['r'].astype(np.float32),
+                                           complex_data['YY']['r'].astype(np.float32),
+                                           2.0 * complex_data['XY']['r'].astype(np.float32),
+                                           2.0 * complex_data['XY']['i'].astype(np.float32)])
+                # Convert from millisecs to secs since Unix epoch, and be sure to use float64 to preserve digits
+                scan_timestamps = f['Scans'][compscan][scan]['timestamps'].value.astype(np.float64) / 1000.0
                 scan_pointing = f['Scans'][compscan][scan]['pointing'].value
                 scan_flags = f['Scans'][compscan][scan]['flags'].value
                 scan_environment = f['Scans'][compscan][scan]['environment'].value
@@ -75,7 +97,7 @@ def load_dataset(filename):
                 scan_comment = f['Scans'][compscan][scan].attrs['comment'] # TODO: do something with this
                 
                 scanlist.append(Scan(scan_data, False, scan_timestamps, scan_pointing, scan_flags,
-                                      scan_label, filename + '/Scans/%s/%s' % (compscan, scan)))
+                                     scan_label, filename + '/Scans/%s/%s' % (compscan, scan)))
             
             compscanlist.append(CompoundScan(scanlist, compscan_target))
         
@@ -96,7 +118,7 @@ def save_dataset(dataset, filename):
     
     """
     with h5py.File(filename, 'w') as f:
-        f['/'].create_dataset('pointing_model', data=np.zeros(16))
+        f['/'].create_dataset('pointing_model', data=np.zeros(16, dtype=np.float32))
         f['/'].attrs['data_unit'] = dataset.data_unit
         f['/'].attrs['antenna'] = dataset.antenna.name
         f['/'].attrs['comment'] = ''
@@ -110,8 +132,8 @@ def save_dataset(dataset, filename):
         corrconf_group.attrs['dump_rate'] = dataset.corrconf.dump_rate
         
         nd_group = f.create_group('NoiseDiodeModel')
-        nd_group.create_dataset('temperature_x', data=dataset.noise_diode_data.table_x, compression='gzip')
-        nd_group.create_dataset('temperature_y', data=dataset.noise_diode_data.table_y, compression='gzip')
+        nd_group.create_dataset('temperature_x', data=dataset.noise_diode_data.temperature_x, compression='gzip')
+        nd_group.create_dataset('temperature_y', data=dataset.noise_diode_data.temperature_y, compression='gzip')
         
         scans_group = f.create_group('Scans')
         for compscan_ind, compscan in enumerate(dataset.compscans):
@@ -123,16 +145,19 @@ def save_dataset(dataset, filename):
                 scan_group = compscan_group.create_group('Scan%d' % scan_ind)
                 
                 coherency_order = ['XX', 'YY', 'XY', 'YX']
+                # Always save power data in complex64 form
                 complex_data = np.rec.fromarrays([scan.coherency(key) for key in coherency_order],
                                                  names=coherency_order, formats=['complex64'] * 4)
                 scan_group.create_dataset('data', data=complex_data, compression='gzip')
-                scan_group.create_dataset('timestamps', data=scan.timestamps, compression='gzip')
+                # Convert from float64 seconds to uint64 milliseconds
+                scan_group.create_dataset('timestamps', data=np.round(1000.0 * scan.timestamps).astype(np.uint64),
+                                          compression='gzip')
                 scan_group.create_dataset('pointing', data=scan.pointing, compression='gzip')
                 scan_group.create_dataset('flags', data=scan.flags, compression='gzip')
                 # Dummy environmental data for now
                 num_samples = len(scan.timestamps)
-                enviro = np.rec.fromarrays([np.zeros(num_samples), np.zeros(num_samples), np.zeros(num_samples)],
-                                           names=['temperature','pressure', 'humidity'])
+                enviro = np.rec.fromarrays(np.zeros((3, num_samples), dtype=np.float32),
+                                           names='temperature,pressure,humidity')
                 scan_group.create_dataset('environment', data=enviro, compression='gzip')
                 
                 scan_group.attrs['label'] = scan.label

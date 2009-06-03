@@ -113,6 +113,27 @@ class DataSet(object):
             for scan in compscan.scans:
                 scan.calc_target_coords(compscan.target, self.antenna)
     
+    def __eq__(self, other):
+        """Equality comparison operator."""
+        if len(self.compscans) != len(other.compscans):
+            return False
+        for self_compscan, other_compscan in zip(self.compscans, other.compscans):
+            if self_compscan != other_compscan:
+                return False
+        if self.data_unit != other.data_unit:
+            return False
+        if self.corrconf != other.corrconf:
+            return False
+        if self.antenna.name != other.antenna.name:
+            return False
+        if self.noise_diode_data != other.noise_diode_data:
+            return False
+        return True
+    
+    def __ne__(self, other):
+        """Inequality comparison operator."""
+        return not self.__eq__(other)
+    
     # Provide properties to access the attributes of the correlator configuration directly
     # This uses the same trick as in stats.MuSigmaArray to create the properties, which
     # leads to less class namespace clutter, but more pylint uneasiness (shame).
@@ -330,8 +351,8 @@ class DataSet(object):
         """
         # Only operate on raw data
         if self.data_unit != 'raw':
-            logger.warning("Expected raw power data to convert to temperature, got data with units '" +
-                           self.data_unit + "' instead.")
+            logger.error("Expected raw power data to convert to temperature, got data with units '" +
+                         self.data_unit + "' instead.")
             return self
         return calibrate_gain(self, randomise, **kwargs)
     

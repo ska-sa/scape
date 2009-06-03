@@ -72,8 +72,8 @@ class NoiseDiodeXDM(NoiseDiodeModel):
             # Load data FITS file tables
             try:
                 feed_id = int(hdu['PRIMARY'].header['FeedID'])
-                table_x = hdu['CAL_TEMP_B%dP1' % feed_id].data
-                table_y = hdu['CAL_TEMP_B%dP2' % feed_id].data
+                temperature_x = hdu['CAL_TEMP_B%dP1' % feed_id].data
+                temperature_y = hdu['CAL_TEMP_B%dP2' % feed_id].data
             except KeyError:
                 raise NoiseDiodeNotFound('Noise diode tables not found in FITS file')
         else:
@@ -87,13 +87,13 @@ class NoiseDiodeXDM(NoiseDiodeModel):
                 msg = 'Feed ID should be 0 (main feed) or 1 (offset feed)'
                 logger.error(msg)
                 raise ValueError(msg)
-            table_x = hdu[2 * feed_id + 1].data
-            table_y = hdu[2 * feed_id + 2].data            
+            temperature_x = hdu[2 * feed_id + 1].data
+            temperature_y = hdu[2 * feed_id + 2].data            
         # Store X and Y tables
-        self.table_x = np.vstack((np.array(table_x.field('Freq'), dtype='double'), 
-                                  np.array(table_x.field('Temp'), dtype='double'))).transpose()
-        self.table_y = np.vstack((np.array(table_y.field('Freq'), dtype='double'), 
-                                  np.array(table_y.field('Temp'), dtype='double'))).transpose()
+        self.temperature_x = np.vstack((np.array(temperature_x.field('Freq'), dtype='double'), 
+                                        np.array(temperature_x.field('Temp'), dtype='double'))).transpose()
+        self.temperature_y = np.vstack((np.array(temperature_y.field('Freq'), dtype='double'), 
+                                        np.array(temperature_y.field('Temp'), dtype='double'))).transpose()
         hdu.close()
 
 #--------------------------------------------------------------------------------------------------
@@ -170,11 +170,13 @@ def load_scan(filename):
     else:
         data = np.dstack([hdu['MSDATA'].data.field('XX'), hdu['MSDATA'].data.field('YY'),
                           2.0 * hdu['MSDATA'].data.field('XY').real, 2.0 * hdu['MSDATA'].data.field('XY').imag])
-    timestamps = np.arange(num_samples) * sample_period + start_time + start_time_offset
-    pointing = np.rec.fromarrays([deg2rad(hdu['MSDATA'].data.field(s)) 
+    timestamps = np.arange(num_samples, dtype=np.float64) * sample_period + start_time + start_time_offset
+    # Round timestamp to nearest millisecond, as this corresponds to KAT7 accuracy and allows better data comparison
+    timestamps = np.round(timestamps * 1000.0) / 1000.0
+    pointing = np.rec.fromarrays([deg2rad(hdu['MSDATA'].data.field(s).astype(np.float32)) 
                                   for s in ['AzAng', 'ElAng', 'RotAng']],
                                  names=['az', 'el', 'rot'])
-    flags = np.rec.fromarrays([np.array(hdu['MSDATA'].data.field(s), 'bool')
+    flags = np.rec.fromarrays([hdu['MSDATA'].data.field(s).astype(np.bool)
                                for s in ['Valid_F', 'ND_ON_F', 'RX_ON_F']],
                               names=['valid', 'nd_on', 'rx_on'])
     data_header = hdu['MSDATA'].header

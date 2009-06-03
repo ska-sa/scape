@@ -59,6 +59,22 @@ class CorrelatorConfig(object):
         self.rfi_channels = rfi_channels
         self.dump_rate = dump_rate
     
+    def __eq__(self, other):
+        """Equality comparison operator."""
+        if not np.all(self.freqs == other.freqs):
+            return False
+        if not np.all(self.bandwidths == other.bandwidths):
+            return False
+        if not np.all(self.rfi_channels == other.rfi_channels):
+            return False
+        if self.dump_rate != other.dump_rate:
+            return False
+        return True
+    
+    def __ne__(self, other):
+        """Inequality comparison operator."""
+        return not self.__eq__(other)
+    
     def select(self, freqkeep=None):
         """Select a subset of frequency channels/bands.
         
@@ -131,3 +147,18 @@ class CompoundScan(object):
         # Interpret source name string and return relevant object
         self.target = construct_source(target)
         self.fitted_beam = fitted_beam
+
+    def __eq__(self, other):
+        """Equality comparison operator."""
+        if len(self.scans) != len(other.scans):
+            return False
+        for self_scan, other_scan in zip(self.scans, other.scans):
+            if self_scan != other_scan:
+                return False
+        if self.target.name != other.target.name:
+            return False
+        return True
+    
+    def __ne__(self, other):
+        """Inequality comparison operator."""
+        return not self.__eq__(other)

@@ -80,6 +80,41 @@ class Scan(object):
         self.path = path
         self.target_coords = target_coords
     
+    def __eq__(self, other):
+        """Equality comparison operator."""
+        # Make sure that both data sets have the same polarisation format first
+        if self.is_stokes != other.is_stokes:
+            if other.is_stokes:
+                self.convert_to_stokes()
+                data_same = np.all(self.data == other.data)
+                self.convert_to_coherency()
+                if not data_same:
+                    return False
+            else:
+                self.convert_to_coherency()
+                data_same = np.all(self.data == other.data)
+                self.convert_to_stokes()
+                if not data_same:
+                    return False
+        else:
+            if not np.all(self.data == other.data):
+                return False
+        if not np.all(self.timestamps == other.timestamps):
+            return False
+        if not np.all(self.pointing == other.pointing):
+            return False
+        if not np.all(self.flags == other.flags):
+            return False
+        if self.label != other.label:
+            return False
+        if not np.all(self.target_coords == other.target_coords):
+            return False
+        return True
+    
+    def __ne__(self, other):
+        """Inequality comparison operator."""
+        return not self.__eq__(other)
+    
     def calc_target_coords(self, target, antenna):
         """Calculate target coordinates, based on target and antenna objects.
         
