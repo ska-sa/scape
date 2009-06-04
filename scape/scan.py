@@ -101,13 +101,16 @@ class Scan(object):
                 return False
         if not np.all(self.timestamps == other.timestamps):
             return False
-        if not np.all(self.pointing == other.pointing):
-            return False
         if not np.all(self.flags == other.flags):
             return False
         if self.label != other.label:
             return False
-        if not np.all(self.target_coords == other.target_coords):
+        # Because of conversion to degrees and back during saving and loading, the last (8th)
+        # significant digit on these float32 values may change - do approximate comparison
+        if not np.allclose(self.pointing.view(np.float32), other.pointing.view(np.float32), 1e-7):
+            return False
+        # Since pointing is used to calculate target coords, this is also only approximately equal
+        if not np.allclose(self.target_coords, other.target_coords, 1e-7):
             return False
         return True
     

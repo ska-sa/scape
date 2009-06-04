@@ -91,6 +91,9 @@ def load_dataset(filename):
                 # Convert from millisecs to secs since Unix epoch, and be sure to use float64 to preserve digits
                 scan_timestamps = f['Scans'][compscan][scan]['timestamps'].value.astype(np.float64) / 1000.0
                 scan_pointing = f['Scans'][compscan][scan]['pointing'].value
+                # Convert contents of pointing from degrees to radians
+                pointing_view = scan_pointing.view(np.float32)
+                pointing_view *= np.pi / 180.0
                 scan_flags = f['Scans'][compscan][scan]['flags'].value
                 scan_environment = f['Scans'][compscan][scan]['environment'].value
                 scan_label = f['Scans'][compscan][scan].attrs['label']
@@ -152,7 +155,11 @@ def save_dataset(dataset, filename):
                 # Convert from float64 seconds to uint64 milliseconds
                 scan_group.create_dataset('timestamps', data=np.round(1000.0 * scan.timestamps).astype(np.uint64),
                                           compression='gzip')
-                scan_group.create_dataset('pointing', data=scan.pointing, compression='gzip')
+                # Convert contents of pointing from radians to degrees, without disturbing original
+                pointing_deg = scan.pointing.copy()
+                pointing_view = pointing_deg.view(np.float32)
+                pointing_view *= 180.0 / np.pi
+                scan_group.create_dataset('pointing', data=pointing_deg, compression='gzip')
                 scan_group.create_dataset('flags', data=scan.flags, compression='gzip')
                 # Dummy environmental data for now
                 num_samples = len(scan.timestamps)
