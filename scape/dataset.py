@@ -120,15 +120,8 @@ class DataSet(object):
         for self_compscan, other_compscan in zip(self.compscans, other.compscans):
             if self_compscan != other_compscan:
                 return False
-        if self.data_unit != other.data_unit:
-            return False
-        if self.corrconf != other.corrconf:
-            return False
-        if self.antenna.name != other.antenna.name:
-            return False
-        if self.noise_diode_data != other.noise_diode_data:
-            return False
-        return True
+        return (self.data_unit == other.data_unit) and (self.corrconf == other.corrconf) and \
+               (self.antenna.name == other.antenna.name) and (self.noise_diode_data == other.noise_diode_data)
     
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -356,7 +349,7 @@ class DataSet(object):
             return self
         return calibrate_gain(self, randomise, **kwargs)
     
-    def average(self, channels_per_band=[], time_window=1):
+    def average(self, channels_per_band='all', time_window=1):
         """Average data in time and/or frequency.
 
         If *channels_per_band* is not `None`, the frequency channels are grouped
@@ -372,7 +365,7 @@ class DataSet(object):
         channels_per_band : List of lists of ints, optional
             List of lists of channel indices (one list per band), indicating
             which channels are averaged together to form each band. If this is
-            the empty list [], all channels are averaged together into 1 band.
+            the string 'all', all channels are averaged together into 1 band.
             If this is None, no averaging is done (each channel becomes a band).
         time_window : int, optional
             Window length in samples, within which to average data in time. If
@@ -390,8 +383,8 @@ class DataSet(object):
         should be called *after* :meth:`convert_power_to_temperature`.
         
         """
-        # An empty list means average all channels together
-        if channels_per_band == []:
+        # The string 'all' means average all channels together
+        if channels_per_band == 'all':
             channels_per_band = [range(len(self.freqs))]
         # None means no frequency averaging (band == channel)
         if channels_per_band is None:

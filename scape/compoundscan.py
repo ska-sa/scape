@@ -61,15 +61,8 @@ class CorrelatorConfig(object):
     
     def __eq__(self, other):
         """Equality comparison operator."""
-        if not np.all(self.freqs == other.freqs):
-            return False
-        if not np.all(self.bandwidths == other.bandwidths):
-            return False
-        if not np.all(self.rfi_channels == other.rfi_channels):
-            return False
-        if self.dump_rate != other.dump_rate:
-            return False
-        return True
+        return np.all(self.freqs == other.freqs) and np.all(self.bandwidths == other.bandwidths) and \
+               np.all(self.rfi_channels == other.rfi_channels) and (self.dump_rate == other.dump_rate)
     
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -155,9 +148,7 @@ class CompoundScan(object):
         for self_scan, other_scan in zip(self.scans, other.scans):
             if self_scan != other_scan:
                 return False
-        if self.target.name != other.target.name:
-            return False
-        return True
+        return (self.target.name == other.target.name)
     
     def __ne__(self, other):
         """Inequality comparison operator."""

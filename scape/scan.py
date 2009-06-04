@@ -99,20 +99,13 @@ class Scan(object):
         else:
             if not np.all(self.data == other.data):
                 return False
-        if not np.all(self.timestamps == other.timestamps):
-            return False
-        if not np.all(self.flags == other.flags):
-            return False
-        if self.label != other.label:
-            return False
         # Because of conversion to degrees and back during saving and loading, the last (8th)
-        # significant digit on these float32 values may change - do approximate comparison
-        if not np.allclose(self.pointing.view(np.float32), other.pointing.view(np.float32), 1e-7):
-            return False
+        # significant digit of the float32 pointing values may change - do approximate comparison
         # Since pointing is used to calculate target coords, this is also only approximately equal
-        if not np.allclose(self.target_coords, other.target_coords, 1e-7):
-            return False
-        return True
+        return np.all(self.timestamps == other.timestamps) and np.all(self.flags == other.flags) and \
+               (self.label == other.label) and \
+               np.allclose(self.pointing.view(np.float32), other.pointing.view(np.float32), 1e-7) and \
+               np.allclose(self.target_coords, other.target_coords, 1e-7)
     
     def __ne__(self, other):
         """Inequality comparison operator."""

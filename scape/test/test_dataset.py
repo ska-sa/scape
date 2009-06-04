@@ -1,4 +1,5 @@
-"""Tests for the projection module."""
+"""Tests for the dataset module."""
+# pylint: disable-msg=C0103
 
 import unittest
 import os

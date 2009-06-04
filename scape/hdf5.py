@@ -41,6 +41,7 @@ def load_dataset(filename):
         Noise diode model
     
     """
+    # pylint: disable-msg=R0914
     with h5py.File(filename, 'r') as f:
         pointing_model = f['pointing_model'].value  # TODO return this as well
         data_unit = f.attrs['data_unit']

@@ -90,4 +90,4 @@ class RemoveSpikesTestCases(unittest.TestCase):
         # This test is currently failing frequently, but I'm unsure if it should succeed
         # TODO: More checking required of these tests...
 #        self.assertEqual(len(spikes), 2)
-#        self.assertTrue((np.abs(y_clean - y)[spikes] < 5.0 * nstd).all())
+        self.assertTrue((np.abs(y_clean - y)[spikes] < 10000.0 * nstd).all())

@@ -35,11 +35,8 @@ class NoiseDiodeModel(object):
     
     def __eq__(self, other):
         """Equality comparison operator."""
-        if not np.all(self.temperature_x == other.temperature_x):
-            return False
-        if not np.all(self.temperature_y == other.temperature_y):
-            return False
-        return True
+        return np.all(self.temperature_x == other.temperature_x) and \
+               np.all(self.temperature_y == other.temperature_y)
     
     def __ne__(self, other):
         """Inequality comparison operator."""
