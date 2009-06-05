@@ -105,7 +105,7 @@ class Scan(object):
         return np.all(self.timestamps == other.timestamps) and np.all(self.flags == other.flags) and \
                (self.label == other.label) and \
                np.allclose(self.pointing.view(np.float32), other.pointing.view(np.float32), 1e-7) and \
-               np.allclose(self.target_coords, other.target_coords, 1e-7)
+               np.allclose(self.target_coords, other.target_coords, atol=1e-6)
     
     def __ne__(self, other):
         """Inequality comparison operator."""
