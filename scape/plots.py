@@ -258,7 +258,7 @@ def fitted_beam_scans(compscan, band=0, ax=None):
         ax = plt.gca()
     start_times = np.array([scan.timestamps.min() for scan in compscan.scans])
     end_times = np.array([scan.timestamps.max() for scan in compscan.scans])
-    compacted_start_times = np.concatenate(([0.0], np.cumsum(end_times - start_times)[:-1]))
+    compacted_start_times = np.concatenate(([0.0], np.cumsum(end_times - start_times)))
     time_origin = start_times.min()
     power_limits = []
     
@@ -279,15 +279,15 @@ def fitted_beam_scans(compscan, band=0, ax=None):
         ax.plot([compacted_start_times[n]] * 2, [0.0, 2.0 * max(power_limits)], 'k')
     
     # Format axes
-    ylim = (min(power_limits), 1.05 * max(power_limits) - 0.05 * min(power_limits))
-    ax.set_ylim(ylim)
+    ax.set_xlim(0.0, compacted_start_times[-1])
+    ax.set_ylim(min(power_limits), 1.05 * max(power_limits) - 0.05 * min(power_limits))
     # Redefine x-axis label formatter to display the correct time for each segment
     class SegmentedFormatter(mpl.ticker.ScalarFormatter):
         def __init__(self, useOffset=True, useMathText=False):
             mpl.ticker.ScalarFormatter.__init__(self, useOffset, useMathText)
         def __call__(self, x, pos=None):
             if x > compacted_start_times[0]:
-                section = (compacted_start_times < x).nonzero()[0][-1]
+                section = (compacted_start_times[:-1] < x).nonzero()[0][-1]
                 print "old x, pos =", x, pos
                 x = x - compacted_start_times[section] + start_times[section] - time_origin
                 print "new x =", x
@@ -481,8 +481,10 @@ def fitted_beam_target(compscan, band=0, ax=None):
     # Plot the fitted Gaussian beam function as contours
     if compscan.beam:
         ell_type, center_type = 'r-', 'r+'
-        ellipses = gaussian_ellipses(compscan.beam.center, np.diag(fwhm_to_sigma(compscan.beam.width) ** 2.0),
-                                     contour=[0.5, 0.1])
+        var = fwhm_to_sigma(compscan.beam.width) ** 2.0
+        if np.isscalar(var):
+            var = [var, var]
+        ellipses = gaussian_ellipses(compscan.beam.center, np.diag(var), contour=[0.5, 0.1])
         for ellipse in ellipses:
             ax.plot(rad2deg(ellipse[:, 0]), rad2deg(ellipse[:, 1]), ell_type, lw=2)
         ax.plot([rad2deg(compscan.beam.center[0])], [rad2deg(compscan.beam.center[1])],
