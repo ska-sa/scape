@@ -131,15 +131,18 @@ class CompoundScan(object):
         List of scan objects
     target : string
         Name of the target of this compound scan
-    fitted_beam : :class:`beam_baseline.BeamBaselineComboFit` object, optional
-        Object that describes fitted beam and baseline
+    beam : :class:`beam_baseline.BeamPatternFit` object, optional
+        Object that describes fitted beam
+    baseline : :class:`fitting.Polynomial2DFit` object, optional
+        Object that describes fitted baseline
     
     """
-    def __init__(self, scanlist, target, fitted_beam=None):
+    def __init__(self, scanlist, target, beam=None, baseline=None):
         self.scans = scanlist
         # Interpret source name string and return relevant object
         self.target = construct_source(target)
-        self.fitted_beam = fitted_beam
+        self.beam = beam
+        self.baseline = baseline
 
     def __eq__(self, other):
         """Equality comparison operator."""

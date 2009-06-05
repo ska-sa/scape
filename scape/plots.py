@@ -267,11 +267,12 @@ def fitted_beam_scans(compscan, band=0, fig=None):
         smooth_power = remove_spikes(measured_power)
         power_limits.extend([smooth_power.min(), smooth_power.max()])
         ax = plt.subplot(len(compscan.scans), 1, n + 1)
-        if compscan.fitted_beam:
-            fitted_power = compscan.fitted_beam(scan.target_coords.transpose())
-            baseline_power = compscan.fitted_beam.baseline(scan.target_coords.transpose())
+        if compscan.baseline:
+            baseline_power = compscan.baseline(scan.target_coords)
             ax.plot(time_line, baseline_power, 'r', lw=2)
-            ax.plot(time_line, fitted_power, 'r', lw=2)
+            if compscan.beam:
+                beam_power = compscan.beam(scan.target_coords.transpose())
+                ax.plot(time_line, beam_power + baseline_power, 'r', lw=2)
         ax.plot(time_line, measured_power, 'b')
         axes_list.append(ax)
     
@@ -464,14 +465,13 @@ def fitted_beam_target(compscan, band=0, ax=None):
     # Show the locations of the scan samples themselves, with marker sizes indicating power values
     plot_marker_3d(target_coords[0], target_coords[1], total_power, ax=ax)
     # Plot the fitted Gaussian beam function as contours
-    if compscan.fitted_beam:
+    if compscan.beam:
         ell_type, center_type = 'r-', 'r+'
-        ellipses = gaussian_ellipses(compscan.fitted_beam.beam_center,
-                                     np.diag(fwhm_to_sigma(compscan.fitted_beam.beam_width) ** 2.0),
+        ellipses = gaussian_ellipses(compscan.beam.center, np.diag(fwhm_to_sigma(compscan.beam.width) ** 2.0),
                                      contour=[0.5, 0.1])
         for ellipse in ellipses:
             ax.plot(rad2deg(ellipse[:, 0]), rad2deg(ellipse[:, 1]), ell_type, lw=2)
-        ax.plot([rad2deg(compscan.fitted_beam.beam_center[0])], [rad2deg(compscan.fitted_beam.beam_center[1])],
+        ax.plot([rad2deg(compscan.beam.center[0])], [rad2deg(compscan.beam.center[1])],
                 center_type, ms=12, aa=False, mew=2)
     
     # Axis settings and labels

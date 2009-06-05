@@ -428,7 +428,7 @@ class DataSet(object):
         self.corrconf.merge(channels_per_band)
         return self
     
-    def fit_beams_and_baselines(self, band=0):
+    def fit_beams_and_baselines(self, band=0, **kwargs):
         """Simultaneously fit beams and baselines to all compound scans.
         
         This fits a beam pattern and baseline to the total power data of all the
@@ -439,6 +439,9 @@ class DataSet(object):
         ----------
         band : int, optional
             Frequency band in which to fit beam and baseline
+        kwargs : dict, optional
+            Extra keyword arguments are passed to underlying :mod:`beam_baseline`
+            functions
         
         Returns
         -------
@@ -446,8 +449,8 @@ class DataSet(object):
             Data set with fitted beam/baseline functions added
         
         """
-        # Beamwidth for circular dish is lambda / D
-        expected_width = 1.22 * lightspeed / self.freqs[band] / self.antenna.diameter
+        # FWHM Beamwidth for circular dish is 1.03 lambda / D
+        expected_width = 1.03 * lightspeed / self.freqs[band] / self.antenna.diameter
         for compscan in self.compscans:
-            compscan.fitted_beam = fit_beam_and_baseline(compscan, expected_width, band)
+            compscan.beam, compscan.baseline = fit_beam_and_baseline(compscan, expected_width, band=band, **kwargs)
         return self
