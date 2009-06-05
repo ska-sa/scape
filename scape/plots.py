@@ -232,7 +232,7 @@ def waterfall(dataset, title='', channel_skip=None, fig=None):
 #--- FUNCTION :  fitted_beam_scans
 #--------------------------------------------------------------------------------------------------
 
-def fitted_beam_scans(compscan, band=0, fig=None):
+def fitted_beam_scans(compscan, band=0, ax=None):
     """Plot beam pattern fitted to multiple scans through a single point source.
     
     This plots time series plots of the scans comprising a compound scan, with
@@ -254,19 +254,20 @@ def fitted_beam_scans(compscan, band=0, fig=None):
         List of matplotlib Axes objects, one per plot
     
     """
-    if fig is None:
-        fig = plt.gcf()
-    # Set up axes: one figure, with one set of axes per scan
-    axes_list = []
-    time_origin = np.array([scan.timestamps.min() for scan in compscan.scans]).min()
+    if ax is None:
+        ax = plt.gca()
+    start_times = np.array([scan.timestamps.min() for scan in compscan.scans])
+    end_times = np.array([scan.timestamps.max() for scan in compscan.scans])
+    compacted_start_times = np.concatenate(([0.0], np.cumsum(end_times - start_times)[:-1]))
+    time_origin = start_times.min()
     power_limits = []
     
+    # Plot data segments
     for n, scan in enumerate(compscan.scans):
         measured_power = scan.stokes('I')[:, band]
-        time_line = scan.timestamps - time_origin
+        time_line = scan.timestamps - start_times[n] + compacted_start_times[n]
         smooth_power = remove_spikes(measured_power)
         power_limits.extend([smooth_power.min(), smooth_power.max()])
-        ax = plt.subplot(len(compscan.scans), 1, n + 1)
         if compscan.baseline:
             baseline_power = compscan.baseline(scan.target_coords)
             ax.plot(time_line, baseline_power, 'r', lw=2)
@@ -274,15 +275,27 @@ def fitted_beam_scans(compscan, band=0, fig=None):
                 beam_power = compscan.beam(scan.target_coords.transpose())
                 ax.plot(time_line, beam_power + baseline_power, 'r', lw=2)
         ax.plot(time_line, measured_power, 'b')
-        axes_list.append(ax)
+    for n in xrange(1, len(compscan.scans)):
+        ax.plot([compacted_start_times[n]] * 2, [0.0, 2.0 * max(power_limits)], 'k')
     
-    ylim = (min(power_limits), 1.1 * max(power_limits) - 0.1 * min(power_limits))
-    for n, ax in enumerate(axes_list):
-        ax.set_ylim(ylim)
-        if n == len(compscan.scans) - 1:
-            ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
-        ax.set_ylabel('Power')
-    return axes_list
+    # Format axes
+    ylim = (min(power_limits), 1.05 * max(power_limits) - 0.05 * min(power_limits))
+    ax.set_ylim(ylim)
+    # Redefine x-axis label formatter to display the correct time for each segment
+    class SegmentedFormatter(mpl.ticker.ScalarFormatter):
+        def __init__(self, useOffset=True, useMathText=False):
+            mpl.ticker.ScalarFormatter.__init__(self, useOffset, useMathText)
+        def __call__(self, x, pos=None):
+            if x > compacted_start_times[0]:
+                section = (compacted_start_times < x).nonzero()[0][-1]
+                print "old x, pos =", x, pos
+                x = x - compacted_start_times[section] + start_times[section] - time_origin
+                print "new x =", x
+            mpl.ticker.ScalarFormatter.__call__(self, x, pos)
+    ax.xaxis.set_major_formatter(mpl.ticker.NullFormatter())
+    ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
+    ax.set_ylabel('Power')
+    return ax
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_marker_3d
@@ -409,6 +422,7 @@ def gaussian_ellipses(mean, cov, contour=0.5, num_points=200):
     ------
     ValueError
         If mean and/or cov has wrong shape
+    
     """
     mean = np.asarray(mean)
     cov = np.asarray(cov)
@@ -478,7 +492,7 @@ def fitted_beam_target(compscan, band=0, ax=None):
     x_range = [target_coords[0].min(), target_coords[0].max()]
     y_range = [target_coords[1].min(), target_coords[1].max()]
     if not np.any(np.isnan(x_range + y_range)):
-        extra_space = 0.2 * max(x_range[1] - x_range[0], y_range[1] - y_range[0])
+        extra_space = 0.1 * max(x_range[1] - x_range[0], y_range[1] - y_range[0])
         ax.set_xlim(x_range + extra_space * np.array([-1.0, 1.0]))
         ax.set_ylim(y_range + extra_space * np.array([-1.0, 1.0]))
     ax.set_aspect('equal')
