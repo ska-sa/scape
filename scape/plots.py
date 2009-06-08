@@ -7,9 +7,9 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from .stats import remove_spikes
+from .stats import remove_spikes, minimise_angle_wrap
 from .beam_baseline import fwhm_to_sigma
-from .coord import rad2deg
+from .coord import rad2deg, plane_to_sphere
 
 logger = logging.getLogger("scape.plots")
 
@@ -504,7 +504,7 @@ def compound_scan_on_target(compscan, band=0, ax=None):
     if ax is None:
         ax = plt.gca()
     # Extract total power and target coordinates (in degrees) of all scans
-    total_power = np.hstack([scan.stokes('I')[:, band] for scan in compscan.scans])
+    total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
     target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans]))
     
     # Show the locations of the scan samples themselves, with marker sizes indicating power values
@@ -533,119 +533,80 @@ def compound_scan_on_target(compscan, band=0, ax=None):
     ax.set_ylabel('y (deg)')
     return ax
 
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  data_set_in_mount_space
+#--------------------------------------------------------------------------------------------------
 
-## Plot beam patterns fitted to multiple scans through multiple point sources, in "instantaneous" mount space.
-# The purpose of this plot is to examine the quality of beam functions fitted to multiple sources, based on multiple
-# scans through each source. The scans are adjusted to appear as if they happened instantaneously for each source,
-# which makes the sources appear stationary in mount coordinates (regardless of their actual motion). The beam
-# functions are indicated by contour ellipses, while the power values on each scan are illustrated with pseudo-3D
-# plots.
-# @param figColorList   List of matplotlib Figure objects to contain plots (one per frequency band)
-# @param calibListList  List of list of SingleDishData objects of calibrated main scans (per source, and then per scan)
-# @param beamListList   List of list of Gaussian beam functions (per source, and then per band)
-# @param transformList  List of TargetToInstantMountTransform objects (one per source)
-# @param expName        Title of experiment
-# @return axesColorList List of matplotlib Axes objects, one per plot
-# pylint: disable-msg=R0912,R0913,R0914,R0915
-def plot_beam_patterns_mount(figColorList, calibListList, beamListList, transformList, expName):
-    # Set up axes
-    axesColorList = []
-    # Use the frequency bands of the first scan of the first source as reference for the rest
-    plotFreqs = calibListList[0][0].freqs_Hz / 1e9   # Hz to GHz
-    numBands = len(plotFreqs)
-    numSources = len(calibListList)
-    # Number of points in each Gaussian ellipse
-    numEllPoints = 200
-    contours = [0.5, 0.1]
-    numEllipses = len(contours)
-    # One figure per frequency band
-    for band in range(numBands):
-        axesColorList.append(figColorList[band].add_subplot(1, 1, 1))
+def data_set_in_mount_space(dataset, band=0, ax=None):
+    """Plot total power scans of all compound scans in mount space with beam fits.
     
-    # Iterate through sources and collect data, converting target coordinates to instantaneous mount coordinates
-    totalPowerList, azAngList, elAngList = [], [], []
-    for calibScanList, targetToInstantMount in zip(calibListList, transformList):
-        # Extract total power and instantaneous mount coordinates of all scans of a specific source
-        totalPower, azAng_deg, elAng_deg = [], [], []
-        for scan in calibScanList:
-            totalPower.append(scan.stokes('I'))
-            mountCoords = np.array([targetToInstantMount(targetCoord) for targetCoord in scan.targetCoords])
-            azAng_deg.append(mountCoords[:, 0].tolist())
-            elAng_deg.append(mountCoords[:, 1].tolist())
-        totalPowerList.append(np.concatenate(totalPower))
-        azAngList.append(np.concatenate(azAng_deg))
-        elAngList.append(np.concatenate(elAng_deg))
-    # Create Gaussian contour ellipses in instantaneous mount coordinates
-    for beamFuncList, targetToInstantMount in zip(beamListList, transformList):
-        targetDim = targetToInstantMount.get_target_dimensions()
-        for band in range(numBands):
-            # Create ellipses in target coordinates
-            ellipses = misc.gaussian_ellipses(beamFuncList[band][0].mean, np.diag(beamFuncList[band][0].var), \
-                                              contour=contours, numPoints=numEllPoints)
-            # Convert Gaussian ellipses and center to instantaneous mount coordinate system
-            # This assumes that the beam function is defined on a 2-D coordinate space, while the target
-            # coordinate space is at least 2-D, with the first 2 dimensions corresponding with the beam's ones
-            targetCoord = np.zeros(targetDim, dtype='double')
-            targetCoord[0:2] = beamFuncList[band][0].mean
-            mountCoord = targetToInstantMount(targetCoord)
-            azAngList.append(np.array([mountCoord[0]]))
-            elAngList.append(np.array([mountCoord[1]]))
-            for ellipse in ellipses:
-                targetCoords = np.zeros((len(ellipse), targetDim), dtype='double')
-                targetCoords[:, :2] = ellipse
-                mountCoords = np.array([targetToInstantMount(targetCoord) for targetCoord in targetCoords])
-                azAngList.append(mountCoords[:, 0])
-                elAngList.append(mountCoords[:, 1])
+    This plots the total power of all scans in the data set as a pseudo-3D plot
+    in 'instantaneous mount' space. This space has azimuth and elevation
+    coordinates like the standard antenna pointing data, but assumes that each
+    compound scan occurred instantaneously at the center time of the compound
+    scan. This has the advantage that both fixed and moving targets are frozen
+    in mount space, which makes the plots easier to interpret. Its advantage
+    over normal target space is that it can display multiple compound scans on
+    the same plot.
     
-    # Do global unwrapping of all angles, across all sources, to prevent sources being split around angle boundaries
-    angInds = np.cumsum([0] + [ang.size for ang in azAngList])
-    azAngMod = misc.unwrap_angles(np.concatenate(azAngList))
-    azAngList = [azAngMod[angInds[i-1]:angInds[i]] for i in xrange(1, len(angInds))]
-    elAngMod = misc.unwrap_angles(np.concatenate(elAngList))
-    elAngList = [elAngMod[angInds[i-1]:angInds[i]] for i in xrange(1, len(angInds))]
-    # Determine overall axis limits
-    azMin_deg = np.concatenate(azAngList).min()
-    azMax_deg = np.concatenate(azAngList).max()
-    elMin_deg = np.concatenate(elAngList).min()
-    elMax_deg = np.concatenate(elAngList).max()
-    # Separate scan points and beam info again
-    azBeamInfo = np.concatenate(azAngList[numSources:]).reshape(numSources, numBands, 1+numEllipses*numEllPoints)
-    elBeamInfo = np.concatenate(elAngList[numSources:]).reshape(numSources, numBands, 1+numEllipses*numEllPoints)
-    azAngList = azAngList[:numSources]
-    elAngList = elAngList[:numSources]
+    For each compound scan, contour ellipses of the fitted Gaussian beam function
+    are added, if it exists. It highlights the success of the beam fitting
+    procedure.
     
-    # Iterate through figures (one per band)
-    for band in range(numBands):
-        axis = axesColorList[band]
-        # Iterate through sources and plot data
-        for sourceData in zip(azAngList, elAngList, totalPowerList, azBeamInfo, elBeamInfo, beamListList):
-            azScan, elScan, totalPower, azBeam, elBeam, beamFuncList = sourceData
-            power = totalPower[:, band]
-            # Show the locations of the scan samples themselves, with marker sizes indicating power values
-            vis.plot_marker_3d(axis, azScan, elScan, power)
-            # Plot the fitted Gaussian beam function as contours with a centre marker
-            if beamFuncList[band][1]:
-                ellType, centerType = 'r-', 'r+'
-            else:
-                ellType, centerType = 'y-', 'y+'
-            for azEllipse, elEllipse in zip(azBeam[band, 1:].reshape(numEllipses, numEllPoints), \
-                                            elBeam[band, 1:].reshape(numEllipses, numEllPoints)):
-                axis.plot(azEllipse, elEllipse, ellType, lw=2)
-            axis.plot([azBeam[band, 0]], [elBeam[band, 0]], centerType, ms=12, aa=False, mew=2)
-        
-        # Axis settings and labels (watch out for NaNs on axis limits, as it messes up figure output)
-        if not np.any(np.isnan([azMin_deg, azMax_deg, elMin_deg, elMax_deg])):
-            axis.set_xlim(azMin_deg, azMax_deg)
-            axis.set_ylim(elMin_deg, elMax_deg)
-            # Only set axis aspect ratio to equal if it is not too extreme
-            if azMin_deg == azMax_deg:
-                aspectRatio = 1e20
-            else:
-                aspectRatio = (elMax_deg - elMin_deg) / (azMax_deg - azMin_deg)
-            if (aspectRatio > 0.1) and (aspectRatio < 10):
-                axis.set_aspect('equal')
-        axis.set_xlabel('Azimuth (deg)')
-        axis.set_ylabel('Elevation (deg)')
-        axis.set_title(expName + ' : Beams fitted in band %d : %3.3f GHz' % (band, plotFreqs[band]))
+    Parameters
+    ----------
+    dataset : :class:`scape.DataSet` object
+        Data set to plot
+    band : int, optional
+        Frequency band to plot
+    ax : :class:`matplotlib.axes.Axes` object, optional
+        Matplotlib axes object to receive plot (default is current axes)
     
-    return axesColorList
+    Returns
+    -------
+    ax : :class:`matplotlib.axes.Axes` object
+        Matplotlib Axes object representing plot
+    
+    """
+    if ax is None:
+        ax = plt.gca()
+    
+    for compscan in dataset.compscans:
+        total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
+        target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
+        center_time = np.median(np.hstack([scan.timestamps for scan in compscan.scans]))
+        # Instantaneous mount coordinates are back on the sphere, but using a single time instant for all points
+        mount_coords = list(plane_to_sphere(compscan.target, dataset.antenna, 
+                                            target_coords[0], target_coords[1], center_time))
+        # Obtain ellipses and center, and unwrap az angles for all objects simultaneously to ensure they stay together
+        if compscan.beam:
+            var = fwhm_to_sigma(compscan.beam.width) ** 2.0
+            if np.isscalar(var):
+                var = [var, var]
+            target_ellipses = gaussian_ellipses(compscan.beam.center, np.diag(var), contour=[0.5, 0.1])
+            mount_ellipses = list(plane_to_sphere(compscan.target, dataset.antenna,
+                                                  target_ellipses[:, :, 0], target_ellipses[:, :, 1], center_time))
+            mount_center = list(plane_to_sphere(compscan.target, dataset.antenna,
+                                                compscan.beam.center[0], compscan.beam.center[1], center_time))
+            all_az = np.concatenate((mount_coords[0], [mount_center[0]], mount_ellipses[0].flatten()))
+            all_az = minimise_angle_wrap(all_az)
+            mount_coords[0] = all_az[:len(mount_coords[0])]
+            mount_center[0] = all_az[len(mount_coords[0])]
+            mount_ellipses[0] = all_az[len(mount_coords[0]) + 1:].reshape(mount_ellipses[0].shape[:2])
+        else:
+            mount_coords[0] = minimise_angle_wrap(mount_coords[0])
+            
+        # Show the locations of the scan samples themselves, with marker sizes indicating power values
+        plot_marker_3d(rad2deg(mount_coords[0]), rad2deg(mount_coords[1]), total_power, ax=ax)
+        # Plot the fitted Gaussian beam function as contours
+        if compscan.beam:
+            ell_type, center_type = 'r-', 'r+'
+            for ellipse in np.dstack(mount_ellipses):
+                ax.plot(rad2deg(ellipse[:, 0]), rad2deg(ellipse[:, 1]), ell_type, lw=2)
+            ax.plot([rad2deg(mount_center[0])], [rad2deg(mount_center[1])], center_type, ms=12, aa=False, mew=2)
+    
+    # Axis settings and labels
+    ax.set_aspect('equal')
+    ax.set_xlabel('az (deg)')
+    ax.set_ylabel('el (deg)')
+    return ax
