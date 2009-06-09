@@ -305,7 +305,7 @@ def compound_scan_in_time(compscan, band=0, ax=None):
     power_limits, data_segments, baseline_segments, beam_segments = [], [], [], []
     
     # Plot data segments
-    for n, scan in enumerate(compscan.scans):
+    for scan in compscan.scans:
         timeline = scan.timestamps - time_origin
         measured_power = scan.stokes('I')[:, band]
         smooth_power = remove_spikes(measured_power)

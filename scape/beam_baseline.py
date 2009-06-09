@@ -1,10 +1,14 @@
 """Routines for fitting beam patterns and baselines."""
 
+import logging
+
 import numpy as np
 import scipy.special as special
 
 from .fitting import ScatterFit, Polynomial2DFit, GaussianFit
 from .stats import remove_spikes
+
+logger = logging.getLogger("scape.beam_baseline")
 
 def jinc(x):
     """The ``jinc`` function, a circular analogue to the ``sinc`` function.
@@ -189,6 +193,7 @@ def fit_beam_and_baseline(compscan, expected_width, bl_degrees=(3, 3), refine_be
     prev_err_power = np.inf
     resid_change = 1e-5
     outer = np.tile(True, len(total_power))
+    logger.debug('Fitting beam and baseline of degree (%d, %d):' % bl_degrees)
     for n in xrange(max_iters):
         baseline.fit(target_coords[:, outer], total_power[outer])
         bl_resid = total_power - baseline(target_coords)
@@ -199,13 +204,17 @@ def fit_beam_and_baseline(compscan, expected_width, bl_degrees=(3, 3), refine_be
         beam.fit(target_coords.transpose(), bl_resid)
         resid = bl_resid - beam(target_coords.transpose())
         dist_to_center = np.sqrt(((target_coords - beam.center[:, np.newaxis]) ** 2).sum(axis=0))
+        # This threshold should be close to first nulls of beam - too wide compromises baseline fit
         outer = dist_to_center > 1.3 * expected_width
         err_power = np.dot(resid, resid)
-#        print n, ", res =", (prev_err_power - err_power) / err_power, ", height =", beam.height, ", outer =", outer.sum()
+        logger.debug("Iteration %d: residual = %f, beam height = %f, width = %f" %
+                     (n, (prev_err_power - err_power) / err_power, beam.height, beam.width))
         if (err_power == 0.0) or (prev_err_power - err_power) / err_power < resid_change:
             break
         prev_err_power = err_power + 0.0
     if refine_beam:
+        # Refit beam to region within half-power points
         inner = dist_to_center < expected_width / 2.0
         beam.fit(target_coords[:, inner].transpose(), bl_resid[inner])
+        logger.debug("Beam refinement: beam height = %f, width = %f" % (beam.height, beam.width))
     return beam, baseline
