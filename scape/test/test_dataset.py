@@ -6,14 +6,12 @@ import os
 
 import numpy as np
 
-from scape import dataset, compoundscan, scan, coord, gaincal
+from scape import dataset, compoundscan, scan, gaincal
 
 class SaveLoadTestCases(unittest.TestCase):
     """Save and reload data set to verify that file was written successfully."""
     
     def setUp(self):
-        # Set up catalogues
-        coord.antenna_catalogue['Test'] = coord.Antenna('Test', 0.0, 0.0, 0.0, 15.0)
         # Create dummy data set
         num_samples, num_chans = 100, 16
         data = np.random.randn(num_samples, num_chans, 4).astype(np.float32)
@@ -25,14 +23,14 @@ class SaveLoadTestCases(unittest.TestCase):
         s2 = s1.select(timekeep=s1.flags['valid'], copy=True)
         s3 = s1.select(copy=True)
         s4 = s1.select(timekeep=s1.flags['nd_on'], copy=True)
-        cs1 = compoundscan.CompoundScan([s1, s2], 'Sun')
-        cs2 = compoundscan.CompoundScan([s3, s4], 'Moon')
+        cs1 = compoundscan.CompoundScan([s1, s2], 'Sun, special')
+        cs2 = compoundscan.CompoundScan([s3, s4], 'Moon, special')
         freqs = 1e9 + 1e6*np.arange(num_chans, dtype=np.float64)
         corrconf = compoundscan.CorrelatorConfig(freqs, np.tile(1e6, num_chans).astype(np.float64),
                                                  [2, 5, 9], 1.0)
         temp = np.column_stack((freqs, 20.0 + np.random.randn(len(freqs))))
         nd_data = gaincal.NoiseDiodeModel(temp, temp)
-        self.d = dataset.DataSet('', [cs1, cs2], 'raw', corrconf, 'Test', nd_data)
+        self.d = dataset.DataSet('', [cs1, cs2], 'raw', corrconf, 'Test, 0, 0, 0, 15.0', nd_data)
         self.filename = 'scape_test_dataset.h5'
         if os.path.exists(self.filename):
             os.remove(self.filename)

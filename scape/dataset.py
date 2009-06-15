@@ -5,8 +5,8 @@ import logging
 
 import numpy as np
 
+import katpoint
 from .compoundscan import CompoundScan
-from .coord import antenna_catalogue, lightspeed
 from .gaincal import calibrate_gain
 from .beam_baseline import fit_beam_and_baseline
 
@@ -51,7 +51,7 @@ class DataSet(object):
     corrconf : :class:`compoundscan.CorrelatorConfig` object, optional
         Correlator configuration object
     antenna : string, optional
-        Name of antenna that produced the data set
+        Description string of antenna that produced the data set
     nd_data : :class:`gaincal.NoiseDiodeModel` object, optional
         Noise diode model
     kwargs : dict, optional
@@ -97,10 +97,7 @@ class DataSet(object):
         self.compscans = compscanlist
         self.data_unit = data_unit
         self.corrconf = corrconf
-        try:
-            self.antenna = antenna_catalogue[antenna]
-        except KeyError:
-            raise KeyError("Unknown antenna '%s'" % antenna)
+        self.antenna = katpoint.construct_antenna(antenna)
         self.noise_diode_data = nd_data
         # Create scan list
         self.scans = []
@@ -450,7 +447,7 @@ class DataSet(object):
         
         """
         # FWHM Beamwidth for circular dish is 1.03 lambda / D
-        expected_width = 1.03 * lightspeed / self.freqs[band] / self.antenna.diameter
+        expected_width = 1.03 * katpoint.lightspeed / self.freqs[band] / self.antenna.diameter
         for compscan in self.compscans:
             compscan.beam, compscan.baseline = fit_beam_and_baseline(compscan, expected_width, band=band, **kwargs)
         return self

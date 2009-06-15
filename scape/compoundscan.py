@@ -17,7 +17,7 @@ Functionality: beam/baseline fitting, instant mount coords, ...
 
 import numpy as np
 
-from .coord import construct_source
+import katpoint
 
 #--------------------------------------------------------------------------------------------------
 #--- CLASS :  CorrelatorConfig
@@ -130,7 +130,7 @@ class CompoundScan(object):
     scanlist : list of :class:`scan.Scan` objects
         List of scan objects
     target : string
-        Name of the target of this compound scan
+        Description string of the target of this compound scan
     beam : :class:`beam_baseline.BeamPatternFit` object, optional
         Object that describes fitted beam
     baseline : :class:`fitting.Polynomial2DFit` object, optional
@@ -139,8 +139,8 @@ class CompoundScan(object):
     """
     def __init__(self, scanlist, target, beam=None, baseline=None):
         self.scans = scanlist
-        # Interpret source name string and return relevant object
-        self.target = construct_source(target)
+        # Interpret target description string and return relevant object
+        self.target = katpoint.construct_target(target)
         self.beam = beam
         self.baseline = baseline
 

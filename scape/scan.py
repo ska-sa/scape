@@ -18,7 +18,7 @@ Functionality: power conversion,...
 
 import numpy as np
 
-from .coord import sphere_to_plane
+import katpoint
 
 #--------------------------------------------------------------------------------------------------
 #--- CLASS :  Scan
@@ -127,8 +127,8 @@ class Scan(object):
             Coordinates on projected plane, with target as reference, in radians
 
         """
-        target_x, target_y = sphere_to_plane(target, antenna, 
-                                             self.pointing['az'], self.pointing['el'], self.timestamps)
+        target_x, target_y = katpoint.sphere_to_plane(antenna, target, self.pointing['az'],
+                                                      self.pointing['el'], self.timestamps)
         self.target_coords = np.vstack((target_x, target_y))
         return self.target_coords
     

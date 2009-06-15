@@ -7,9 +7,9 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
+from katpoint import rad2deg, plane_to_sphere
 from .stats import remove_spikes, minimise_angle_wrap
 from .beam_baseline import fwhm_to_sigma
-from .coord import rad2deg, plane_to_sphere
 
 logger = logging.getLogger("scape.plots")
 
@@ -576,7 +576,7 @@ def data_set_in_mount_space(dataset, band=0, ax=None):
         target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
         center_time = np.median(np.hstack([scan.timestamps for scan in compscan.scans]))
         # Instantaneous mount coordinates are back on the sphere, but using a single time instant for all points
-        mount_coords = list(plane_to_sphere(compscan.target, dataset.antenna, 
+        mount_coords = list(plane_to_sphere(dataset.antenna, compscan.target,
                                             target_coords[0], target_coords[1], center_time))
         # Obtain ellipses and center, and unwrap az angles for all objects simultaneously to ensure they stay together
         if compscan.beam:
@@ -584,9 +584,9 @@ def data_set_in_mount_space(dataset, band=0, ax=None):
             if np.isscalar(var):
                 var = [var, var]
             target_ellipses = gaussian_ellipses(compscan.beam.center, np.diag(var), contour=[0.5, 0.1])
-            mount_ellipses = list(plane_to_sphere(compscan.target, dataset.antenna,
+            mount_ellipses = list(plane_to_sphere(dataset.antenna, compscan.target,
                                                   target_ellipses[:, :, 0], target_ellipses[:, :, 1], center_time))
-            mount_center = list(plane_to_sphere(compscan.target, dataset.antenna,
+            mount_center = list(plane_to_sphere(dataset.antenna, compscan.target,
                                                 compscan.beam.center[0], compscan.beam.center[1], center_time))
             all_az = np.concatenate((mount_coords[0], [mount_center[0]], mount_ellipses[0].flatten()))
             all_az = minimise_angle_wrap(all_az)

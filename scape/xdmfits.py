@@ -20,7 +20,7 @@ import numpy as np
 # pylint: disable-msg=W0611
 import acsm
 
-from .coord import deg2rad
+from katpoint import deg2rad
 from .scan import Scan
 from .compoundscan import CompoundScan, CorrelatorConfig
 from .gaincal import NoiseDiodeModel, NoiseDiodeNotFound
@@ -100,21 +100,30 @@ class NoiseDiodeXDM(NoiseDiodeModel):
 #--- FUNCTIONS
 #--------------------------------------------------------------------------------------------------
 
-def _acsm_target_name(target):
-    """Extract target name from ACSM target object."""
-    ref_target = target.get_reference_target()
-    # pylint: disable-msg=W0212
-    if ref_target._name:
-        name = ref_target._name
-    else:
-        name = ref_target.get_description()
-    match = re.match(r'EquatorialRaDec\(J2000\)\(\((\d+), (\d+), (\d+)\), \((-?\d+), (\d+), (\d+)\)\)', name)
+def acsm_target_description(target):
+    """Create katpoint target description from ACSM target object."""
+    descr = target.get_reference_target().get_description()
+    match = re.match(r'(.*)EquatorialRaDec\(([BJ\d]+)\)\(\((\d+), (\d+), (\d+)\), \((-?\d+), (\d+), (\d+)\)\)', descr)
     if match:
-        return "Ra: %s:%s:%s Dec: %s:%s:%s" % match.groups()
-    match = re.match(r'Horizontal\(\((-?\d+), (\d+), (\d+)\), \((-?\d+), (\d+), (\d+)\)\)', name)
+        return "%s, radec %s, %s:%s:%s, %s:%s:%s" % match.groups()
+    match = re.match(r'(.*)Horizontal\(\((-?\d+), (\d+), (\d+)\), \((-?\d+), (\d+), (\d+)\)\)', descr)
     if match:
-        return "Az: %s:%s:%s El: %s:%s:%s" % match.groups()
-    return name
+        return "%s, azel, %s:%s:%s, %s:%s:%s" % match.groups()
+    # This is typically a futile thing to return, but will help debug why the above two matches failed
+    return descr
+
+def acsm_antenna_description(mount):
+    """Create katpoint antenna description from ACSM mount object."""
+    descr = mount.get_decorated_coordinate_system().get_attribute('position').get_description()
+    match = re.match(r'(.+) Mount WGS84\(\((-?\d+), (\d+), (\d+)\), \((-?\d+), (\d+), (\d+)\), ([\d\.]+)\)', descr)
+    if match:
+        descr = "%s, %s:%s:%s, %s:%s:%s, %s" % match.groups()
+        # Hard-code the XDM dish size, as this is currently not part of ACSM mount object or stored in FITS
+        if match.groups()[0] == 'XDM':
+            descr += ', 15.0'
+        return descr
+    # This is typically a futile thing to return, but will help debug why the above match failed
+    return descr
     
 def load_scan(filename):
     """Load scan from single XDM FITS file.
@@ -133,9 +142,9 @@ def load_scan(filename):
     corrconf : :class:`compoundscan.CorrelatorConfig` object
         Correlator configuration
     target : string
-        Name of the target of this scan
+        Description string of the target of this scan
     antenna : string
-        Name of antenna that did the scan
+        Description string of antenna that did the scan
     exp_seq_num : int
         Experiment sequence number associated with scan
     feed_id : int
@@ -192,10 +201,9 @@ def load_scan(filename):
     rfi_channels = [x for x in rfi_channels if (x >= 0) and (x < len(freqs))]
     corrconf = CorrelatorConfig(freqs, bandwidths, rfi_channels, dump_rate)
     
-    target = _acsm_target_name(cPickle.loads(hdu['OBJECTS'].data.field('Target')[0]))
-    mount = cPickle.loads(hdu['OBJECTS'].data.field('Mount')[0])
-    antenna = mount.get_decorated_coordinate_system().get_attribute('position').get_description().split()[0]
-        
+    target = acsm_target_description(cPickle.loads(hdu['OBJECTS'].data.field('Target')[0]))
+    antenna = acsm_antenna_description(cPickle.loads(hdu['OBJECTS'].data.field('Mount')[0]))
+    
     return Scan(data, is_stokes, timestamps, pointing, flags, label, path), \
            data_unit, corrconf, target, antenna, exp_seq_num, feed_id
 
@@ -224,7 +232,7 @@ def load_dataset(data_filename, nd_filename=None):
     corrconf : :class:`compoundscan.CorrelatorConfig` object
         Correlator configuration object
     antenna : string
-        Name of antenna that produced the data set
+        Description string of antenna that produced the data set
     nd_data : :class:`NoiseDiodeXDM` object
         Noise diode model
     

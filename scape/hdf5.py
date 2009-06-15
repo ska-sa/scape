@@ -36,7 +36,7 @@ def load_dataset(filename):
     corrconf : :class:`compoundscan.CorrelatorConfig` object
         Correlator configuration object
     antenna : string
-        Name of antenna that produced the data set
+        Description string of antenna that produced the data set
     nd_data : :class:`NoiseDiodeModel` object
         Noise diode model
     
