@@ -151,7 +151,7 @@ class CompoundScan(object):
         for self_scan, other_scan in zip(self.scans, other.scans):
             if self_scan != other_scan:
                 return False
-        return (self.target.name == other.target.name)
+        return (self.target.get_description() == other.target.get_description())
     
     def __ne__(self, other):
         """Inequality comparison operator."""

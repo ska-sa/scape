@@ -103,11 +103,11 @@ class NoiseDiodeXDM(NoiseDiodeModel):
 def acsm_target_description(target):
     """Create katpoint target description from ACSM target object."""
     descr = target.get_reference_target().get_description()
-    match = re.match(r'(.*)EquatorialRaDec\(([BJ\d]+)\)\(\((\d+), (\d+), (\d+)\), \((-?\d+), (-?\d+), (-?\d+)\)\)',
+    match = re.match(r'(.*) EquatorialRaDec\(([BJ\d]+)\)\(\((\d+), (\d+), (\d+)\), \((-?\d+), (-?\d+), (-?\d+)\)\)',
                      descr)
     if match:
         return "%s, radec %s, %s:%s:%s, %s:%s:%s" % match.groups()
-    match = re.match(r'(.*)Horizontal\(\((-?\d+), (-?\d+), (-?\d+)\), \((-?\d+), (-?\d+), (-?\d+)\)\)', descr)
+    match = re.match(r'(.*) Horizontal\(\((-?\d+), (-?\d+), (-?\d+)\), \((-?\d+), (-?\d+), (-?\d+)\)\)', descr)
     if match:
         return "%s, azel, %s:%s:%s, %s:%s:%s" % match.groups()
     # This is typically a futile thing to return, but will help debug why the above two matches failed
