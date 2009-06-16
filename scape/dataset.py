@@ -245,10 +245,10 @@ class DataSet(object):
         
         Parameters
         ----------
-        labelkeep : list of strings, optional
+        labelkeep : string or list of strings, optional
             All scans with labels in this list will be kept. The default is
             None, which means all labels are kept.
-        flagkeep : list of strings, optional
+        flagkeep : string or list of strings, optional
             List of flags used to select time ranges in each scan. The time
             samples for which all the flags in the list are true are kept.
             Individual flags can be negated by prepending a ~ (tilde) character.
@@ -271,6 +271,11 @@ class DataSet(object):
             If flag in *flagkeep* is unknown
         
         """
+        # Handle the cases of a single input string (not in a list)
+        if isinstance(labelkeep, basestring):
+            labelkeep = [labelkeep]
+        if isinstance(flagkeep, basestring):
+            flagkeep = [flagkeep]
         compscanlist = []
         for compscan in self.compscans:
             scanlist = []
@@ -313,7 +318,8 @@ class DataSet(object):
         """
         non_rfi = list(set(range(len(self.freqs))) - set(self.rfi_channels))
         d = self.select(freqkeep=non_rfi, copy=True)
-        DataSet.__init__(self, None, d.compscans, d.data_unit, d.corrconf, d.antenna.get_description(), d.noise_diode_data)
+        DataSet.__init__(self, None, d.compscans, d.data_unit, d.corrconf,
+                         d.antenna.get_description(), d.noise_diode_data)
         return self
     
     def convert_power_to_temperature(self, randomise=False, **kwargs):

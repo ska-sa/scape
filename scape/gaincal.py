@@ -139,7 +139,10 @@ def estimate_nd_jumps(dataset, min_samples=10, jump_significance=10.0):
                                             np.sqrt(nd_on.sigma ** 2 + nd_off.sigma ** 2))
                     # Only keep jumps with significant change in power
                     # This discards segments where noise diode did not fire as expected
-                    if np.mean(np.abs(nd_delta.mu / nd_delta.sigma), axis=0).max() > jump_significance:
+                    significance = np.abs(nd_delta.mu / nd_delta.sigma)
+                    # Remove NaNs which typically occur with perfect simulated data (zero mu and zero sigma)
+                    significance[np.isnan(significance)] = 0.0
+                    if np.mean(significance, axis=0).max() > jump_significance:
                         nd_jump_times.append(scan.timestamps[mid])
                         nd_jump_power.append(nd_delta)
     return nd_jump_times, nd_jump_power
