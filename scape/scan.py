@@ -116,9 +116,9 @@ class Scan(object):
         
         Parameters
         ----------
-        target : :class:`coord.Source` object
+        target : :class:`katpoint.Target` object
             Target object which is scanned across, obtained from CompoundScan
-        antenna : :class:`coord.Antenna` object
+        antenna : :class:`katpoint.Antenna` object
             Antenna object for antenna that does scanning, obtained from DataSet
         
         Returns
