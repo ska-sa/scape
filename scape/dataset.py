@@ -7,7 +7,7 @@ import numpy as np
 
 import katpoint
 from .compoundscan import CompoundScan
-from .gaincal import calibrate_gain
+from .gaincal import calibrate_gain, NoSuitableNoiseDiodeDataFound
 from .beam_baseline import fit_beam_and_baseline
 
 # Try to import all available formats
@@ -351,8 +351,11 @@ class DataSet(object):
             logger.error("Expected raw power data to convert to temperature, got data with units '" +
                          self.data_unit + "' instead.")
             return self
-        return calibrate_gain(self, randomise, **kwargs)
-    
+        try:
+            return calibrate_gain(self, randomise, **kwargs)
+        except NoSuitableNoiseDiodeDataFound:
+            logger.error('No suitable noise diode on/off blocks were found - calibration aborted')
+        
     def average(self, channels_per_band='all', time_window=1):
         """Average data in time and/or frequency.
 

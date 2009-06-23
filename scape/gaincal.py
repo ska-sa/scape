@@ -80,7 +80,11 @@ class NoiseDiodeModel(object):
 #--- FUNCTIONS
 #--------------------------------------------------------------------------------------------------
 
-def estimate_nd_jumps(dataset, min_samples=10, jump_significance=10.0):
+class NoSuitableNoiseDiodeDataFound(Exception):
+    """No suitable noise diode on/off blocks were found in data set."""
+    pass
+
+def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
     """Estimate jumps in power when noise diode toggles state in data set.
     
     This examines all time instants where the noise diode flag changes state
@@ -93,8 +97,8 @@ def estimate_nd_jumps(dataset, min_samples=10, jump_significance=10.0):
     ----------
     dataset : :class:`dataset.DataSet` object
         Data set to analyse
-    min_samples : int, optional
-        Minimum number of samples in a time segment, to ensure good estimates
+    min_duration : float, optional
+        Minimum duration of each time segment in seconds, to ensure good estimates
     jump_significance : float, optional
         The jump in power level should be at least this number of standard devs
     
@@ -108,6 +112,7 @@ def estimate_nd_jumps(dataset, min_samples=10, jump_significance=10.0):
     
     """
     nd_jump_times, nd_jump_power = [], []
+    min_samples = dataset.dump_rate * min_duration
     for scan in dataset.scans:
         # Find indices where noise diode flag changes value
         jumps = (np.diff(scan.flags['nd_on']).nonzero()[0] + 1).tolist()
@@ -205,9 +210,16 @@ def calibrate_gain(dataset, randomise=False, **kwargs):
     kwargs : dict, optional
         Extra keyword arguments are passed to :func:`estimate_nd_jumps`
     
+    Raises
+    ------
+    NoSuitableNoiseDiodeDataFound
+        If no suitable noise diode on/off blocks were found in data set
+    
     """
     dataset.convert_to_coherency()
     nd_jump_power = estimate_nd_jumps(dataset, **kwargs)[1]
+    if not nd_jump_power:
+        raise NoSuitableNoiseDiodeDataFound
     gains = np.concatenate([p.mu[np.newaxis] for p in nd_jump_power])
     if randomise:
         gains += np.concatenate([p.sigma[np.newaxis] for p in nd_jump_power]) * \
