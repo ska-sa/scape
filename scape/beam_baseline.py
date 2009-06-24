@@ -5,7 +5,7 @@ import logging
 import numpy as np
 import scipy.special as special
 
-from .fitting import ScatterFit, Polynomial2DFit, GaussianFit
+from .fitting import ScatterFit, Polynomial2DFit, GaussianFit, Delaunay2DScatterFit
 from .stats import remove_spikes
 
 logger = logging.getLogger("scape.beam_baseline")
@@ -218,3 +218,49 @@ def fit_beam_and_baseline(compscan, expected_width, bl_degrees=(3, 3), refine_be
         beam.fit(target_coords[:, inner].transpose(), bl_resid[inner])
         logger.debug("Beam refinement: beam height = %f, width = %f" % (beam.height, beam.width))
     return beam, baseline
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  interpolate_measured_beam
+#--------------------------------------------------------------------------------------------------
+
+def interpolate_measured_beam(x, y, z, num_grid_rows=201):
+    """Interpolate measured beam pattern contained in a raster scan.
+    
+    Parameters
+    ----------
+    x : array-like of float, shape (N,)
+        Sequence of *x* target coordinates
+    y : array-like of float, shape (N,)
+        Sequence of *y* target coordinates
+    z : array-like of float, shape (N,)
+        Sequence of *z* measurements
+    num_grid_rows : int, optional
+        Number of grid points on each axis, referred to as M below
+    
+    Returns
+    -------
+    grid_x : array of float, shape (M,)
+        Array of *x* coordinates of grid
+    grid_y : array of float, shape (M,)
+        Array of *y* coordinates of grid
+    smooth_z : array of float, shape (M, M)
+        Interpolated *z* values, as a matrix
+    
+    """
+    # Set up grid points that include the origin at the center and stays within convex hull of samples
+    x_lims = [np.min(x), np.max(x)]
+    y_lims = [np.min(y), np.max(y)]
+    assert (np.prod(x_lims) < 0.0) and (np.prod(y_lims) < 0.0), 'Raster scans should cross target'
+    grid_x = np.abs(x_lims).min() * np.linspace(-1.0, 1.0, num_grid_rows)
+    grid_y = np.abs(y_lims).min() * np.linspace(-1.0, 1.0, num_grid_rows)
+    
+    # Obtain smooth interpolator for z data
+    interp = Delaunay2DScatterFit(default_val=0.0, jitter=True)
+    interp.fit([x, y], z)
+    
+    # Evaluate interpolator on grid
+    mesh_x, mesh_y = np.meshgrid(grid_x, grid_y)
+    mesh = np.vstack((mesh_x.ravel(), mesh_y.ravel()))
+    smooth_z = interp(mesh).reshape(grid_y.size, grid_x.size)
+    
+    return grid_x, grid_y, smooth_z

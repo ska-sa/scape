@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 from katpoint import rad2deg, plane_to_sphere
 from .stats import remove_spikes, minimise_angle_wrap
-from .beam_baseline import fwhm_to_sigma
+from .beam_baseline import fwhm_to_sigma, interpolate_measured_beam
 
 logger = logging.getLogger("scape.plots")
 
@@ -257,7 +257,8 @@ def plot_compacted_segments(segments, ax=None, **kwargs):
     # These border lines have x coordinates fixed to the data and y coordinates fixed to the axes
     transFixedY = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
     border_lines = mpl.collections.LineCollection([[(s, 0), (s, 1)] for s in compacted_start[1:-1]], 
-                                                  colors='k', transform=transFixedY)
+                                                  colors='k', linewidths=0.5, linestyles='dotted',
+                                                  transform=transFixedY)
     ax.add_collection(border_lines)
     ax.set_xlim(0.0, compacted_start[-1])
     # Redefine x-axis label formatter to display the correct time for each segment
@@ -611,136 +612,145 @@ def data_set_in_mount_space(dataset, band=0, ax=None):
     ax.set_ylabel('el (deg)')
     return ax
 
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  plot_db_contours
+#--------------------------------------------------------------------------------------------------
 
-## Plot rough beam pattern derived from multiple raster scans through a single point source, in target space.
-# This works with the power values derived from multiple scans through a single point source, typically made
-# in a horizontal raster pattern. It interpolates the power values onto a regular uniform grid, and plots
-# the interpolated function both as a 2-D contour plot and a 3-D wireframe plot. It also plots several slices
-# through the peak of the interpolated function in dBs, to allow the sidelobe height to be determined.
-# @param figColorList   List of matplotlib Figure objects to contain plots (three per frequency band)
-# @param calibScanList  List of SingleDishData objects of calibrated main scans (one per scan)
-# @param expName        Title of experiment
-# @return axesColorList List of matplotlib Axes objects, one per plot
-# pylint: disable-msg=R0912,R0913,R0914,R0915
-def plot_beam_pattern_raster(figColorList, calibScanList, expName):
-    # Set up axes
-    axesColorList = []
-    # Use the frequency bands of the first scan as reference for the rest
-    plotFreqs = calibScanList[0].freqs_Hz / 1e9   # Hz to GHz
-    numBands = len(plotFreqs)
-    # Two figures per frequency band
-    for band in range(numBands):
-        # Normal axes for contour plot
-        axesColorList.append(figColorList[band].add_subplot(1, 1, 1))
-        # 3D axes for wireframe plot
-        axesColorList.append(mplot3d.Axes3D(figColorList[band + numBands]))
-        # Normal axes for slice plot
-        axesColorList.append(figColorList[band + 2*numBands].add_subplot(1, 1, 1))
+def plot_db_contours(x, y, Z, levels=None, sin_coords=False, add_lines=True, ax=None):
+    """Filled contour plot of 2-D spherical function in decibels.
     
-    # Extract total power and and first two target coordinates (assumed to be (az,el)) of all scans
-    azScans_deg = []
-    elScans_deg = []
-    totalPowerScans = []
-    for scan in calibScanList:
-        # Unwrap angles, so that the direction in which angles change are more accurately determined
-        azScan_deg = misc.unwrap_angles(rad_to_deg(scan.targetCoords[:, 0]))
-        # Reverse any scans with descending azimuth angle, so that all scans run in the same direction
-        if azScan_deg[0] < azScan_deg[-1]:
-            azScans_deg.append(azScan_deg)
-            elScans_deg.append(misc.unwrap_angles(rad_to_deg(scan.targetCoords[:, 1])))
-            totalPowerScans.append(scan.stokes('I')[np.newaxis, :, :])
+    The spherical function ``z = f(x, y)`` is a function of two angles, *x* and
+    *y*, given in degrees. The function should be real-valued, but may contain
+    negative parts. These are indicated by dashed contours. The contour levels
+    are based on the absolute value of *z* in dBs.
+    
+    Parameters
+    ----------
+    x : real array-like, shape (N,)
+        Vector of x coordinates, in degrees
+    y : real array-like, shape (M,)
+        Vector of y coordinates, in degrees
+    Z : real array-like, shape (M, N)
+        Matrix of z values, with rows associated with *y* and columns with *x*
+    levels : real array-like, shape (K,), optional
+        Sequence of ascending contour levels, in dB (default ranges from -60 to 0)
+    sin_coords : {False, True}, optional
+        True if coordinates should be converted to projected sine values. This
+        is useful if a large portion of the sphere is plotted.
+    add_lines : {True, False}, optional
+        True if contour lines should be added to plot
+    ax : :class:`matplotlib.axes.Axes` object, optional
+        Matplotlib axes object to receive plot (default is current axes)
+    
+    Returns
+    -------
+    cset : :class:`matplotlib.contour.ContourSet` object
+        Set of filled contour regions (useful for setting up color bar)
+    
+    """
+    if ax is None:
+        ax = plt.gca()
+    if levels is None:
+        levels = np.linspace(-60.0, 0.0, 21)
+    levels = np.sort(levels)
+    # Crude corner cutouts to indicate region outside spherical projection
+    quadrant = np.linspace(0.0, np.pi / 2.0, 401)
+    corner_x = np.concatenate([np.cos(quadrant), [1.0, 1.0]])
+    corner_y = np.concatenate([np.sin(quadrant), [1.0, 0.0]])
+    if sin_coords:
+        x, y = np.sin(x * np.pi / 180.0), np.sin(y * np.pi / 180.0)
+    else:
+        corner_x, corner_y = 90.0 * corner_x, 90.0 * corner_y
+    Z_db = 10.0 * np.log10(np.abs(Z))
+    # Remove -infs (keep above lowest contour level to prevent white patches in contourf)
+    Z_db[Z_db < levels.min() + 0.01] = levels.min() + 0.01
+    # Also keep below highest contour level for the same reason
+    Z_db[Z_db > levels.max() - 0.01] = levels.max() - 0.01
+    
+    cset = ax.contourf(x, y, Z_db, levels)
+    mpl.rc('contour', negative_linestyle='solid')
+    if add_lines:
+        # Non-negative function has straightforward contours
+        if Z.min() >= 0.0:
+            ax.contour(x, y, Z_db, levels, colors='k', linewidths=0.5)
         else:
-            azScans_deg.append(np.flipud(azScan_deg))
-            elScans_deg.append(np.flipud(misc.unwrap_angles(rad_to_deg(scan.targetCoords[:, 1]))))
-            totalPowerScans.append(np.flipud(scan.stokes('I'))[np.newaxis, :, :])
-    azScans_deg = np.vstack(azScans_deg)
-    elScans_deg = np.vstack(elScans_deg)
-    totalPowerScans = np.concatenate(totalPowerScans, axis=0)
-    # Unwrap angles yet again, to make sure the group of scans stay together
-    # (It's highly unlikely that unwrapping is necessary, as the target space is typically centred around the origin)
-    azScans_deg = misc.unwrap_angles(azScans_deg.ravel()).reshape(azScans_deg.shape)
-    elScans_deg = misc.unwrap_angles(elScans_deg.ravel()).reshape(elScans_deg.shape)
-    # Set up uniform 101x101 mesh grid for contour plot
-    targetX = np.linspace(azScans_deg.min(), azScans_deg.max(), 101)
-    targetY = np.linspace(elScans_deg.min(), elScans_deg.max(), 101)
-    targetMeshX, targetMeshY = np.meshgrid(targetX, targetY)
-    meshCoords = np.vstack((targetMeshX.ravel(), targetMeshY.ravel()))
+            # Indicate positive parts with solid contours
+            Z_db_pos = Z_db.copy()
+            Z_db_pos[Z < 0.0] = levels.min() + 0.01
+            ax.contour(x, y, Z_db_pos, levels, colors='k', linewidths=0.5)
+            # Indicate negative parts with dashed contours
+            Z_db_neg = Z_db.copy()
+            Z_db_neg[Z > 0.0] = levels.min() + 0.01
+            mpl.rc('contour', negative_linestyle='dashed')
+            ax.contour(x, y, Z_db_neg, levels, colors='k', linewidths=0.5)
+    if sin_coords:
+        ax.set_xlabel(r'sin $\theta$ sin $\phi$')
+        ax.set_ylabel(r'sin $\theta$ cos $\phi$')
+    else:
+        ax.set_xlabel('x (deg)')
+        ax.set_ylabel('y (deg)')
+    ax.axis('image')
+    ax.fill( corner_x,  corner_y, facecolor='w')
+    ax.fill(-corner_x,  corner_y, facecolor='w')
+    ax.fill(-corner_x, -corner_y, facecolor='w')
+    ax.fill( corner_x, -corner_y, facecolor='w')
+    return cset
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  measured_beam_pattern
+#--------------------------------------------------------------------------------------------------
+
+def measured_beam_pattern(compscan, add_samples=True, add_colorbar=True, band=0, ax=None, **kwargs):
+    """Plot measured beam pattern contained in compound scan.
     
-    # Iterate through figures (three per band)
-    for band in range(numBands):
-        power = totalPowerScans[:, :, band]
-        # Interpolate the power values onto a (jittered) 2-D az-el grid for a smoother contour plot
-        gridder = fitting.Delaunay2DScatterFit(defaultVal = power.min(), jitter=True)
-        gridder.fit(np.vstack((azScans_deg.ravel(), elScans_deg.ravel())), power.ravel())
-        meshPower = gridder(meshCoords).reshape(targetY.size, targetX.size)
-        # Obtain peak of interpolated power on mesh
-        meshPowerPeakVal = meshPower.max()
-        meshPowerPeakInd = meshPower.argmax()
-        meshPowerPeakPos = [targetMeshX.flat[meshPowerPeakInd], targetMeshY.flat[meshPowerPeakInd]]
-        # Choose contour levels as fractions of the peak power (in dB, although the plot itself remains linear)
-        contourLevelsDb = np.arange(-27, 0, 3)
-        contourLevels = (10.0 ** (contourLevelsDb / 10.0)) * meshPowerPeakVal
-        # Indicate half-power beamwidth (contourLevel = -3 dB) with wider line
-        lineWidths = 2*np.ones(len(contourLevels))
-        lineWidths[-1] = 4
-        # Create horizontal, vertical and diagonal slices through interpolated power function, crossing at peak
-        # The power is plotted against angle, with a zero angle corresponding with the peak position
-        slices = []
-        slices.append([targetX - meshPowerPeakPos[0], meshPower[meshPowerPeakInd // targetY.size, :]])
-        slices.append([targetY - meshPowerPeakPos[1], meshPower[:, meshPowerPeakInd % targetY.size]])
-        # If we step through flattened mesh matrix by one more than row length, we move from upper left to lower right 
-        # Similarly, if we step by one less than row length, we move from lower left to upper right 
-        for shift in [targetY.size + 1, targetY.size - 1]:
-            diagInds = np.concatenate((np.flipud(np.arange(-shift, -meshPower.size - shift, -shift, dtype='int')), \
-                                       np.arange(0, meshPower.size + shift, shift, dtype='int'))) + meshPowerPeakInd
-            diagInds = diagInds[(diagInds >= 0) * (diagInds < meshPower.size)]
-            # Take the Euclidean distance of the (x,y) coordinates in 2-D target space to the peak as the angle,
-            # while using the sign of the x coordinate to scan properly across the peak
-            slices.append([np.sign(targetMeshX.flat[diagInds] - meshPowerPeakPos[0]) * \
-                           np.sqrt((targetMeshX.flat[diagInds] - meshPowerPeakPos[0]) ** 2 + \
-                                   (targetMeshY.flat[diagInds] - meshPowerPeakPos[1]) ** 2), \
-                           meshPower.flat[diagInds]])
+    Parameters
+    ----------
+    compscan : :class:`compoundscan.CompoundScan` object
+        Compound scan object to plot
+    add_samples : {True, False}, optional
+        True if scan sample locations are to be added
+    add_colorbar : {True, False}, optional
+        True if color bar indicating contour levels is to be added
+    band : int, optional
+        Frequency band to plot
+    ax : :class:`matplotlib.axes.Axes` object, optional
+        Matplotlib axes object to receive plot (default is current axes)
+    kwargs : dict, optional
+        Extra keyword arguments are passed to underlying :func:`plot_db_contours`
+        function
+    
+    Returns
+    -------
+    ax : :class:`matplotlib.axes.Axes` object
+        Matplotlib Axes object representing plot
+    cset : :class:`matplotlib.contour.ContourSet` object
+        Set of filled contour regions (useful for setting up color bar)
+    
+    """
+    if ax is None:
+        ax = plt.gca()
+    # Extract Stokes parameter and target coordinates of all scans
+    stokes_I = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
+    x, y = np.hstack([scan.target_coords for scan in compscan.scans])
+    if compscan.baseline:
+        stokes_I -= compscan.baseline([x, y])
+    if compscan.beam:
+        stokes_I /= compscan.beam.height
+        x -= compscan.beam.center[0]
+        y -= compscan.beam.center[1]
         
-        # 2D contour plot
-        axis = axesColorList[3*band]
-        # Show the locations of the scan samples themselves
-        axis.plot(azScans_deg.ravel(), elScans_deg.ravel(), '.b', alpha=0.5)
-        # Plot contours of interpolated beam pattern
-        cset = axis.contour(targetMeshX, targetMeshY, meshPower, contourLevels, linewidths=lineWidths, colors='b')
-        cset.levels = cset.layers = contourLevelsDb
-        pl.clabel(cset, fmt="%3.0f")
-        axis.plot([meshPowerPeakPos[0]], [meshPowerPeakPos[1]], marker='o', markersize=8, color='b')
-        axis.text(meshPowerPeakPos[0], meshPowerPeakPos[1], '0\n\n', ha='center', va='center', color='b')
-        axis.set_title(expName + ' : Beam pattern in band %d : %3.3f GHz' % (band, plotFreqs[band]) + \
-                                 '\nContours are in dB relative to peak')
-        # 3D wireframe plot (also of interpolated beam, as this allows more general scans to be used)
-        axis = axesColorList[3*band + 1]
-        axis.plot_wireframe(targetMeshX, targetMeshY, meshPower, color='b')
-        # Indicate original power samples that are interpolated
-        axis.plot3D(azScans_deg.ravel(), elScans_deg.ravel(), power.ravel(), '.r', alpha=0.5)
-        axis.set_zlabel('Power (K)')
-        axis.set_title(expName + ' : beam pattern in band %d : %3.3f GHz' % (band, plotFreqs[band]) + \
-                                 '\nBlue wireframe is interpolated from original red samples')
-        # 2D slice plot
-        axis = axesColorList[3*band + 2]
-        for sliceData in slices:
-            dbSlice = 10 * np.log10(sliceData[1]) - 10 * np.log10(meshPowerPeakVal)
-            dbSlice[np.isinf(dbSlice) + np.isnan(dbSlice)] = -1000
-            axis.plot(sliceData[0], dbSlice, 'b')
-        axis.set_ylim(-40, 0)
-        axis.set_xlabel('Target coord (deg)')
-        axis.set_ylabel('Height relative to peak (dB)')        
-        axis.set_title(expName + ' : beam pattern in band %d : %3.3f GHz' % (band, plotFreqs[band]) + \
-                                 '\nHorizontal, vertical, diagonal slices through peak')
-        
+    # Interpolate scattered data onto regular grid
+    grid_x, grid_y, smooth_I = interpolate_measured_beam(x, y, stokes_I)
+    # Plot contours and associated color bar (if requested)
+    cset = plot_db_contours(rad2deg(grid_x), rad2deg(grid_y), smooth_I, ax=ax, **kwargs)
+    if add_colorbar:
+        plt.colorbar(cset, cax=plt.axes([0.9, 0.1, 0.02, 0.8]), format='%d')
+        plt.gcf().text(0.96, 0.5, 'dB')
+    # Show the locations of the scan samples themselves
+    if add_samples:
+        ax.plot(rad2deg(x), rad2deg(y), '.k', ms=2)
     # Axis settings and labels
-    for band in range(2*numBands):
-        axis = axesColorList[band]
-        if not np.any(np.isnan([targetX[0], targetX[-1], targetY[0], targetY[-1]])):
-            axis.set_xlim(targetX[0], targetX[-1])
-            axis.set_ylim(targetY[0], targetY[-1])
-        axis.set_aspect('equal')
-        axis.set_xlabel('Target coord 1 (deg)')
-        axis.set_ylabel('Target coord 2 (deg)')
-    
-    return axesColorList
+    ax.set_aspect('equal')
+    ax.set_xlabel('x (deg)')
+    ax.set_ylabel('y (deg)')
+    return ax, cset
