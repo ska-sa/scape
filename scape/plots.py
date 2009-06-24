@@ -21,10 +21,10 @@ def ordinal_suffix(n):
         return {1 : 'st', 2 : 'nd', 3 : 'rd'}.get(n % 10, 'th')
 
 #--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  waterfall
+#--- FUNCTION :  plot_waterfall
 #--------------------------------------------------------------------------------------------------
 
-def waterfall(dataset, title='', channel_skip=None, fig=None):
+def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
     """Waterfall plot of power data as a function of time and frequency.
     
     Parameters
@@ -275,10 +275,10 @@ def plot_compacted_segments(segments, ax=None, **kwargs):
     return segment_lines, border_lines
 
 #--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  compound_scan_in_time
+#--- FUNCTION :  plot_compound_scan_in_time
 #--------------------------------------------------------------------------------------------------
 
-def compound_scan_in_time(compscan, band=0, ax=None):
+def plot_compound_scan_in_time(compscan, band=0, ax=None):
     """Plot total power scans of compound scan with superimposed beam/baseline fit.
     
     This plots time series plots of the total power in the scans comprising a
@@ -477,10 +477,10 @@ def gaussian_ellipses(mean, cov, contour=0.5, num_points=200):
     return np.array(ellipses)
 
 #--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  compound_scan_on_target
+#--- FUNCTION :  plot_compound_scan_on_target
 #--------------------------------------------------------------------------------------------------
 
-def compound_scan_on_target(compscan, band=0, ax=None):
+def plot_compound_scan_on_target(compscan, band=0, ax=None):
     """Plot total power scans of compound scan in target space with beam fit.
     
     This plots contour ellipses of a Gaussian beam function fitted to the scans
@@ -535,10 +535,10 @@ def compound_scan_on_target(compscan, band=0, ax=None):
     return ax
 
 #--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  data_set_in_mount_space
+#--- FUNCTION :  plot_data_set_in_mount_space
 #--------------------------------------------------------------------------------------------------
 
-def data_set_in_mount_space(dataset, band=0, ax=None):
+def plot_data_set_in_mount_space(dataset, band=0, ax=None):
     """Plot total power scans of all compound scans in mount space with beam fits.
     
     This plots the total power of all scans in the data set as a pseudo-3D plot
@@ -576,7 +576,7 @@ def data_set_in_mount_space(dataset, band=0, ax=None):
         total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
         target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
         center_time = np.median(np.hstack([scan.timestamps for scan in compscan.scans]))
-        # Instantaneous mount coordinates are back on the sphere, but using a single time instant for all points
+        # Instantaneous mount coordinates are back on the sphere, but at a single time instant for all points
         mount_coords = list(plane_to_sphere(dataset.antenna, compscan.target,
                                             target_coords[0], target_coords[1], center_time))
         # Obtain ellipses and center, and unwrap az angles for all objects simultaneously to ensure they stay together
@@ -697,10 +697,10 @@ def plot_db_contours(x, y, Z, levels=None, sin_coords=False, add_lines=True, ax=
     return cset
 
 #--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  measured_beam_pattern
+#--- FUNCTION :  plot_measured_beam_pattern
 #--------------------------------------------------------------------------------------------------
 
-def measured_beam_pattern(compscan, add_samples=True, add_colorbar=True, band=0, ax=None, **kwargs):
+def plot_measured_beam_pattern(compscan, add_samples=True, add_colorbar=True, band=0, ax=None, **kwargs):
     """Plot measured beam pattern contained in compound scan.
     
     Parameters
