@@ -211,7 +211,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
 #--- FUNCTION :  plot_compacted_segments
 #--------------------------------------------------------------------------------------------------
 
-def plot_compacted_segments(segments, ax=None, **kwargs):
+def plot_compacted_segments(segments, labels=None, ax=None, **kwargs):
     """Plot sequence of line segments in compacted form.
     
     This plots a sequence of line segments (of possibly varying length) on a
@@ -231,6 +231,8 @@ def plot_compacted_segments(segments, ax=None, **kwargs):
         respectively). Each line segment can be a different length. This is
         identical to the *segments* parameter of
         :class:`matplotlib.collections.LineCollection`.
+    labels : sequence of strings, optional
+        Corresponding sequence of text labels to add below each segment
     ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
     kwargs : dict, optional
@@ -242,10 +244,14 @@ def plot_compacted_segments(segments, ax=None, **kwargs):
         Collection of segment lines
     border_lines : :class:`matplotlib.collections.LineCollection` object
         Collection of vertical lines separating the segments
+    text_labels : list of :class:`matplotlib.text.Text` objects
+        List of added text labels
     
     """
     if ax is None:
         ax = plt.gca()
+    if labels is None:
+        labels = []
     start = np.array([np.asarray(segm)[:, 0].min() for segm in segments])
     end = np.array([np.asarray(segm)[:, 0].max() for segm in segments])
     compacted_start = [0.0] + np.cumsum(end - start).tolist()
@@ -261,6 +267,10 @@ def plot_compacted_segments(segments, ax=None, **kwargs):
                                                   transform=transFixedY)
     ax.add_collection(border_lines)
     ax.set_xlim(0.0, compacted_start[-1])
+    text_labels = []
+    for n, label in enumerate(labels):
+        text_labels.append(ax.text(np.mean(compacted_start[n:n+2]), 0.02, label, transform=transFixedY,
+                                   ha='center', va='bottom', clip_on=True))
     # Redefine x-axis label formatter to display the correct time for each segment
     class SegmentedScalarFormatter(mpl.ticker.ScalarFormatter):
         """Expand x axis value to correct segment before labelling."""
@@ -272,13 +282,13 @@ def plot_compacted_segments(segments, ax=None, **kwargs):
                 x = x - compacted_start[segment] + start[segment]
             return mpl.ticker.ScalarFormatter.__call__(self, x, pos)
     ax.xaxis.set_major_formatter(SegmentedScalarFormatter())
-    return segment_lines, border_lines
+    return segment_lines, border_lines, text_labels
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_compound_scan_in_time
 #--------------------------------------------------------------------------------------------------
 
-def plot_compound_scan_in_time(compscan, band=0, ax=None):
+def plot_compound_scan_in_time(compscan, add_scan_ids=True, band=0, ax=None):
     """Plot total power scans of compound scan with superimposed beam/baseline fit.
     
     This plots time series plots of the total power in the scans comprising a
@@ -289,6 +299,8 @@ def plot_compound_scan_in_time(compscan, band=0, ax=None):
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to plot
+    add_scan_ids : {True, False}, optional
+        True if scan index numbers are to be added to plot
     band : int, optional
         Frequency band to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
@@ -322,10 +334,14 @@ def plot_compound_scan_in_time(compscan, band=0, ax=None):
         plot_compacted_segments(baseline_segments, ax=ax, color='r', lw=2)
         if compscan.beam:
             plot_compacted_segments(beam_segments, ax=ax, color='r', lw=2)
-    plot_compacted_segments(data_segments, ax=ax, color='b')
+    labels = [str(n) for n in xrange(len(compscan.scans))] if add_scan_ids else []
+    plot_compacted_segments(data_segments, labels, ax=ax, color='b')
     
     # Format axes
-    ax.set_ylim(min(power_limits), 1.05 * max(power_limits) - 0.05 * min(power_limits))
+    power_range = max(power_limits) - min(power_limits)
+    if power_range == 0.0:
+        power_range = 1.0
+    ax.set_ylim(min(power_limits) - 0.05 * power_range, max(power_limits) + 0.05 * power_range)
     ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
     ax.set_ylabel('Total power')
     return ax
@@ -480,7 +496,7 @@ def gaussian_ellipses(mean, cov, contour=0.5, num_points=200):
 #--- FUNCTION :  plot_compound_scan_on_target
 #--------------------------------------------------------------------------------------------------
 
-def plot_compound_scan_on_target(compscan, band=0, ax=None):
+def plot_compound_scan_on_target(compscan, levels=None, band=0, ax=None):
     """Plot total power scans of compound scan in target space with beam fit.
     
     This plots contour ellipses of a Gaussian beam function fitted to the scans
@@ -491,6 +507,9 @@ def plot_compound_scan_on_target(compscan, band=0, ax=None):
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to plot
+    levels : float, or real array-like, shape (K,), optional
+        Contour level (or sequence of levels) to plot for Gaussian beam, as
+        factor of beam height. The default is [0.5, 0.1].
     band : int, optional
         Frequency band to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
@@ -504,6 +523,8 @@ def plot_compound_scan_on_target(compscan, band=0, ax=None):
     """
     if ax is None:
         ax = plt.gca()
+    if levels is None:
+        levels = [0.5, 0.1]
     # Extract total power and target coordinates (in degrees) of all scans
     total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
     target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans]))
@@ -516,7 +537,7 @@ def plot_compound_scan_on_target(compscan, band=0, ax=None):
         var = fwhm_to_sigma(compscan.beam.width) ** 2.0
         if np.isscalar(var):
             var = [var, var]
-        ellipses = gaussian_ellipses(compscan.beam.center, np.diag(var), contour=[0.5, 0.1])
+        ellipses = gaussian_ellipses(compscan.beam.center, np.diag(var), contour=levels)
         for ellipse in ellipses:
             ax.plot(rad2deg(ellipse[:, 0]), rad2deg(ellipse[:, 1]), ell_type, lw=2)
         ax.plot([rad2deg(compscan.beam.center[0])], [rad2deg(compscan.beam.center[1])],
@@ -538,7 +559,7 @@ def plot_compound_scan_on_target(compscan, band=0, ax=None):
 #--- FUNCTION :  plot_data_set_in_mount_space
 #--------------------------------------------------------------------------------------------------
 
-def plot_data_set_in_mount_space(dataset, band=0, ax=None):
+def plot_data_set_in_mount_space(dataset, levels=None, band=0, ax=None):
     """Plot total power scans of all compound scans in mount space with beam fits.
     
     This plots the total power of all scans in the data set as a pseudo-3D plot
@@ -558,6 +579,9 @@ def plot_data_set_in_mount_space(dataset, band=0, ax=None):
     ----------
     dataset : :class:`scape.DataSet` object
         Data set to plot
+    levels : float, or real array-like, shape (K,), optional
+        Contour level (or sequence of levels) to plot for each Gaussian beam, as
+        factor of beam height. The default is [0.5, 0.1].
     band : int, optional
         Frequency band to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
@@ -571,6 +595,8 @@ def plot_data_set_in_mount_space(dataset, band=0, ax=None):
     """
     if ax is None:
         ax = plt.gca()
+    if levels is None:
+        levels = [0.5, 0.1]
     
     for compscan in dataset.compscans:
         total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
@@ -584,7 +610,7 @@ def plot_data_set_in_mount_space(dataset, band=0, ax=None):
             var = fwhm_to_sigma(compscan.beam.width) ** 2.0
             if np.isscalar(var):
                 var = [var, var]
-            target_ellipses = gaussian_ellipses(compscan.beam.center, np.diag(var), contour=[0.5, 0.1])
+            target_ellipses = gaussian_ellipses(compscan.beam.center, np.diag(var), contour=levels)
             mount_ellipses = list(plane_to_sphere(dataset.antenna, compscan.target,
                                                   target_ellipses[:, :, 0], target_ellipses[:, :, 1], center_time))
             mount_center = list(plane_to_sphere(dataset.antenna, compscan.target,
