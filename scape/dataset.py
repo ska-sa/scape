@@ -456,9 +456,9 @@ class DataSet(object):
             Data set with fitted beam/baseline functions added
         
         """
-        # FWHM Beamwidth for uniformly illuminated circular dish is 1.03 lambda / D
-        # FWHM Beamwidth for Gaussian-tapered circular dish is 1.22 lambda / D
-        # We are somewhere in between (1.15 is based on measurements of XDM)
+        # FWHM beamwidth for uniformly illuminated circular dish is 1.03 lambda / D
+        # FWHM beamwidth for Gaussian-tapered circular dish is 1.22 lambda / D
+        # We are somewhere in between (the factor 1.15 is based on measurements of XDM)
         # TODO: this factor needs to be associated with the antenna
         expected_width = 1.15 * katpoint.lightspeed / self.freqs[band] / self.antenna.diameter
         for compscan in self.compscans:

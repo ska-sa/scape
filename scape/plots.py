@@ -648,6 +648,7 @@ def plot_db_contours(x, y, Z, levels=None, sin_coords=False, add_lines=True, ax=
         Set of filled contour regions (useful for setting up color bar)
     
     """
+    # pylint: disable-msg=C0103
     if ax is None:
         ax = plt.gca()
     if levels is None:
