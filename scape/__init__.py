@@ -10,9 +10,11 @@ logging.basicConfig(level=logging.DEBUG, stream=sys.stdout, format="%(levelname)
 # Most operations are directed through the data set
 from .dataset import DataSet
 
-# Canned plots (ignored if no matplotlib is found)
+# Check if matplotlib is present, otherwise skip plotting routines
 try:
+    import matplotlib as mpl
+except ImportError:
+    logger.warn('Matplotlib was not found - plotting will be disabled')
+else:    
     from .plots import plot_waterfall, plot_compound_scan_in_time, plot_compound_scan_on_target, \
                        plot_data_set_in_mount_space, plot_measured_beam_pattern
-except ImportError:
-    logger.warn('Plotting routines could not be imported (probably because matplotlib is not installed)')
