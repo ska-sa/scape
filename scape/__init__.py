@@ -9,6 +9,8 @@ logging.basicConfig(level=logging.DEBUG, stream=sys.stdout, format="%(levelname)
 
 # Most operations are directed through the data set
 from .dataset import DataSet
+from .compoundscan import CorrelatorConfig, CompoundScan
+from .scan import Scan
 
 # Check if matplotlib is present, otherwise skip plotting routines
 try:
