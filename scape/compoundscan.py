@@ -129,8 +129,8 @@ class CompoundScan(object):
     ----------
     scanlist : list of :class:`scan.Scan` objects
         List of scan objects
-    target : string
-        Description string of the target of this compound scan
+    target : :class:`katpoint.Target` object, or string
+        The target of this compound scan, or its description string
     beam : :class:`beam_baseline.BeamPatternFit` object, optional
         Object that describes fitted beam
     baseline : :class:`fitting.Polynomial2DFit` object, optional
@@ -139,8 +139,10 @@ class CompoundScan(object):
     """
     def __init__(self, scanlist, target, beam=None, baseline=None):
         self.scans = scanlist
-        # Interpret target description string and return relevant object
-        self.target = katpoint.construct_target(target)
+        if isinstance(target, basestring):
+            self.target = katpoint.construct_target(target)
+        else:
+            self.target = target
         self.beam = beam
         self.baseline = baseline
 

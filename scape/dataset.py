@@ -50,8 +50,8 @@ class DataSet(object):
         Physical unit of power data
     corrconf : :class:`compoundscan.CorrelatorConfig` object, optional
         Correlator configuration object
-    antenna : string, optional
-        Description string of antenna that produced the data set
+    antenna : :class:`katpoint.Antenna` object or string, optional
+        Antenna that produced the data set, as object or description string 
     nd_data : :class:`gaincal.NoiseDiodeModel` object, optional
         Noise diode model
     kwargs : dict, optional
@@ -97,7 +97,10 @@ class DataSet(object):
         self.compscans = compscanlist
         self.data_unit = data_unit
         self.corrconf = corrconf
-        self.antenna = katpoint.construct_antenna(antenna)
+        if isinstance(antenna, basestring):
+            self.antenna = katpoint.construct_antenna(antenna)
+        else:
+            self.antenna = antenna
         self.noise_diode_data = nd_data
         # Create scan list
         self.scans = []
