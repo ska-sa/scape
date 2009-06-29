@@ -133,8 +133,6 @@ class CompoundScan(object):
         The target of this compound scan, or its description string
     beam : :class:`beam_baseline.BeamPatternFit` object, optional
         Object that describes fitted beam
-    baseline : :class:`fitting.Polynomial2DFit` object, optional
-        Object that describes fitted baseline
     
     """
     def __init__(self, scanlist, target, beam=None, baseline=None):
@@ -144,7 +142,6 @@ class CompoundScan(object):
         else:
             self.target = target
         self.beam = beam
-        self.baseline = baseline
 
     def __eq__(self, other):
         """Equality comparison operator."""

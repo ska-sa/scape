@@ -8,7 +8,7 @@ import numpy as np
 import katpoint
 from .compoundscan import CompoundScan
 from .gaincal import calibrate_gain, NoSuitableNoiseDiodeDataFound
-from .beam_baseline import fit_beam_and_baseline
+from .beam_baseline import fit_beam_and_baselines
 
 # Try to import all available formats
 try:
@@ -464,6 +464,11 @@ class DataSet(object):
         # We are somewhere in between (the factor 1.15 is based on measurements of XDM)
         # TODO: this factor needs to be associated with the antenna
         expected_width = 1.15 * katpoint.lightspeed / self.freqs[band] / self.antenna.diameter
+        # Degrees of freedom is time-bandwidth product (2 * BW * t_dump) of each sample
+        # The extra factor of 2 is because Stokes I is the sum of the independent XX and YY samples
+        dof = 4.0 * self.bandwidths[band] / self.dump_rate
         for compscan in self.compscans:
-            compscan.beam, compscan.baseline = fit_beam_and_baseline(compscan, expected_width, band=band, **kwargs)
+            compscan.beam, baselines = fit_beam_and_baselines(compscan, expected_width, dof, band=band, **kwargs)
+            for scan, bl in zip(compscan.scans, baselines):
+                scan.baseline = bl
         return self

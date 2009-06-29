@@ -68,9 +68,11 @@ class Scan(object):
         Filename or HDF5 path from which scan was loaded
     target_coords : real array, shape (2, *T*)
         Coordinates on projected plane, with target as reference, in radians
+    baseline : :class:`fitting.Polynomial1DFit` object, optional
+        Object that describes fitted baseline
     
     """
-    def __init__(self, data, is_stokes, timestamps, pointing, flags, label, path, target_coords=None):
+    def __init__(self, data, is_stokes, timestamps, pointing, flags, label, path, target_coords=None, baseline=None):
         self.data = data
         self.is_stokes = is_stokes
         self.timestamps = timestamps
@@ -79,6 +81,7 @@ class Scan(object):
         self.label = label
         self.path = path
         self.target_coords = target_coords
+        self.baseline = baseline
     
     def __eq__(self, other):
         """Equality comparison operator."""
@@ -284,7 +287,7 @@ class Scan(object):
             if not target_coords is None:
                 target_coords = target_coords[:, timekeep] 
             return Scan(selected_data, self.is_stokes, self.timestamps[timekeep], self.pointing[timekeep],
-                        self.flags[timekeep], self.label, self.path, target_coords)
+                        self.flags[timekeep], self.label, self.path, target_coords, self.baseline)
         # Create a shallow view of data matrix via a masked array or view
         else:
             # If data matrix is kept intact, rather just return a view instead of masked array
@@ -309,4 +312,4 @@ class Scan(object):
                 keep3d = np.kron(timekeep3d, np.kron(freqkeep3d, polkeep3d))
                 selected_data = np.ma.array(self.data, mask=~keep3d)
             return Scan(selected_data, self.is_stokes, self.timestamps, self.pointing, self.flags,
-                        self.label, self.path, self.target_coords)
+                        self.label, self.path, self.target_coords, self.baseline)
