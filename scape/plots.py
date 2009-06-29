@@ -508,7 +508,7 @@ def gaussian_ellipses(mean, cov, contour=0.5, num_points=200):
 #--- FUNCTION :  plot_compound_scan_on_target
 #--------------------------------------------------------------------------------------------------
 
-def plot_compound_scan_on_target(compscan, levels=None, band=0, ax=None):
+def plot_compound_scan_on_target(compscan, subtract_baseline=True, levels=None, add_scan_ids=True, band=0, ax=None):
     """Plot total power scans of compound scan in target space with beam fit.
     
     This plots contour ellipses of a Gaussian beam function fitted to the scans
@@ -519,9 +519,13 @@ def plot_compound_scan_on_target(compscan, levels=None, band=0, ax=None):
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to plot
+    subtract_baseline : {True, False}, optional
+        True to subtract baselines (only scans with baselines are then shown)
     levels : float, or real array-like, shape (K,), optional
         Contour level (or sequence of levels) to plot for Gaussian beam, as
         factor of beam height. The default is [0.5, 0.1].
+    add_scan_ids : {True, False}, optional
+        True if scan index numbers are to be added to plot
     band : int, optional
         Frequency band to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
@@ -537,9 +541,14 @@ def plot_compound_scan_on_target(compscan, levels=None, band=0, ax=None):
         ax = plt.gca()
     if levels is None:
         levels = [0.5, 0.1]
-    # Extract total power and target coordinates (in degrees) of all scans
-    total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
-    target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans]))
+    # Extract total power and target coordinates (in degrees) of all scans (or those with baselines)
+    if subtract_baseline:
+        total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) - scan.baseline(scan.timestamps) 
+                                 for scan in compscan.scans if scan.baseline])
+        target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans if scan.baseline]))
+    else:
+        total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
+        target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans]))
     
     # Show the locations of the scan samples themselves, with marker sizes indicating power values
     plot_marker_3d(target_coords[0], target_coords[1], total_power, ax=ax)
@@ -555,10 +564,13 @@ def plot_compound_scan_on_target(compscan, levels=None, band=0, ax=None):
         ax.plot([rad2deg(compscan.beam.center[0])], [rad2deg(compscan.beam.center[1])],
                 center_type, ms=12, aa=False, mew=2)
     # Add scan number label next to the start of each scan
-    for n, scan in enumerate(compscan.scans):
-        start, end = rad2deg(scan.target_coords[:, 0]), rad2deg(scan.target_coords[:, -1])
-        start_offset = start - 0.03 * (end - start)
-        ax.text(start_offset[0], start_offset[1], str(n), ha='center', va='center')
+    if add_scan_ids:
+        for n, scan in enumerate(compscan.scans):
+            if subtract_baseline and not scan.baseline:
+                continue
+            start, end = rad2deg(scan.target_coords[:, 0]), rad2deg(scan.target_coords[:, -1])
+            start_offset = start - 0.03 * (end - start)
+            ax.text(start_offset[0], start_offset[1], str(n), ha='center', va='center')
     # Axis settings and labels
     x_range = [target_coords[0].min(), target_coords[0].max()]
     y_range = [target_coords[1].min(), target_coords[1].max()]
@@ -743,13 +755,16 @@ def plot_db_contours(x, y, Z, levels=None, sin_coords=False, add_lines=True, ax=
 #--- FUNCTION :  plot_measured_beam_pattern
 #--------------------------------------------------------------------------------------------------
 
-def plot_measured_beam_pattern(compscan, add_samples=True, add_colorbar=True, band=0, ax=None, **kwargs):
+def plot_measured_beam_pattern(compscan, subtract_baseline=True, add_samples=True, add_colorbar=True,
+                               band=0, ax=None, **kwargs):
     """Plot measured beam pattern contained in compound scan.
     
     Parameters
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to plot
+    subtract_baseline : {True, False}, optional
+        True to subtract baselines (only scans with baselines are then shown)
     add_samples : {True, False}, optional
         True if scan sample locations are to be added
     add_colorbar : {True, False}, optional
@@ -772,11 +787,14 @@ def plot_measured_beam_pattern(compscan, add_samples=True, add_colorbar=True, ba
     """
     if ax is None:
         ax = plt.gca()
-    # Extract Stokes parameter and target coordinates of all scans
-    stokes_I = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
-    x, y = np.hstack([scan.target_coords for scan in compscan.scans])
-    if compscan.baseline:
-        stokes_I -= compscan.baseline([x, y])
+    # Extract Stokes parameter and target coordinates of all scans (or those with baselines)
+    if subtract_baseline:
+        stokes_I = np.hstack([remove_spikes(scan.stokes('I')[:, band]) - scan.baseline(scan.timestamps)
+                              for scan in compscan.scans if scan.baseline])
+        x, y = np.hstack([scan.target_coords for scan in compscan.scans if scan.baseline])
+    else:
+        stokes_I = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
+        x, y = np.hstack([scan.target_coords for scan in compscan.scans])
     if compscan.beam:
         stokes_I /= compscan.beam.height
         x -= compscan.beam.center[0]
