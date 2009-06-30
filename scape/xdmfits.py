@@ -20,7 +20,7 @@ import numpy as np
 # pylint: disable-msg=W0611
 import acsm
 
-from katpoint import deg2rad
+from katpoint import deg2rad, construct_target
 from .scan import Scan, move_start_to_center
 from .compoundscan import CompoundScan, CorrelatorConfig
 from .gaincal import NoiseDiodeModel, NoiseDiodeNotFound
@@ -102,7 +102,12 @@ class NoiseDiodeXDM(NoiseDiodeModel):
 
 def acsm_target_description(target):
     """Create katpoint target description from ACSM target object."""
-    descr = target.get_reference_target().get_description()
+    ref_target = target.get_reference_target()
+    # Extract TLE from TLE targets
+    if isinstance(ref_target, acsm.targets.tle.TLE):
+        return 'tle, ' + ref_target._name + '\n' + ref_target._line1 + '\n' + ref_target._line2
+    # Look for fixed and stationary targets
+    descr = ref_target.get_description()
     match = re.match(r'(.*)EquatorialRaDec\(([BJ\d]+)\)\(\((\d+), (\d+), (\d+)\), \((-?\d+), (-?\d+), (-?\d+)\)\)',
                      descr)
     if match:
@@ -287,8 +292,9 @@ def load_dataset(data_filename, nd_filename=None):
                     logger.info("Loaded noise diode characteristics from %s" % fits_file)
                 except NoiseDiodeNotFound:
                     pass
-        logger.info("Loaded %s: %s '%s' (%d samps, %d chans, %d pols)" % 
-                    (os.path.basename(fits_file), scan.label, target,
+        target = construct_target(target)
+        logger.info("Loaded %s: %s '%s' [%s] (%d samps, %d chans, %d pols)" % 
+                    (os.path.basename(fits_file), scan.label, target.name, target.tags[0],
                      scan.data.shape[0], scan.data.shape[1], scan.data.shape[2]))
     # Assemble CompoundScan objects from scan lists
     compscanlist = []
