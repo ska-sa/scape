@@ -288,7 +288,7 @@ def plot_compacted_segments(segments, labels=None, ax=None, **kwargs):
 #--- FUNCTION :  plot_compound_scan_in_time
 #--------------------------------------------------------------------------------------------------
 
-def plot_compound_scan_in_time(compscan, add_scan_ids=True, band=0, ax=None):
+def plot_compound_scan_in_time(compscan, stokes='I', add_scan_ids=True, band=0, ax=None):
     """Plot total power scans of compound scan with superimposed beam/baseline fit.
     
     This plots time series plots of the total power in the scans comprising a
@@ -299,6 +299,8 @@ def plot_compound_scan_in_time(compscan, add_scan_ids=True, band=0, ax=None):
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to plot
+    stokes : {'I', 'Q', 'U', 'V'}, optional
+        The Stokes parameter to display
     add_scan_ids : {True, False}, optional
         True if scan index numbers are to be added to plot
     band : int, optional
@@ -321,7 +323,7 @@ def plot_compound_scan_in_time(compscan, add_scan_ids=True, band=0, ax=None):
     # Construct segments to be plotted
     for scan in compscan.scans:
         timeline = scan.timestamps - time_origin
-        measured_power = scan.stokes('I')[:, band]
+        measured_power = scan.stokes(stokes)[:, band]
         smooth_power = remove_spikes(measured_power)
         power_limits.extend([smooth_power.min(), smooth_power.max()])
         data_segments.append(np.column_stack((timeline, measured_power)))
@@ -355,7 +357,7 @@ def plot_compound_scan_in_time(compscan, add_scan_ids=True, band=0, ax=None):
         power_range = 1.0
     ax.set_ylim(min(power_limits) - 0.05 * power_range, max(power_limits) + 0.05 * power_range)
     ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
-    ax.set_ylabel('Total power')
+    ax.set_ylabel('Stokes %s' % stokes)
     return ax
 
 #---------------------------------------------------------------------------------------------------------
@@ -755,7 +757,7 @@ def plot_db_contours(x, y, Z, levels=None, sin_coords=False, add_lines=True, ax=
 #--- FUNCTION :  plot_measured_beam_pattern
 #--------------------------------------------------------------------------------------------------
 
-def plot_measured_beam_pattern(compscan, subtract_baseline=True, add_samples=True, add_colorbar=True,
+def plot_measured_beam_pattern(compscan, stokes='I', subtract_baseline=True, add_samples=True, add_colorbar=True,
                                band=0, ax=None, **kwargs):
     """Plot measured beam pattern contained in compound scan.
     
@@ -763,6 +765,8 @@ def plot_measured_beam_pattern(compscan, subtract_baseline=True, add_samples=Tru
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to plot
+    stokes : {'I', 'Q', 'U', 'V'}, optional
+        The Stokes parameter to display
     subtract_baseline : {True, False}, optional
         True to subtract baselines (only scans with baselines are then shown)
     add_samples : {True, False}, optional
@@ -787,23 +791,27 @@ def plot_measured_beam_pattern(compscan, subtract_baseline=True, add_samples=Tru
     """
     if ax is None:
         ax = plt.gca()
+    # If there are no baselines in data set, don't subtract them
+    if np.array([scan.baseline is None for scan in compscan.scans]).all():
+        subtract_baseline = False
     # Extract Stokes parameter and target coordinates of all scans (or those with baselines)
     if subtract_baseline:
-        stokes_I = np.hstack([remove_spikes(scan.stokes('I')[:, band]) - scan.baseline(scan.timestamps)
-                              for scan in compscan.scans if scan.baseline])
+        power = np.hstack([remove_spikes(scan.stokes(stokes)[:, band]) - scan.baseline(scan.timestamps)
+                           for scan in compscan.scans if scan.baseline])
         x, y = np.hstack([scan.target_coords for scan in compscan.scans if scan.baseline])
     else:
-        stokes_I = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
+        power = np.hstack([remove_spikes(scan.stokes(stokes)[:, band]) for scan in compscan.scans])
         x, y = np.hstack([scan.target_coords for scan in compscan.scans])
     if compscan.beam:
-        stokes_I /= compscan.beam.height
+        power /= compscan.beam.height
         x -= compscan.beam.center[0]
         y -= compscan.beam.center[1]
-        
+    else:
+        power /= power.max()
     # Interpolate scattered data onto regular grid
-    grid_x, grid_y, smooth_I = interpolate_measured_beam(x, y, stokes_I)
+    grid_x, grid_y, smooth_power = interpolate_measured_beam(x, y, power)
     # Plot contours and associated color bar (if requested)
-    cset = plot_db_contours(rad2deg(grid_x), rad2deg(grid_y), smooth_I, ax=ax, **kwargs)
+    cset = plot_db_contours(rad2deg(grid_x), rad2deg(grid_y), smooth_power, ax=ax, **kwargs)
     if add_colorbar:
         plt.colorbar(cset, cax=plt.axes([0.9, 0.1, 0.02, 0.8]), format='%d')
         plt.gcf().text(0.96, 0.5, 'dB')
@@ -812,6 +820,7 @@ def plot_measured_beam_pattern(compscan, subtract_baseline=True, add_samples=Tru
         ax.plot(rad2deg(x), rad2deg(y), '.k', ms=2)
     # Axis settings and labels
     ax.set_aspect('equal')
+    ax.set_title('Stokes %s' % stokes)
     ax.set_xlabel('x (deg)')
     ax.set_ylabel('y (deg)')
     return ax, cset

@@ -144,7 +144,7 @@ class BeamPatternFit(ScatterFit):
 #--- FUNCTION :  fit_beam_and_baselines
 #--------------------------------------------------------------------------------------------------
 
-def fit_beam_and_baselines(compscan, expected_width, dof, band=0):
+def fit_beam_and_baselines(compscan, expected_width, dof, stokes='I', band=0):
     """Simultaneously fit beam and baselines to all scans in a compound scan.
     
     This fits a beam pattern and baselines to the total power data in all the
@@ -162,6 +162,8 @@ def fit_beam_and_baselines(compscan, expected_width, dof, band=0):
         Expected beamwidth based on antenna diameter, expressed as FWHM in radians
     dof : float
         Degrees of freedom of chi^2 distribution of total power samples
+    stokes : {'I', 'Q', 'U', 'V'}, optional
+        The Stokes parameter in which to fit beam and baselines
     band : int, optional
         Frequency band in which to fit beam and baselines
     
@@ -193,7 +195,7 @@ def fit_beam_and_baselines(compscan, expected_width, dof, band=0):
        vol. 278, 2002.
     
     """
-    scan_power = [remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans]
+    scan_power = [remove_spikes(scan.stokes(stokes)[:, band]) for scan in compscan.scans]
     total_power = np.hstack(scan_power)
     target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
     bl_degrees = (3, 3)
@@ -251,6 +253,8 @@ def fit_beam_and_baselines(compscan, expected_width, dof, band=0):
             baseline.fit(scan.timestamps[around_null], scan_power[n][around_null])
             bl_resid = scan_power[n] - baseline(scan.timestamps)
             around_null = bl_resid < 1.2 * (upper - mean)
+            if not around_null.any():
+                break
         baselines.append(baseline)
         inner = radius < 0.6 * beam.width
         if inner.any():
@@ -259,7 +263,7 @@ def fit_beam_and_baselines(compscan, expected_width, dof, band=0):
     if len(good_scan_coords) > 0:
         # Beam height is underestimated, as remove_spikes() flattens beam top - adjust it based on Gaussian beam
         beam.fit(np.hstack(good_scan_coords).transpose(), 1.0047 * np.hstack(good_scan_resid))
-    logger.debug("Beam refinement: beam height = %f, width = %f, first null = %f, based on %d of %d scans" % \
+    logger.debug("Refinement: beam height = %f, width = %f, first null = %f, based on %d of %d scans" % \
                  (beam.height, beam.width, beam.radius_first_null, len(good_scan_resid), len(compscan.scans)))
     
     return beam, baselines
