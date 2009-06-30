@@ -27,8 +27,6 @@ from .gaincal import NoiseDiodeModel, NoiseDiodeNotFound
 
 logger = logging.getLogger("scape.xdmfits")
 
-default_nd_filename = None
-
 #--------------------------------------------------------------------------------------------------
 #--- CLASS :  NoiseDiodeXDM
 #--------------------------------------------------------------------------------------------------
@@ -220,10 +218,7 @@ def load_dataset(data_filename, nd_filename=None):
     """Load data set from XDM FITS file series.
     
     This loads the XDM data set starting at the given filename and consisting of
-    consecutively numbered FITS files. The noise diode model can also be
-    overridden. Since this function is usually not called directly, but via the
-    :class:`dataset.DataSet` initialiser, the noise diode file should rather be
-    assigned to :data:`default_nd_filename`.
+    consecutively numbered FITS files. The noise diode model can be overridden.
     
     Parameters
     ----------
@@ -249,10 +244,10 @@ def load_dataset(data_filename, nd_filename=None):
     ------
     ValueError
         If data filename does not have expected numbering as part of name
+    IOError
+        If data file does not exist, could not be opened or is invalid FITS file
     
     """
-    if nd_filename is None:
-        nd_filename = default_nd_filename
     match = re.match(r'(.+)_(\d\d\d\d).fits$', data_filename)
     if not match:
         raise ValueError('XDM FITS filenames should have the structure name_dddd.fits, with dddd a four-digit number')
@@ -262,6 +257,8 @@ def load_dataset(data_filename, nd_filename=None):
     while os.path.exists('%s_%04d.fits' % (prefix, file_counter)):
         filelist.append('%s_%04d.fits' % (prefix, file_counter))
         file_counter += 1
+    if len(filelist) == 0:
+        raise IOError("Data file '%s' not found" % data_filename)
     # Group all FITS files (= scans) with the same experiment sequence number into a compound scan
     scanlists, targets = {}, {}
     nd_data = None
