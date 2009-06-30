@@ -8,13 +8,13 @@ import h5py
 import numpy as np
 
 from .gaincal import NoiseDiodeModel
-from .scan import Scan
+from .scan import Scan, move_start_to_center, move_center_to_start
 from .compoundscan import CorrelatorConfig, CompoundScan
 
 logger = logging.getLogger("scape.hdf5")
 
 #--------------------------------------------------------------------------------------------------
-#--- FUNCTIONS
+#--- FUNCTION :  load_dataset
 #--------------------------------------------------------------------------------------------------
 
 def load_dataset(filename):
@@ -63,6 +63,7 @@ def load_dataset(filename):
             bandwidths = np.tile(channel_bw, num_chans, dtype=np.float64)
         rfi_channels = f['CorrelatorConfig']['rfi_channels'].value.nonzero()[0].tolist()
         dump_rate = f['CorrelatorConfig'].attrs['dump_rate']
+        sample_period = 1.0 / dump_rate
         corrconf = CorrelatorConfig(center_freqs, bandwidths, rfi_channels, dump_rate)
         
         temperature_x = f['NoiseDiodeModel']['temperature_x'].value
@@ -95,6 +96,8 @@ def load_dataset(filename):
                 # Convert contents of pointing from degrees to radians
                 pointing_view = scan_pointing.view(np.float32)
                 pointing_view *= np.pi / 180.0
+                # Move timestamps and pointing from start of each sample to the middle
+                scan_timestamps, scan_pointing = move_start_to_center(scan_timestamps, scan_pointing, sample_period)
                 scan_flags = f['Scans'][compscan][scan]['flags'].value
                 scan_environment = f['Scans'][compscan][scan]['environment'].value
                 scan_label = f['Scans'][compscan][scan].attrs['label']
@@ -107,6 +110,9 @@ def load_dataset(filename):
         
         return compscanlist, data_unit, corrconf, antenna, nd_data
 
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  save_dataset
+#--------------------------------------------------------------------------------------------------
 
 def save_dataset(dataset, filename):
     """Save data set to HDF5 file.
@@ -134,6 +140,7 @@ def save_dataset(dataset, filename):
         rfi_flags[dataset.corrconf.rfi_channels] = True
         corrconf_group.create_dataset('rfi_channels', data=rfi_flags)
         corrconf_group.attrs['dump_rate'] = dataset.corrconf.dump_rate
+        sample_period = 1.0 / dataset.corrconf.dump_rate
         
         nd_group = f.create_group('NoiseDiodeModel')
         nd_group.create_dataset('temperature_x', data=dataset.noise_diode_data.temperature_x, compression='gzip')
@@ -153,14 +160,15 @@ def save_dataset(dataset, filename):
                 complex_data = np.rec.fromarrays([scan.coherency(key) for key in coherency_order],
                                                  names=coherency_order, formats=['complex64'] * 4)
                 scan_group.create_dataset('data', data=complex_data, compression='gzip')
+                # Move timestamps and pointing from middle of each sample back to the start (returns copies)
+                timestamps, pointing = move_center_to_start(scan.timestamps, scan.pointing, sample_period)
                 # Convert from float64 seconds to uint64 milliseconds
-                scan_group.create_dataset('timestamps', data=np.round(1000.0 * scan.timestamps).astype(np.uint64),
-                                          compression='gzip')
+                timestamps = np.round(1000.0 * timestamps).astype(np.uint64)
+                scan_group.create_dataset('timestamps', data=timestamps, compression='gzip')
                 # Convert contents of pointing from radians to degrees, without disturbing original
-                pointing_deg = scan.pointing.copy()
-                pointing_view = pointing_deg.view(np.float32)
+                pointing_view = pointing.view(np.float32)
                 pointing_view *= 180.0 / np.pi
-                scan_group.create_dataset('pointing', data=pointing_deg, compression='gzip')
+                scan_group.create_dataset('pointing', data=pointing, compression='gzip')
                 scan_group.create_dataset('flags', data=scan.flags, compression='gzip')
                 # Dummy environmental data for now
                 num_samples = len(scan.timestamps)

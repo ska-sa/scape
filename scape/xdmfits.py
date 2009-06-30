@@ -21,7 +21,7 @@ import numpy as np
 import acsm
 
 from katpoint import deg2rad
-from .scan import Scan
+from .scan import Scan, move_start_to_center
 from .compoundscan import CompoundScan, CorrelatorConfig
 from .gaincal import NoiseDiodeModel, NoiseDiodeNotFound
 
@@ -187,6 +187,8 @@ def load_scan(filename):
     pointing = np.rec.fromarrays([deg2rad(hdu['MSDATA'].data.field(s).astype(np.float32)) 
                                   for s in ['AzAng', 'ElAng', 'RotAng']],
                                  names=['az', 'el', 'rot'])
+    # Move timestamps and pointing from start of each sample to the middle
+    timestamps, pointing = move_start_to_center(timestamps, pointing, sample_period)
     flags = np.rec.fromarrays([hdu['MSDATA'].data.field(s).astype(np.bool)
                                for s in ['Valid_F', 'ND_ON_F', 'RX_ON_F']],
                               names=['valid', 'nd_on', 'rx_on'])

@@ -21,6 +21,99 @@ import numpy as np
 import katpoint
 
 #--------------------------------------------------------------------------------------------------
+#--- Helper functions
+#--------------------------------------------------------------------------------------------------
+
+def move_start_to_center(start_times, pointing_at_start, sample_period):
+    """Move timestamps and pointing from start to center of each sample.
+    
+    The :mod:`scape` data files contain timestamps and associated pointing info
+    for the start of each integration sample. The power data is most naturally
+    associated with the center of the sample, though. For long integration
+    periods these two positions will differ significantly, resulting in skewed
+    plots, etc. This function moves the timestamps and pointing info to coincide
+    with the power data at the center of each sample, which is more natural for
+    processing and plots. It returns copies of the data.
+    
+    Parameters
+    ----------
+    start_times : real array, shape (*T*,)
+        Sequence of timestamps, one per integration (in UTC seconds since epoch).
+        These timestamps should be at the *start* of each integration.
+    pointing_at_start : real record array, shape (*T*,)
+        Pointing coordinates, with one record per integration. Each record is
+        time-aligned with *start_times*, at the start of each integration.
+    sample_period : float
+        Sample period (length of integration), in seconds
+    
+    Returns
+    -------
+    center_times : real array, shape (*T*,)
+        Sequence of timestamps, one per integration (in UTC seconds since epoch).
+        These timestamps should be in the *middle* of each integration.
+    pointing_at_center : real record array, shape (*T*,)
+        Pointing coordinates, with one record per integration. Each record is
+        time-aligned with *center_times*, in the middle of each integration.
+    
+    """
+    center_times = start_times + 0.5 * sample_period
+    next_start_times = np.hstack((start_times[1:], [2.0 * start_times[-1] - start_times[-2]]))
+    weights = (next_start_times - center_times) / (next_start_times - start_times)
+    pointing_at_center = pointing_at_start.copy()
+    for name in pointing_at_start.dtype.names:
+        x_at_start = pointing_at_start[name]
+        x_at_next_start = np.hstack((x_at_start[1:], [2.0 * x_at_start[-1] - x_at_start[-2]]))
+        x_at_center = weights * x_at_start + (1.0 - weights) * x_at_next_start
+        pointing_at_center[name] = x_at_center
+    return center_times, pointing_at_center
+
+def move_center_to_start(center_times, pointing_at_center, sample_period):
+    """Move timestamps and pointing from center to start of each sample.
+    
+    The :mod:`scape` data files contain timestamps and associated pointing info
+    for the start of each integration sample. The power data is most naturally
+    associated with the center of the sample, though. For long integration
+    periods these two positions will differ significantly, resulting in skewed
+    plots, etc. This function moves the timestamps and pointing info from the
+    center of each sample to the start, which is how it will be stored on disk.
+    It returns copies of the data.
+    
+    Parameters
+    ----------
+    center_times : real array, shape (*T*,)
+        Sequence of timestamps, one per integration (in UTC seconds since epoch).
+        These timestamps should be in the *middle* of each integration.
+    pointing_at_center : real record array, shape (*T*,)
+        Pointing coordinates, with one record per integration. Each record is
+        time-aligned with *center_times*, in the middle of each integration.
+    sample_period : float
+        Sample period (length of integration), in seconds
+    
+    Returns
+    -------
+    start_times : real array, shape (*T*,)
+        Sequence of timestamps, one per integration (in UTC seconds since epoch).
+        These timestamps should be at the *start* of each integration.
+    pointing_at_start : real record array, shape (*T*,)
+        Pointing coordinates, with one record per integration. Each record is
+        time-aligned with *start_times*, at the start of each integration.
+    
+    """
+    start_times = center_times - 0.5 * sample_period
+    next_start_times = np.hstack((start_times[1:], [2.0 * start_times[-1] - start_times[-2]]))
+    weights = (next_start_times - center_times) / (next_start_times - start_times)
+    pointing_at_start = pointing_at_center.copy()
+    for name in pointing_at_center.dtype.names:
+        x_at_center = pointing_at_center[name]
+        x_at_start = np.zeros(x_at_center.shape)
+        x_at_start[-1] = (weights[-2] * x_at_center[-1] + (1.0 - weights[-1]) * x_at_center[-2]) / \
+                         (weights[-2] + 1.0 - weights[-1])
+        for n in xrange(len(x_at_start) - 2, -1, -1):
+            x_at_start[n] = (x_at_center[n] - (1.0 - weights[n]) * x_at_start[n + 1]) / weights[n]
+        pointing_at_start[name] = x_at_start
+    return start_times, pointing_at_start
+
+#--------------------------------------------------------------------------------------------------
 #--- CLASS :  Scan
 #--------------------------------------------------------------------------------------------------
 
@@ -54,11 +147,13 @@ class Scan(object):
     is_stokes : bool
         True if data is in Stokes parameter form, False if in coherency form
     timestamps : real array, shape (*T*,)
-        Sequence of timestamps, one per integration (in seconds since epoch)
+        Sequence of timestamps, one per integration (in UTC seconds since epoch).
+        These timestamps should be in the *middle* of each integration.
     pointing : real record array, shape (*T*,)
         Pointing coordinates, with one record per integration (in radians).
         The real-valued fields are 'az', 'el' and optionally 'rot', for
-        azimuth, elevation and rotator angle, respectively.
+        azimuth, elevation and rotator angle, respectively. The pointing should
+        be valid for the *middle* of each integration.
     flags : bool record array, shape (*T*,)
         Flags, with one record per integration. The field names correspond with
         the flag names.
@@ -103,11 +198,14 @@ class Scan(object):
             if not np.all(self.data == other.data):
                 return False
         # Because of conversion to degrees and back during saving and loading, the last (8th)
-        # significant digit of the float32 pointing values may change - do approximate comparison
-        # Since pointing is used to calculate target coords, this is also only approximately equal
-        return np.all(self.timestamps == other.timestamps) and np.all(self.flags == other.flags) and \
-               (self.label == other.label) and \
-               np.allclose(self.pointing.view(np.float32), other.pointing.view(np.float32), 1e-7) and \
+        # significant digit of the float32 pointing values may change - do approximate comparison.
+        # Since pointing is used to calculate target coords, this is also only approximately equal.
+        # Timestamps and pointing are also converted to and from the start and middle of each sample,
+        # which causes extra approximateness... (pointing now only accurate to arcminutes, but time
+        # should be OK up to microseconds)
+        return np.all(self.flags == other.flags) and (self.label == other.label) and \
+               np.allclose(self.timestamps, other.timestamps, atol=1e-6) and \
+               np.allclose(self.pointing.view(np.float32), other.pointing.view(np.float32), 1e-4) and \
                np.allclose(self.target_coords, other.target_coords, atol=1e-6)
     
     def __ne__(self, other):
