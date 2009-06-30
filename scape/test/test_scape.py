@@ -83,7 +83,7 @@ class PointSourceScanTestCases(unittest.TestCase):
         self.dataset.average()
         self.dataset.fit_beams_and_baselines()
         compscan = self.dataset.compscans[0]
-        self.assertAlmostEqual(compscan.beam.center[0], 0.0, places=9)
-        self.assertAlmostEqual(compscan.beam.center[1], 0.0, places=9)
+        self.assertAlmostEqual(compscan.beam.center[0], 0.0, places=8)
+        self.assertAlmostEqual(compscan.beam.center[1], 0.0, places=8)
         self.assertAlmostEqual(compscan.beam.height, self.peak_flux, places=0)
         self.assertAlmostEqual(compscan.beam.width, self.expected_width, places=4)
