@@ -228,6 +228,10 @@ class Scan(object):
             Coordinates on projected plane, with target as reference, in radians
 
         """
+        # Fix over-the-top elevations (projections can only handle elevations in range +- 90 degrees)
+        over_the_top = (self.pointing['el'] > np.pi / 2.0) & (self.pointing['el'] < np.pi)
+        self.pointing['az'][over_the_top] += np.pi
+        self.pointing['el'][over_the_top] = np.pi - self.pointing['el'][over_the_top]
         target_x, target_y = katpoint.sphere_to_plane(antenna, target, self.pointing['az'],
                                                       self.pointing['el'], self.timestamps)
         self.target_coords = np.vstack((target_x, target_y))
