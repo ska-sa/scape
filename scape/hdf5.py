@@ -106,8 +106,12 @@ def load_dataset(filename):
                 scanlist.append(Scan(scan_data, False, scan_timestamps, scan_pointing, scan_flags,
                                      scan_label, filename + '/Scans/%s/%s' % (compscan, scan)))
             
+            # Sort scans chronologically, as h5py seems to scramble them based on group name
+            scanlist.sort(key=lambda scan: scan.timestamps[0])
             compscanlist.append(CompoundScan(scanlist, compscan_target))
         
+        # Sort compound scans chronologically too
+        compscanlist.sort(key=lambda compscan: compscan.scans[0].timestamps[0])
         return compscanlist, data_unit, corrconf, antenna, nd_data
 
 #--------------------------------------------------------------------------------------------------
