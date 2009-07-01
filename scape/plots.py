@@ -821,6 +821,4 @@ def plot_measured_beam_pattern(compscan, stokes='I', subtract_baseline=True, add
     # Axis settings and labels
     ax.set_aspect('equal')
     ax.set_title('Stokes %s' % stokes)
-    ax.set_xlabel('x (deg)')
-    ax.set_ylabel('y (deg)')
     return ax, cset
