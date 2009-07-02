@@ -67,7 +67,7 @@ class PointSourceScanTestCases(unittest.TestCase):
             stokes_I = np.tile(flux(x, y), (num_channels, 1)).transpose()
             data = np.dstack([0.5 * stokes_I, 0.5 * stokes_I, np.zeros(stokes_I.shape), np.zeros(stokes_I.shape)])
             timestamps = time_start + np.arange(samples_per_scan) / dump_rate
-            az, el = katpoint.plane_to_sphere(ant, target, x, y, timestamps)
+            az, el = target.plane_to_sphere(x, y, timestamps, ant)
             pointing = np.rec.fromarrays([az, el], names='az,el')
             flags = np.rec.fromarrays([np.tile(True, samples_per_scan),
                                        np.tile(False, samples_per_scan)], names='valid,nd_on')

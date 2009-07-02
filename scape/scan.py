@@ -18,8 +18,6 @@ Functionality: power conversion,...
 
 import numpy as np
 
-import katpoint
-
 #--------------------------------------------------------------------------------------------------
 #--- Helper functions
 #--------------------------------------------------------------------------------------------------
@@ -232,8 +230,8 @@ class Scan(object):
         over_the_top = (self.pointing['el'] > np.pi / 2.0) & (self.pointing['el'] < np.pi)
         self.pointing['az'][over_the_top] += np.pi
         self.pointing['el'][over_the_top] = np.pi - self.pointing['el'][over_the_top]
-        target_x, target_y = katpoint.sphere_to_plane(antenna, target, self.pointing['az'],
-                                                      self.pointing['el'], self.timestamps)
+        target_x, target_y = target.sphere_to_plane(self.pointing['az'], self.pointing['el'],
+                                                    self.timestamps, antenna)
         self.target_coords = np.vstack((target_x, target_y))
         return self.target_coords
     

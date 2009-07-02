@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from katpoint import rad2deg, plane_to_sphere
+from katpoint import rad2deg
 from .stats import remove_spikes, minimise_angle_wrap
 from .beam_baseline import fwhm_to_sigma, interpolate_measured_beam
 
@@ -633,18 +633,18 @@ def plot_data_set_in_mount_space(dataset, levels=None, band=0, ax=None):
         target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
         center_time = np.median(np.hstack([scan.timestamps for scan in compscan.scans]))
         # Instantaneous mount coordinates are back on the sphere, but at a single time instant for all points
-        mount_coords = list(plane_to_sphere(dataset.antenna, compscan.target,
-                                            target_coords[0], target_coords[1], center_time))
+        mount_coords = list(compscan.target.plane_to_sphere(target_coords[0], target_coords[1],
+                                                            center_time, dataset.antenna))
         # Obtain ellipses and center, and unwrap az angles for all objects simultaneously to ensure they stay together
         if compscan.beam:
             var = fwhm_to_sigma(compscan.beam.width) ** 2.0
             if np.isscalar(var):
                 var = [var, var]
             target_ellipses = gaussian_ellipses(compscan.beam.center, np.diag(var), contour=levels)
-            mount_ellipses = list(plane_to_sphere(dataset.antenna, compscan.target,
-                                                  target_ellipses[:, :, 0], target_ellipses[:, :, 1], center_time))
-            mount_center = list(plane_to_sphere(dataset.antenna, compscan.target,
-                                                compscan.beam.center[0], compscan.beam.center[1], center_time))
+            mount_ellipses = list(compscan.target.plane_to_sphere(target_ellipses[:, :, 0], target_ellipses[:, :, 1],
+                                                                  center_time, dataset.antenna))
+            mount_center = list(compscan.target.plane_to_sphere(compscan.beam.center[0], compscan.beam.center[1],
+                                                                center_time, dataset.antenna))
             all_az = np.concatenate((mount_coords[0], [mount_center[0]], mount_ellipses[0].flatten()))
             all_az = minimise_angle_wrap(all_az)
             mount_coords[0] = all_az[:len(mount_coords[0])]
