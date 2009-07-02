@@ -60,9 +60,9 @@ class DataSet(object):
     Attributes
     ----------
     freqs : real array, shape (*F*,)
-        Centre frequency of each channel/band, in Hz (same as in *corrconf*)
+        Centre frequency of each channel/band, in MHz (same as in *corrconf*)
     bandwidths : real array-like, shape (*F*,)
-        Bandwidth of each channel/band, in Hz (same as in *corrconf*)
+        Bandwidth of each channel/band, in MHz (same as in *corrconf*)
     rfi_channels : list of ints
         RFI-flagged channel indices (same as in *corrconf*)
     dump_rate : float
@@ -134,7 +134,7 @@ class DataSet(object):
     # pylint: disable-msg=E0211,E0202,W0612,W0142
     def freqs():
         """Class method which creates freqs property."""
-        doc = 'Centre frequency of each channel/band, in Hz.'
+        doc = 'Centre frequency of each channel/band, in MHz.'
         def fget(self):
             return self.corrconf.freqs
         def fset(self, value):
@@ -145,7 +145,7 @@ class DataSet(object):
     # pylint: disable-msg=E0211,E0202,W0612,W0142
     def bandwidths():
         """Class method which creates bandwidths property."""
-        doc = 'Bandwidth of each channel/band, in Hz.'
+        doc = 'Bandwidth of each channel/band, in MHz.'
         def fget(self):
             return self.corrconf.bandwidths
         def fset(self, value):
@@ -463,10 +463,10 @@ class DataSet(object):
         # FWHM beamwidth for Gaussian-tapered circular dish is 1.22 lambda / D
         # We are somewhere in between (the factor 1.15 is based on measurements of XDM)
         # TODO: this factor needs to be associated with the antenna
-        expected_width = 1.15 * katpoint.lightspeed / self.freqs[band] / self.antenna.diameter
+        expected_width = 1.15 * katpoint.lightspeed / (self.freqs[band] * 1e6) / self.antenna.diameter
         # Degrees of freedom is time-bandwidth product (2 * BW * t_dump) of each sample
         # The extra factor of 2 is because Stokes I is the sum of the independent XX and YY samples
-        dof = 4.0 * self.bandwidths[band] / self.dump_rate
+        dof = 4.0 * (self.bandwidths[band] * 1e6) / self.dump_rate
         for compscan in self.compscans:
             compscan.beam, baselines = fit_beam_and_baselines(compscan, expected_width, dof, band=band, **kwargs)
             for scan, bl in zip(compscan.scans, baselines):

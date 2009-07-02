@@ -63,8 +63,8 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
     if not scans:
         logger.error('Data set is empty')
         return
-    channel_freqs_GHz = dataset.freqs / 1e9
-    channel_bandwidths_GHz = dataset.bandwidths / 1e9
+    channel_freqs_GHz = dataset.freqs / 1e3
+    channel_bandwidths_GHz = dataset.bandwidths / 1e3
     rfi_channels = dataset.rfi_channels
     num_channels = len(channel_freqs_GHz)
     data_min = {'XX': np.tile(np.inf, (len(scans), num_channels)), 
@@ -103,7 +103,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
                     colors = [(0.0, 0.0, 0.0, 1.0 - 0.6 * (chan in dataset.rfi_channels)) for chan in channel_list]
                 time_line = scan.timestamps - time_origin
                 # Normalise the data in each channel to lie between 0 and (channel bandwidth * scale)
-                norm_power = scale * (dataset.bandwidths[np.newaxis, :] / 1e9) * \
+                norm_power = scale * channel_bandwidths_GHz[np.newaxis, :] * \
                             (scan.coherency(pol) - data_min[pol][np.newaxis, :]) / \
                             (data_max[pol][np.newaxis, :] - data_min[pol][np.newaxis, :])
                 segments = [np.vstack((time_line, norm_power[:, chan])).transpose() for chan in channel_list]
@@ -123,7 +123,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
                     border_time = (t_limits[start_time_ind - 1] + t_limits[start_time_ind]) / 2.0
                     ax.plot([border_time, border_time], [0.0, 10.0 * channel_freqs_GHz.max()], '--k')
                 ax.text((t_limits[start_time_ind] + t_limits[-1]) / 2.0,
-                        offsets[0, 1] - scale * dataset.bandwidths[0] / 1e9, compscan.target.name,
+                        offsets[0, 1] - scale * channel_bandwidths_GHz[0], compscan.target.name,
                         ha='center', va='bottom', clip_on=True)
         # Set up title and axis labels
         nth_str = ''

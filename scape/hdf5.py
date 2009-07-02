@@ -51,11 +51,11 @@ def load_dataset(filename):
         # If center_freqs dataset is available, use it - otherwise, reconstruct it from DBE attributes
         center_freqs = f['CorrelatorConfig'].get('center_freqs', None)
         if center_freqs:
-            center_freqs = center_freqs.value
-            bandwidths = f['CorrelatorConfig']['bandwidths'].value
+            center_freqs = center_freqs.value / 1e6
+            bandwidths = f['CorrelatorConfig']['bandwidths'].value / 1e6
         else:
-            band_center = f['CorrelatorConfig'].attrs['center_frequency_hz']
-            channel_bw = f['CorrelatorConfig'].attrs['bandwidth_hz']
+            band_center = f['CorrelatorConfig'].attrs['center_frequency_hz'] / 1e6
+            channel_bw = f['CorrelatorConfig'].attrs['bandwidth_hz'] / 1e6
             num_chans = f['CorrelatorConfig'].attrs['num_freq_channels']
             center_freqs = np.arange(band_center - (channel_bw * num_chans / 2.0) + channel_bw / 2.0,
                                      band_center + (channel_bw * num_chans / 2.0) + channel_bw / 2.0,
@@ -138,8 +138,8 @@ def save_dataset(dataset, filename):
         f['/'].attrs['comment'] = ''
         
         corrconf_group = f.create_group('CorrelatorConfig')
-        corrconf_group.create_dataset('center_freqs', data=dataset.corrconf.freqs, compression='gzip')
-        corrconf_group.create_dataset('bandwidths', data=dataset.corrconf.bandwidths, compression='gzip')
+        corrconf_group.create_dataset('center_freqs', data=dataset.corrconf.freqs * 1e6, compression='gzip')
+        corrconf_group.create_dataset('bandwidths', data=dataset.corrconf.bandwidths * 1e6, compression='gzip')
         rfi_flags = np.tile(False, len(dataset.corrconf.freqs))
         rfi_flags[dataset.corrconf.rfi_channels] = True
         corrconf_group.create_dataset('rfi_channels', data=rfi_flags)

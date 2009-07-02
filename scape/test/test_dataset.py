@@ -25,8 +25,8 @@ class SaveLoadTestCases(unittest.TestCase):
         s4 = s1.select(timekeep=s1.flags['nd_on'], copy=True)
         cs1 = compoundscan.CompoundScan([s1, s2], 'Sun, special')
         cs2 = compoundscan.CompoundScan([s3, s4], 'Moon, special')
-        freqs = 1e9 + 1e6*np.arange(num_chans, dtype=np.float64)
-        corrconf = compoundscan.CorrelatorConfig(freqs, np.tile(1e6, num_chans).astype(np.float64),
+        freqs = 1e3 + np.arange(num_chans, dtype=np.float64)
+        corrconf = compoundscan.CorrelatorConfig(freqs, np.tile(1.0, num_chans).astype(np.float64),
                                                  [2, 5, 9], 1.0)
         temp = np.column_stack((freqs, 20.0 + np.random.randn(len(freqs))))
         nd_data = gaincal.NoiseDiodeModel(temp, temp)

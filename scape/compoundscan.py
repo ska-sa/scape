@@ -34,9 +34,9 @@ class CorrelatorConfig(object):
     Parameters
     ----------
     freqs : real array-like, shape (*F*,)
-        Sequence of channel/band centre frequencies, in Hz
+        Sequence of channel/band centre frequencies, in MHz
     bandwidths : real array-like, shape (*F*,)
-        Sequence of channel/band bandwidths, in Hz
+        Sequence of channel/band bandwidths, in MHz
     rfi_channels : list of ints
         RFI-flagged channel indices
     dump_rate : float

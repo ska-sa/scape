@@ -22,10 +22,10 @@ class NoiseDiodeModel(object):
     Parameters
     ----------
     temperature_x : real array, shape (N, 2)
-        Table containing frequencies [Hz] in the first column and measured
+        Table containing frequencies [MHz] in the first column and measured
         temperatures [K] in the second column, for port 1 or V (X polarisation)
     temperature_y : real array, shape (N, 2)
-        Table containing frequencies [Hz] in the first column and measured
+        Table containing frequencies [MHz] in the first column and measured
         temperatures [K] in the second column, for port 2 or H (Y polarisation)
     
     """
@@ -55,7 +55,7 @@ class NoiseDiodeModel(object):
         Parameters
         ----------
         freqs : float or array-like, shape (*F*,)
-            Frequency (or frequencies) at which to evaluate temperature, in Hz
+            Frequency (or frequencies) at which to evaluate temperature, in MHz
         randomise : {False, True}, optional
             True if noise diode spectrum smoothing should be randomised
         

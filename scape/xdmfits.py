@@ -201,8 +201,8 @@ def load_scan(filename):
     path = filename
     
     data_unit = 'raw'
-    freqs = hdu['CHANNELS'].data.field('Freq')
-    bandwidths = np.repeat(channel_width, len(freqs))
+    freqs = hdu['CHANNELS'].data.field('Freq') / 1e6
+    bandwidths = np.repeat(channel_width, len(freqs)) / 1e6
     rfi_channels = [x[0] for x in hdu['RFI'].data.field('Channels')]
     # The FITS file doesn't like empty lists, so an empty list is represented by [-1] (an invalid index)
     # Therefore, remove any invalid indices, as a further safeguard

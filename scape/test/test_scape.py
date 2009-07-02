@@ -28,17 +28,17 @@ class PointSourceScanTestCases(unittest.TestCase):
         
         # Frequency setup
         num_channels = 8
-        center_freq = 1.5e9
-        channelwidth = 10e6
+        center_freq_MHz = 1.5e3
+        channelwidth_MHz = 10.
         rfi_channels = [2, 3, num_channels - 4, num_channels - 3]
         dump_rate = 10.
         
-        freqs = center_freq + np.arange(-num_channels // 2, num_channels // 2) * channelwidth
-        corrconf = scape.CorrelatorConfig(freqs, np.tile(channelwidth, num_channels), rfi_channels, dump_rate)
+        freqs = center_freq_MHz + np.arange(-num_channels // 2, num_channels // 2) * channelwidth_MHz
+        corrconf = scape.CorrelatorConfig(freqs, np.tile(channelwidth_MHz, num_channels), rfi_channels, dump_rate)
         
         # Source structure setup
-        self.peak_flux = target.flux_density(center_freq)
-        self.expected_width = 1.15 * katpoint.lightspeed / center_freq / ant.diameter
+        self.peak_flux = target.flux_density(center_freq_MHz)
+        self.expected_width = 1.15 * katpoint.lightspeed / (center_freq_MHz * 1e6) / ant.diameter
         sigma = scape.beam_baseline.fwhm_to_sigma(self.expected_width)
         flux = lambda x, y: self.peak_flux * np.exp(-0.5 * (x ** 2 + y ** 2) / (sigma ** 2))
         
@@ -75,7 +75,7 @@ class PointSourceScanTestCases(unittest.TestCase):
             scanlist.append(scape.Scan(data, False, timestamps, pointing, flags, 'scan', ('scan_%d' % (n,))))
         
         # Construct data set
-        nd_data = scape.gaincal.NoiseDiodeModel(np.array([[center_freq, 10.]]), np.array([[center_freq, 10.]]))
+        nd_data = scape.gaincal.NoiseDiodeModel(np.array([[center_freq_MHz, 10.]]), np.array([[center_freq_MHz, 10.]]))
         self.dataset = scape.DataSet('', [scape.CompoundScan(scanlist, target)], 'Jy', corrconf, ant, nd_data)
     
     def test_beam_fit(self):
