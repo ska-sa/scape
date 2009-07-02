@@ -155,3 +155,14 @@ class CompoundScan(object):
     def __ne__(self, other):
         """Inequality comparison operator."""
         return not self.__eq__(other)
+
+    def __str__(self):
+        """Verbose human-friendly string representation of compound scan object."""
+        descr = ["target='%s' [%s]" % (self.target.name, self.target.tags[0])]
+        for scan_ind, scan in enumerate(self.scans):
+            descr.append('%4d: %s' % (scan_ind, str(scan)))
+        return '\n'.join(descr)
+    
+    def __repr__(self):
+        """Short human-friendly string representation of compound scan object."""
+        return "<scape.CompoundScan '%s' scans=%d at 0x%x>" % (self.target.name, len(self.scans), id(self))

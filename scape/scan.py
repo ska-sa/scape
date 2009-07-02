@@ -17,6 +17,10 @@ Functionality: power conversion,...
 """
 
 import numpy as np
+import time
+
+from .stats import minimise_angle_wrap
+from katpoint import rad2deg
 
 #--------------------------------------------------------------------------------------------------
 #--- Helper functions
@@ -209,6 +213,18 @@ class Scan(object):
     def __ne__(self, other):
         """Inequality comparison operator."""
         return not self.__eq__(other)
+    
+    def __str__(self):
+        """Verbose human-friendly string representation of scan object."""
+        mean_az = rad2deg(minimise_angle_wrap(self.pointing['az']).mean())
+        mean_el = rad2deg(minimise_angle_wrap(self.pointing['el']).mean())
+        return "'%s', data=%s, start='%s', az=%.1f, el=%.1f, path='%s'" % \
+               (self.label, self.data.shape, time.strftime('%Y/%m/%d %H:%M:%S', time.gmtime(self.timestamps[0])),
+                mean_az, mean_el, self.path)
+    
+    def __repr__(self):
+        """Short human-friendly string representation of scan object."""
+        return "<scape.Scan '%s' data=%s at 0x%x>" % (self.label, self.data.shape, id(self))
     
     def calc_target_coords(self, target, antenna):
         """Calculate target coordinates, based on target and antenna objects.

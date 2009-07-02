@@ -175,6 +175,22 @@ class DataSet(object):
         return locals()
     dump_rate = property(**dump_rate())
     
+    def __str__(self):
+        """Verbose human-friendly string representation of data set object."""
+        descr = ["antenna='%s', data_unit=%s, freqs=%f - %f MHz, bw=%f MHz, dumprate=%f Hz" %
+                 (self.antenna.name, self.data_unit, self.freqs[0], 
+                  self.freqs[-1], self.bandwidths[0], self.dump_rate)]
+        for compscan_ind, compscan in enumerate(self.compscans):
+            descr.append("%4d: target='%s' [%s]" % 
+                         (compscan_ind, compscan.target.name, compscan.target.tags[0]))
+            for scan_ind, scan in enumerate(compscan.scans):
+                descr.append('      %4d: %s' % (scan_ind, str(scan)))
+        return '\n'.join(descr)
+    
+    def __repr__(self):
+        """Short human-friendly string representation of data set object."""
+        return "<scape.DataSet '%s' compscans=%d at 0x%x>" % (self.antenna.name, len(self.compscans), id(self))
+    
     def convert_to_coherency(self):
         """Convert power data to coherency format.
         
