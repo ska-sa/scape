@@ -16,6 +16,10 @@ import os.path
 
 import pyfits
 import numpy as np
+
+# First create logger to switch off ACSM messages
+acsm_logger = logging.getLogger('acsm')
+acsm_logger.setLevel(logging.ERROR)
 # Needed for pickled target and mount objects
 # pylint: disable-msg=W0611
 import acsm
