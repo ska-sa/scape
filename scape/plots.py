@@ -208,6 +208,84 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
     return axes_list
 
 #--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  plot_compacted_spectrogram
+#--------------------------------------------------------------------------------------------------
+
+def plot_compacted_spectrogram(dataset, stokes='I', add_scan_ids=True, ax=None):
+    """Plot spectrogram of all scans in data set in compacted form.
+    
+    This plots the spectrogram of each scan in the data set on a single set of
+    axes, with no gaps between the spectrogram images. This is done for all times
+    and all channels. The tick labels on the *x* axis are modified to reflect
+    the correct timestamps, and the breaks between scans are indicated by
+    vertical lines.
+    
+    Parameters
+    ----------
+    dataset : :class:`scape.DataSet` object
+        Data set to plot
+    stokes : {'I', 'Q', 'U', 'V'}, optional
+        The Stokes parameter to display
+    add_scan_ids : {True, False}, optional
+        True if scan index numbers are to be added to plot
+    ax : :class:`matplotlib.axes.Axes` object, optional
+        Matplotlib axes object to receive plot (default is current axes)
+    
+    Returns
+    -------
+    images : list of :class:`matplotlib.image.AxesImage` objects
+        List of spectrogram images
+    border_lines : :class:`matplotlib.collections.LineCollection` object
+        Collection of vertical lines separating the segments
+    text_labels : list of :class:`matplotlib.text.Text` objects
+        List of added text labels
+    
+    """
+    if ax is None:
+        ax = plt.gca()
+    labels = [str(n) for n in xrange(len(dataset.scans))] if add_scan_ids else []
+    start = np.array([scan.timestamps.min() for scan in dataset.scans])
+    end = np.array([scan.timestamps.max() for scan in dataset.scans])
+    compacted_start = [0.0] + np.cumsum(end - start).tolist()
+    time_origin = start.min()
+    p_lims = [np.double(np.inf), np.double(-np.inf)]
+    for scan in dataset.scans:
+        smoothed_power = np.log10(np.abs(remove_spikes(scan.stokes(stokes))))
+        p_lims = [min(p_lims[0], smoothed_power.min()), max(p_lims[1], smoothed_power.max())]
+    images = []
+    for n, scan in enumerate(dataset.scans):
+        specgram = np.log10(np.abs(scan.stokes(stokes))).transpose()
+        images.append(ax.imshow(specgram, aspect='auto', origin='lower', vmin=p_lims[0], vmax=p_lims[1],
+                                extent=(scan.timestamps[0] - start[n] + compacted_start[n],
+                                        scan.timestamps[-1] - start[n] + compacted_start[n],
+                                        dataset.freqs[0], dataset.freqs[-1])))
+    # These border lines have x coordinates fixed to the data and y coordinates fixed to the axes
+    transFixedY = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
+    border_lines = mpl.collections.LineCollection([[(s, 0), (s, 1)] for s in compacted_start[1:-1]], 
+                                                  colors='k', linewidths=2.0, linestyles='solid',
+                                                  transform=transFixedY)
+    ax.add_collection(border_lines)
+    ax.axis([compacted_start[0], compacted_start[-1], dataset.freqs[0], dataset.freqs[-1]])
+    text_labels = []
+    for n, label in enumerate(labels):
+        text_labels.append(ax.text(np.mean(compacted_start[n:n+2]), 0.02, label, transform=transFixedY,
+                                   ha='center', va='bottom', clip_on=True, color='w'))
+    # Redefine x-axis label formatter to display the correct time for each segment
+    class SegmentedScalarFormatter(mpl.ticker.ScalarFormatter):
+        """Expand x axis value to correct segment before labelling."""
+        def __init__(self, useOffset=True, useMathText=False):
+            mpl.ticker.ScalarFormatter.__init__(self, useOffset, useMathText)
+        def __call__(self, x, pos=None):
+            if x > compacted_start[0]:
+                segment = (compacted_start[:-1] < x).nonzero()[0][-1]
+                x = x - compacted_start[segment] + start[segment] - time_origin
+            return mpl.ticker.ScalarFormatter.__call__(self, x, pos)
+    ax.xaxis.set_major_formatter(SegmentedScalarFormatter())
+    ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
+    ax.set_ylabel('Channel frequency (MHz)')
+    return images, border_lines, text_labels
+
+#--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_compacted_segments
 #--------------------------------------------------------------------------------------------------
 
