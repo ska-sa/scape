@@ -177,9 +177,9 @@ class DataSet(object):
     
     def __str__(self):
         """Verbose human-friendly string representation of data set object."""
-        descr = ["antenna='%s', data_unit=%s, freqs=%f - %f MHz, bw=%f MHz, dumprate=%f Hz" %
-                 (self.antenna.name, self.data_unit, self.freqs[0], 
-                  self.freqs[-1], self.bandwidths[0], self.dump_rate)]
+        descr = ["antenna='%s', data_unit=%s, bands=%d, freqs=%f - %f MHz, total bw=%f MHz, dumprate=%f Hz" %
+                 (self.antenna.name, self.data_unit, len(self.freqs), self.freqs[0], 
+                  self.freqs[-1], self.bandwidths.sum(), self.dump_rate)]
         for compscan_ind, compscan in enumerate(self.compscans):
             descr.append("%4d: target='%s' [%s]" % 
                          (compscan_ind, compscan.target.name, compscan.target.tags[0]))
