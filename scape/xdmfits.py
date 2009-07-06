@@ -92,9 +92,9 @@ class NoiseDiodeXDM(NoiseDiodeModel):
             temperature_x = hdu[2 * feed_id + 1].data
             temperature_y = hdu[2 * feed_id + 2].data            
         # Store X and Y tables
-        self.temperature_x = np.vstack((np.array(temperature_x.field('Freq'), dtype='double'), 
+        self.temperature_x = np.vstack((np.array(temperature_x.field('Freq') / 1e6, dtype='double'), 
                                         np.array(temperature_x.field('Temp'), dtype='double'))).transpose()
-        self.temperature_y = np.vstack((np.array(temperature_y.field('Freq'), dtype='double'), 
+        self.temperature_y = np.vstack((np.array(temperature_y.field('Freq') / 1e6, dtype='double'), 
                                         np.array(temperature_y.field('Temp'), dtype='double'))).transpose()
         hdu.close()
 
