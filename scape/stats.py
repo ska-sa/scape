@@ -436,21 +436,21 @@ def chi2_conf_interval(dof, mean=1.0, sigma=3.0):
     
     Parameters
     ----------
-    dof : float
+    dof : array-like or float
         Degrees of freedom (number of independent samples summed to form chi^2 
         variable)
-    mean : array or float, optional
-        Desired mean of chi^2 distribution (may be a numpy array)
-    sigma : array or float, optional
+    mean : array-like or float, optional
+        Desired mean of chi^2 distribution
+    sigma : array-like or float, optional
         Multiple of standard deviation, used to specify size of required
         confidence interval
     
     Returns
     -------
     lower : array or float
-        Lower limit of confidence interval (numpy array if mean is one)
+        Lower limit of confidence interval (numpy array if any input is one)
     upper : array or float
-        Upper limit of confidence interval (numpy array if mean is one)
+        Upper limit of confidence interval (numpy array if any input is one)
     
     Notes
     -----
@@ -466,8 +466,14 @@ def chi2_conf_interval(dof, mean=1.0, sigma=3.0):
     negative lower values, for example.
     
     """
+    if not np.isscalar(dof):
+        dof = np.atleast_1d(np.asarray(dof))
+    if not np.isscalar(mean):
+        mean = np.atleast_1d(np.asarray(mean))
+    if not np.isscalar(sigma):
+        sigma = np.atleast_1d(np.asarray(sigma))
     # Ensure degrees of freedom is positive integer >= 1
-    dof = int(np.max([np.floor(dof), 1.0]))
+    dof = np.array(np.clip(np.floor(dof), 1.0, np.inf), dtype=np.int)
     chi2_rv = stats.chi2(dof)
     normal_rv = stats.norm()
     # Translate normal conf interval to chi^2 distribution, maintaining the probability inside interval
