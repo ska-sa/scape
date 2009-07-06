@@ -9,6 +9,7 @@ import katpoint
 from .compoundscan import CompoundScan
 from .gaincal import calibrate_gain, NoSuitableNoiseDiodeDataFound
 from .beam_baseline import fit_beam_and_baselines
+from .stats import remove_spikes, chi2_conf_interval
 
 # Try to import all available formats
 try:
@@ -61,7 +62,7 @@ class DataSet(object):
     ----------
     freqs : real array, shape (*F*,)
         Centre frequency of each channel/band, in MHz (same as in *corrconf*)
-    bandwidths : real array-like, shape (*F*,)
+    bandwidths : real array, shape (*F*,)
         Bandwidth of each channel/band, in MHz (same as in *corrconf*)
     rfi_channels : list of ints
         RFI-flagged channel indices (same as in *corrconf*)
@@ -327,15 +328,62 @@ class DataSet(object):
         return DataSet(None, compscanlist, self.data_unit, self.corrconf.select(freqkeep),
                        self.antenna.get_description(), self.noise_diode_data)
     
+    def identify_rfi_channels(self, sigma=8.0, min_bad_scans=0.25):
+        """Identify potential RFI-corrupted channels.
+        
+        This is a simple RFI detection procedure that assumes that there are
+        less RFI-corrupted channels than good channels, and that the desired
+        signal is broadband/continuum with similar features across the entire
+        spectrum.
+        
+        Parameters
+        ----------
+        sigma : float, optional
+            Threshold for deviation from signal (non-RFI) template, as a factor
+            of the expected standard deviation of the error under the null
+            hypothesis. By increasing it, less channels are marked as bad. This
+            factor should typically be larger than expected (in the order of 6
+            to 8), as the null hypothesis is quite stringent.
+        min_bad_scans : float, optional
+            The fraction of scans in which a channel has to be marked as bad in
+            order to qualify as RFI-corrupted.
+        
+        Returns
+        -------
+        rfi_channels : list of ints
+            List of potential RFI-corrupted channel indices
+        
+        """
+        # Identiy RFI, based on deviation from template shape in time
+        rfi_count = np.zeros(len(self.freqs))
+        dof = 4.0 * (self.bandwidths * 1e6) / self.dump_rate
+        for scan in self.scans:
+            power = remove_spikes(scan.stokes('I'))
+            offset = power.min(axis=0)
+            scale = power.max(axis=0) - offset
+            scale[scale <= 0.0] = 1.0
+            norm_power = (power - offset[np.newaxis, :]) / scale[np.newaxis, :]
+            template = np.median(norm_power, axis=1)
+            mean_signal_power = np.outer(template, scale) + offset[np.newaxis, :]
+            expected_std = np.sqrt(2.0 / dof[np.newaxis, :]) * mean_signal_power / scale[np.newaxis, :] / \
+                           np.sqrt(template[:, np.newaxis])
+            channel_sumsq = (((norm_power - template[:, np.newaxis]) / expected_std) ** 2).sum(axis=0)
+            lower, upper = chi2_conf_interval(power.shape[0], power.shape[0], sigma)
+            rfi_count += (channel_sumsq < lower) | (channel_sumsq > upper)
+        rfi_channels = (rfi_count > min_bad_scans * len(self.scans)).nonzero()[0]
+        self.rfi_channels = rfi_channels
+        return rfi_channels
     
-    def remove_rfi_channels(self):
+    def remove_rfi_channels(self, rfi_channels=None):
         """Remove RFI-flagged channels from data set, returning a copy.
         
         This is a convenience function that selects all the non-RFI-flagged
         frequency channels in the data set and returns a copy.
         
         """
-        non_rfi = list(set(range(len(self.freqs))) - set(self.rfi_channels))
+        if rfi_channels is None:
+            rfi_channels = self.rfi_channels
+        non_rfi = list(set(range(len(self.freqs))) - set(rfi_channels))
         d = self.select(freqkeep=non_rfi, copy=True)
         DataSet.__init__(self, None, d.compscans, d.data_unit, d.corrconf,
                          d.antenna.get_description(), d.noise_diode_data)
