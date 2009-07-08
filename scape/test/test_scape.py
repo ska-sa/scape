@@ -71,8 +71,12 @@ class PointSourceScanTestCases(unittest.TestCase):
             pointing = np.rec.fromarrays([az, el], names='az,el')
             flags = np.rec.fromarrays([np.tile(True, samples_per_scan),
                                        np.tile(False, samples_per_scan)], names='valid,nd_on')
+            enviro = np.rec.array([(timestamps[0], 35.1, 1020.4, 31.0, 2.0, 45.3)], 
+                                  dtype=[('timestamp', np.float64), ('temperature', np.float32),
+                                         ('pressure', np.float32), ('humidity', np.float32),
+                                         ('wind_speed', np.float32), ('wind_direction', np.float32)])
             time_start += samples_per_scan / dump_rate + 10.
-            scanlist.append(scape.Scan(data, False, timestamps, pointing, flags, 'scan', ('scan_%d' % (n,))))
+            scanlist.append(scape.Scan(data, False, timestamps, pointing, flags, enviro, 'scan', ('scan_%d' % (n,))))
         
         # Construct data set
         nd_data = scape.gaincal.NoiseDiodeModel(np.array([[center_freq_MHz, 10.]]), np.array([[center_freq_MHz, 10.]]))

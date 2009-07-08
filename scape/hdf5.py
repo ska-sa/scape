@@ -104,7 +104,7 @@ def load_dataset(filename):
                 scan_comment = f['Scans'][compscan][scan].attrs['comment'] # TODO: do something with this
                 
                 scanlist.append(Scan(scan_data, False, scan_timestamps, scan_pointing, scan_flags,
-                                     scan_label, filename + '/Scans/%s/%s' % (compscan, scan)))
+                                     scan_environment, scan_label, filename + '/Scans/%s/%s' % (compscan, scan)))
             
             # Sort scans chronologically, as h5py seems to scramble them based on group name
             scanlist.sort(key=lambda scan: scan.timestamps[0])
@@ -174,11 +174,7 @@ def save_dataset(dataset, filename):
                 pointing_view *= 180.0 / np.pi
                 scan_group.create_dataset('pointing', data=pointing, compression='gzip')
                 scan_group.create_dataset('flags', data=scan.flags, compression='gzip')
-                # Dummy environmental data for now
-                num_samples = len(scan.timestamps)
-                enviro = np.rec.fromarrays(np.zeros((3, num_samples), dtype=np.float32),
-                                           names='temperature,pressure,humidity')
-                scan_group.create_dataset('environment', data=enviro, compression='gzip')
+                scan_group.create_dataset('environment', data=scan.environment, compression='gzip')
                 
                 scan_group.attrs['label'] = scan.label
                 scan_group.attrs['comment'] = ''
