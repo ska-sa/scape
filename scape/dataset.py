@@ -328,7 +328,7 @@ class DataSet(object):
         return DataSet(None, compscanlist, self.data_unit, self.corrconf.select(freqkeep),
                        self.antenna.get_description(), self.noise_diode_data)
     
-    def identify_rfi_channels(self, sigma=8.0, min_bad_scans=0.25):
+    def identify_rfi_channels(self, sigma=8.0, min_bad_scans=0.25, extra_outputs=False):
         """Identify potential RFI-corrupted channels.
         
         This is a simple RFI detection procedure that assumes that there are
@@ -346,7 +346,10 @@ class DataSet(object):
             to 8), as the null hypothesis is quite stringent.
         min_bad_scans : float, optional
             The fraction of scans in which a channel has to be marked as bad in
-            order to qualify as RFI-corrupted.
+            order to qualify as RFI-corrupted. This allows for some intermittence
+            in RFI corruption.
+        extra_outputs : {False, True}, optional
+            True if extra information should be returned (intended for plots)
         
         Returns
         -------
@@ -354,25 +357,38 @@ class DataSet(object):
             List of potential RFI-corrupted channel indices
         
         """
-        # Identiy RFI, based on deviation from template shape in time
         rfi_count = np.zeros(len(self.freqs))
         dof = 4.0 * (self.bandwidths * 1e6) / self.dump_rate
+        rfi_data = []
         for scan in self.scans:
+            # Normalise power in scan by removing spikes, offsets and differences in scale
             power = remove_spikes(scan.stokes('I'))
             offset = power.min(axis=0)
             scale = power.max(axis=0) - offset
             scale[scale <= 0.0] = 1.0
             norm_power = (power - offset[np.newaxis, :]) / scale[np.newaxis, :]
+            # Form a template of the desired signal as a function of time
             template = np.median(norm_power, axis=1)
+            # Use this as average power, after adding back scaling and offset
             mean_signal_power = np.outer(template, scale) + offset[np.newaxis, :]
+            # Determine expected standard deviation of power data, assuming it has chi-square distribution
+            # Also divide by an extra sqrt(template) factor, which allows more leeway where template is small
+            # This is useful for absorbing small discrepancies in baseline when scanning across a source
             expected_std = np.sqrt(2.0 / dof[np.newaxis, :]) * mean_signal_power / scale[np.newaxis, :] / \
                            np.sqrt(template[:, np.newaxis])
             channel_sumsq = (((norm_power - template[:, np.newaxis]) / expected_std) ** 2).sum(axis=0)
+            # The sum of squares over time is again a chi-square distribution, with different dof
             lower, upper = chi2_conf_interval(power.shape[0], power.shape[0], sigma)
             rfi_count += (channel_sumsq < lower) | (channel_sumsq > upper)
+            if extra_outputs:
+                rfi_data.append((norm_power, template, expected_std))
+        # Count the number of bad scans per channel, and threshold it
         rfi_channels = (rfi_count > min_bad_scans * len(self.scans)).nonzero()[0]
         self.rfi_channels = rfi_channels
-        return rfi_channels
+        if extra_outputs:
+            return rfi_channels, rfi_count, rfi_data
+        else:
+            return rfi_channels
     
     def remove_rfi_channels(self, rfi_channels=None):
         """Remove RFI-flagged channels from data set, returning a copy.

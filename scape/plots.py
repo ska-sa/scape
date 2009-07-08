@@ -255,7 +255,12 @@ def plot_compacted_spectrogram(dataset, stokes='I', add_scan_ids=True, ax=None):
     images = []
     for n, scan in enumerate(dataset.scans):
         specgram = np.log10(np.abs(scan.stokes(stokes))).transpose()
-        images.append(ax.imshow(specgram, aspect='auto', origin='lower', vmin=p_lims[0], vmax=p_lims[1],
+        colornorm = mpl.colors.Normalize(vmin=p_lims[0], vmax=p_lims[1])
+        image_data = mpl.cm.jet(colornorm(specgram))
+        image_data_rfi = mpl.cm.gray(colornorm(specgram))
+        image_data[dataset.rfi_channels, :, :] = image_data_rfi[dataset.rfi_channels, :, :]
+        images.append(ax.imshow(np.uint8(np.round(image_data * 255)), aspect='auto',
+                                interpolation='nearest', origin='lower',
                                 extent=(scan.timestamps[0] - start[n] + compacted_start[n],
                                         scan.timestamps[-1] - start[n] + compacted_start[n],
                                         dataset.freqs[0], dataset.freqs[-1])))
@@ -362,6 +367,62 @@ def plot_compacted_segments(segments, labels=None, ax=None, **kwargs):
     ax.xaxis.set_major_formatter(SegmentedScalarFormatter())
     return segment_lines, border_lines, text_labels
 
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  plot_rfi_segmentation
+#--------------------------------------------------------------------------------------------------
+
+def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=None, add_scan_ids=True, fig=None):
+    """"""
+    num_channels = len(dataset.freqs)
+    if not channel_skip:
+        channel_skip = max(num_channels // 32, 1)
+    if fig is None:
+        fig = plt.gcf()
+    # Set up axes: one figure with custom subfigures for signal and RFI plots, with shared x and y axes
+    axes_list = []
+    axes_list.append(fig.add_axes([0.125, 6 / 11., 0.8, 4 / 11.]))
+    axes_list.append(fig.add_axes([0.125, 0.1, 0.8, 4 / 11.], sharex=axes_list[0], sharey=axes_list[0]))
+    
+    labels = [str(n) for n in xrange(len(dataset.scans))] if add_scan_ids else []
+    start = np.array([scan.timestamps.min() for scan in dataset.scans])
+    end = np.array([scan.timestamps.max() for scan in dataset.scans])
+    compacted_start = [0.0] + np.cumsum(end - start).tolist()
+    time_origin = start.min()
+    # Identify RFI channels, and return extra data
+    rfi_channels, rfi_count, rfi_data = dataset.identify_rfi_channels(sigma, min_bad_scans, extra_outputs=True)
+    channel_list = np.arange(0, num_channels, channel_skip, dtype='int')
+    non_rfi_channels = list(set(range(num_channels)) - set(rfi_channels))
+    rfi_channels = [n for n in channel_list if n in rfi_channels]
+    non_rfi_channels = [n for n in channel_list if n in non_rfi_channels]
+    template = [np.column_stack((scan.timestamps - time_origin, rfi_data[s][1]))
+                for s, scan in enumerate(dataset.scans)]
+    # Do signal (non-RFI) display
+    ax = axes_list[0]
+    for s, scan in enumerate(dataset.scans):
+        timeline = scan.timestamps - start[s] + compacted_start[s]
+        average_std = np.sqrt(np.sqrt(2) / len(timeline)) * rfi_data[s][2][:, non_rfi_channels].mean(axis=1)
+        lower, upper = rfi_data[s][1] - np.sqrt(sigma) * average_std, rfi_data[s][1] + np.sqrt(sigma) * average_std
+        ax.fill_between(timeline, upper, lower, edgecolor='0.7', facecolor='0.7', lw=0)
+        data_segments = [np.column_stack((timeline, rfi_data[s][0][:, n])) for n in non_rfi_channels]
+        ax.add_collection(mpl.collections.LineCollection(data_segments))
+    plot_compacted_segments(template, labels, ax=ax, lw=2, color='k')
+    ax.set_ylim(-0.05, 1.05)
+    ax.set_ylabel('Normalised power')
+    # do RFI display
+    ax = axes_list[1]
+    for s, scan in enumerate(dataset.scans):
+        timeline = scan.timestamps - start[s] + compacted_start[s]
+        average_std = np.sqrt(np.sqrt(2) / len(timeline)) * rfi_data[s][2][:, rfi_channels].mean(axis=1)
+        lower, upper = rfi_data[s][1] - np.sqrt(sigma) * average_std, rfi_data[s][1] + np.sqrt(sigma) * average_std
+        ax.fill_between(timeline, upper, lower, edgecolor='0.7', facecolor='0.7', lw=0)
+        data_segments = [np.column_stack((timeline, rfi_data[s][0][:, n])) for n in rfi_channels]
+        ax.add_collection(mpl.collections.LineCollection(data_segments))
+    plot_compacted_segments(template, labels, ax=ax, lw=2, color='k')
+    ax.set_ylim(-0.05, 1.05)
+    ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
+    ax.set_ylabel('Normalised power')
+    return axes_list
+    
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_compound_scan_in_time
 #--------------------------------------------------------------------------------------------------
