@@ -121,7 +121,7 @@ def acsm_target_description(target):
             min_freq, max_freq = ref_target._fluxDensity._minFreq_MHz, ref_target._fluxDensity._maxFreq_MHz
             coefs = ref_target._fluxDensity._coefficients
             return "%s, radec %s, %s:%s:%s, %s:%s:%s, (%g %g %s)" % \
-                   list(match.groups()) + [min_freq, max_freq, ' '.join('%g' % c for c in coefs)]
+                   tuple(list(match.groups()) + [min_freq, max_freq, ' '.join('%g' % c for c in coefs)])
     match = re.match(r'(.*)Horizontal\(\((-?\d+), (-?\d+), (-?\d+)\), \((-?\d+), (-?\d+), (-?\d+)\)\)', descr)
     if match:
         return "%s, azel, %s:%s:%s, %s:%s:%s" % match.groups()
