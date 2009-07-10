@@ -98,21 +98,21 @@ class DataSet(object):
         self.compscans = compscanlist
         self.data_unit = data_unit
         self.corrconf = corrconf
-        if isinstance(antenna, basestring):
-            self.antenna = katpoint.construct_antenna(antenna)
-        else:
+        if isinstance(antenna, katpoint.Antenna):
             self.antenna = antenna
+        else:
+            self.antenna = katpoint.construct_antenna(antenna)
         self.noise_diode_data = nd_data
-        # Create scan list
+        # Create scan list and calculate target coordinates for all scans.
+        # This functionality is here at the highest level because it involves interaction between the DataSet,
+        # CompoundScan and Scan levels, while the results need to be stored at a Scan level.
         self.scans = []
         for compscan in self.compscans:
-            self.scans.extend(compscan.scans)
-        # Calculate target coordinates for all scans. This functionality is here at the highest level
-        # because it involves interaction between the DataSet, CompoundScan and Scan levels, while the results
-        # need to be stored at a Scan level.
-        for compscan in self.compscans:
+            # Set default antenna on the target object to the data set antenna
+            compscan.target.antenna = self.antenna
             for scan in compscan.scans:
                 scan.calc_target_coords(compscan.target, self.antenna)
+            self.scans.extend(compscan.scans)
     
     def __eq__(self, other):
         """Equality comparison operator."""

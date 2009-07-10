@@ -135,12 +135,12 @@ class CompoundScan(object):
         Object that describes fitted beam
     
     """
-    def __init__(self, scanlist, target, beam=None, baseline=None):
+    def __init__(self, scanlist, target, beam=None):
         self.scans = scanlist
-        if isinstance(target, basestring):
-            self.target = katpoint.construct_target(target)
-        else:
+        if isinstance(target, katpoint.Target):
             self.target = target
+        else:
+            self.target = katpoint.construct_target(target)
         self.beam = beam
 
     def __eq__(self, other):

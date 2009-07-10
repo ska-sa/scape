@@ -233,14 +233,14 @@ class Scan(object):
         """Short human-friendly string representation of scan object."""
         return "<scape.Scan '%s' data=%s at 0x%x>" % (self.label, self.data.shape, id(self))
     
-    def calc_target_coords(self, target, antenna):
+    def calc_target_coords(self, target, antenna=None):
         """Calculate target coordinates, based on target and antenna objects.
         
         Parameters
         ----------
         target : :class:`katpoint.Target` object
             Target object which is scanned across, obtained from CompoundScan
-        antenna : :class:`katpoint.Antenna` object
+        antenna : :class:`katpoint.Antenna` object, optional
             Antenna object for antenna that does scanning, obtained from DataSet
         
         Returns
