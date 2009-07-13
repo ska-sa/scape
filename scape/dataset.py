@@ -103,17 +103,14 @@ class DataSet(object):
         else:
             self.antenna = katpoint.construct_antenna(antenna)
         self.noise_diode_data = nd_data
-        # Create scan list and calculate target coordinates for all scans.
-        # This functionality is here at the highest level because it involves interaction between the DataSet,
-        # CompoundScan and Scan levels, while the results need to be stored at a Scan level.
+        # Create scan list and calculate target coordinates for all scans
         self.scans = []
         for compscan in self.compscans:
             # Set default antenna on the target object to the data set antenna
             compscan.target.antenna = self.antenna
-            for scan in compscan.scans:
-                scan.calc_target_coords(compscan.target, self.antenna)
             self.scans.extend(compscan.scans)
-    
+        self.calc_target_coords()
+        
     def __eq__(self, other):
         """Equality comparison operator."""
         if len(self.compscans) != len(other.compscans):
@@ -192,6 +189,18 @@ class DataSet(object):
         """Short human-friendly string representation of data set object."""
         return "<scape.DataSet '%s' compscans=%d at 0x%x>" % (self.antenna.name, len(self.compscans), id(self))
     
+    def calc_target_coords(self):
+        """Calculate scan target coordinates, using compound scan target and data set antenna.
+        
+        This functionality is here at the highest level because it involves
+        interaction between the DataSet, CompoundScan and Scan levels, while the
+        results need to be stored at a Scan level.
+        
+        """
+        for compscan in self.compscans:
+            for scan in compscan.scans:
+                scan.calc_target_coords(compscan.target, self.antenna)
+        
     def convert_to_coherency(self):
         """Convert power data to coherency format.
         
