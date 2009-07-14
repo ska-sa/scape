@@ -488,14 +488,14 @@ def plot_compound_scan_in_time(compscan, stokes='I', add_scan_ids=True, band=0, 
         inner_beam_segments.append(np.column_stack((timeline, inner_beam_power)))
     # Plot segments from back to front
     labels = [str(n) for n in xrange(len(compscan.scans))] if add_scan_ids else []
-    plot_compacted_segments(data_segments, labels, ax=ax, color='b', lw=0.5)
+    plot_compacted_segments(data_segments, labels, ax=ax, color='b', lw=1)
+    beam_color = ('r' if beam_refined else 'g') if compscan.beam and compscan.beam.is_valid() else 'y'
+    plot_compacted_segments(baseline_segments, ax=ax, color=('r' if beam_refined else 'g'), lw=2)
     if beam_refined:
-        plot_compacted_segments(baseline_segments, ax=ax, color='r', lw=2)
-        plot_compacted_segments(beam_segments, ax=ax, color='r', lw=2, linestyles='dashed')
-        plot_compacted_segments(inner_beam_segments, ax=ax, color='r', lw=2)
+        plot_compacted_segments(beam_segments, ax=ax, color=beam_color, lw=2, linestyles='dashed')
+        plot_compacted_segments(inner_beam_segments, ax=ax, color=beam_color, lw=2)
     else:
-        plot_compacted_segments(baseline_segments, ax=ax, color='g', lw=2)
-        plot_compacted_segments(beam_segments, ax=ax, color='g', lw=2)
+        plot_compacted_segments(beam_segments, ax=ax, color=beam_color, lw=2)
     # Format axes
     power_range = max(power_limits) - min(power_limits)
     if power_range == 0.0:
@@ -701,7 +701,10 @@ def plot_compound_scan_on_target(compscan, subtract_baseline=True, levels=None, 
     plot_marker_3d(target_coords[0], target_coords[1], total_power, ax=ax)
     # Plot the fitted Gaussian beam function as contours
     if compscan.beam:
-        ell_type, center_type = 'r-', 'r+'
+        if compscan.beam.is_valid():
+            ell_type, center_type = 'r-', 'r+'
+        else:
+            ell_type, center_type = 'y-', 'y+'
         var = fwhm_to_sigma(compscan.beam.width) ** 2.0
         if np.isscalar(var):
             var = [var, var]
