@@ -688,6 +688,10 @@ def plot_compound_scan_on_target(compscan, subtract_baseline=True, levels=None, 
         ax = plt.gca()
     if levels is None:
         levels = [0.5, 0.1]
+    # Check that there are any baselines to plot
+    if subtract_baseline and not np.any([scan.baseline for scan in compscan.scans]):
+        subtract_baseline = False
+        logger.warning('No scans were found with baselines - setting subtract_baseline to False')
     # Extract total power and target coordinates (in degrees) of all scans (or those with baselines)
     if subtract_baseline:
         total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) - scan.baseline(scan.timestamps) 
