@@ -133,15 +133,18 @@ class CompoundScan(object):
         The target of this compound scan, or its description string
     beam : :class:`beam_baseline.BeamPatternFit` object, optional
         Object that describes fitted beam
+    baseline : :class:`fitting.Polynomial2DFit` object, optional
+        Object that describes initial fitted baseline
     
     """
-    def __init__(self, scanlist, target, beam=None):
+    def __init__(self, scanlist, target, beam=None, baseline=None):
         self.scans = scanlist
         if isinstance(target, katpoint.Target):
             self.target = target
         else:
             self.target = katpoint.construct_target(target)
         self.beam = beam
+        self.baseline = baseline
 
     def __eq__(self, other):
         """Equality comparison operator."""
@@ -159,6 +162,10 @@ class CompoundScan(object):
     def __str__(self):
         """Verbose human-friendly string representation of compound scan object."""
         descr = ["target='%s' [%s]" % (self.target.name, self.target.tags[0])]
+        if self.baseline:
+            descr[0] += ', initial baseline offset=%f' % (self.baseline.poly[-1],) 
+        if self.beam:
+            descr[0] += ', beam height=%f' % (self.beam.height,) 
         for scan_ind, scan in enumerate(self.scans):
             descr.append('%4d: %s' % (scan_ind, str(scan)))
         return '\n'.join(descr)

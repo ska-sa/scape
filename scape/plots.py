@@ -458,6 +458,7 @@ def plot_compound_scan_in_time(compscan, stokes='I', add_scan_ids=True, band=0, 
     time_origin = np.array([scan.timestamps.min() for scan in compscan.scans]).min()
     power_limits, data_segments = [], []
     baseline_segments, beam_segments, inner_beam_segments = [], [], []
+    beam_refined = np.any([scan.baseline for scan in compscan.scans])
     
     # Construct segments to be plotted
     for scan in compscan.scans:
@@ -469,27 +470,32 @@ def plot_compound_scan_in_time(compscan, stokes='I', add_scan_ids=True, band=0, 
         if scan.baseline:
             baseline_power = scan.baseline(scan.timestamps)
             baseline_segments.append(np.column_stack((timeline, baseline_power)))
-            if compscan.beam:
+        elif compscan.baseline:
+            baseline_power = compscan.baseline(scan.target_coords)
+            baseline_segments.append(np.column_stack((timeline, baseline_power)))
+        else:
+            baseline_segments.append(np.column_stack((timeline, np.tile(np.nan, len(timeline)))))
+        beam_power, inner_beam_power = np.tile(np.nan, len(timeline)), np.tile(np.nan, len(timeline))
+        if compscan.beam:
+            if scan.baseline or (not beam_refined and compscan.baseline):
                 beam_power = compscan.beam(scan.target_coords.transpose()) + baseline_power
+            if scan.baseline:
                 radius = np.sqrt(((scan.target_coords - compscan.beam.center[:, np.newaxis]) ** 2).sum(axis=0))
                 inner = radius < 0.6 * np.mean(compscan.beam.width)
                 inner_beam_power = beam_power.copy()
                 inner_beam_power[~inner] = np.nan
-                beam_segments.append(np.column_stack((timeline, beam_power)))
-                inner_beam_segments.append(np.column_stack((timeline, inner_beam_power)))
-            else:
-                beam_segments.append(np.column_stack((timeline, np.tile(np.nan, len(timeline)))))
-                inner_beam_segments.append(np.column_stack((timeline, np.tile(np.nan, len(timeline)))))
-        else:
-            baseline_segments.append(np.column_stack((timeline, np.tile(np.nan, len(timeline)))))
-            beam_segments.append(np.column_stack((timeline, np.tile(np.nan, len(timeline)))))
-            inner_beam_segments.append(np.column_stack((timeline, np.tile(np.nan, len(timeline)))))
+        beam_segments.append(np.column_stack((timeline, beam_power)))
+        inner_beam_segments.append(np.column_stack((timeline, inner_beam_power)))
     # Plot segments from back to front
-    plot_compacted_segments(baseline_segments, ax=ax, color='r', lw=2)
-    plot_compacted_segments(beam_segments, ax=ax, color='r', lw=1, linestyles='dashed')
-    plot_compacted_segments(inner_beam_segments, ax=ax, color='r', lw=2)
     labels = [str(n) for n in xrange(len(compscan.scans))] if add_scan_ids else []
-    plot_compacted_segments(data_segments, labels, ax=ax, color='b')
+    plot_compacted_segments(data_segments, labels, ax=ax, color='b', lw=0.5)
+    if beam_refined:
+        plot_compacted_segments(baseline_segments, ax=ax, color='r', lw=2)
+        plot_compacted_segments(beam_segments, ax=ax, color='r', lw=2, linestyles='dashed')
+        plot_compacted_segments(inner_beam_segments, ax=ax, color='r', lw=2)
+    else:
+        plot_compacted_segments(baseline_segments, ax=ax, color='g', lw=2)
+        plot_compacted_segments(beam_segments, ax=ax, color='g', lw=2)
     # Format axes
     power_range = max(power_limits) - min(power_limits)
     if power_range == 0.0:

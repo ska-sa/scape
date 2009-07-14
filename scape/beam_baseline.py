@@ -144,7 +144,7 @@ class BeamPatternFit(ScatterFit):
 #--- FUNCTION :  fit_beam_and_baselines
 #--------------------------------------------------------------------------------------------------
 
-def fit_beam_and_baselines(compscan, expected_width, dof, stokes='I', band=0):
+def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), stokes='I', band=0):
     """Simultaneously fit beam and baselines to all scans in a compound scan.
     
     This fits a beam pattern and baselines to the total power data in all the
@@ -162,6 +162,8 @@ def fit_beam_and_baselines(compscan, expected_width, dof, stokes='I', band=0):
         Expected beamwidth based on antenna diameter, expressed as FWHM in radians
     dof : float
         Degrees of freedom of chi^2 distribution of total power samples
+    bl_degrees : sequence of 2 ints, optional
+        Degrees of initial polynomial baseline, along x and y coordinate
     stokes : {'I', 'Q', 'U', 'V'}, optional
         The Stokes parameter in which to fit beam and baselines
     band : int, optional
@@ -174,6 +176,8 @@ def fit_beam_and_baselines(compscan, expected_width, dof, stokes='I', band=0):
     baselines : list of :class:`fitting.Polynomial1DFit` objects
         List of fitted baseline objects, one per scan (or None for scans that
         were not fitted)
+    initial_baseline : :class:`fitting.Polynomial2DFit` object
+        Initial 2-D polynomial baseline, one for whole compound scan
     
     Notes
     -----
@@ -198,7 +202,6 @@ def fit_beam_and_baselines(compscan, expected_width, dof, stokes='I', band=0):
     scan_power = [remove_spikes(scan.stokes(stokes)[:, band]) for scan in compscan.scans]
     total_power = np.hstack(scan_power)
     target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
-    bl_degrees = (3, 3)
     initial_baseline = Polynomial2DFit(bl_degrees)
     prev_err_power = np.inf
     outer = np.tile(True, len(total_power))
@@ -252,7 +255,7 @@ def fit_beam_and_baselines(compscan, expected_width, dof, stokes='I', band=0):
         for iteration in range(7):
             baseline.fit(scan.timestamps[around_null], scan_power[n][around_null])
             bl_resid = scan_power[n] - baseline(scan.timestamps)
-            around_null = bl_resid < 1.2 * (upper - mean)
+            around_null = bl_resid < 1.0 * (upper - mean)
             if not around_null.any():
                 break
         baselines.append(baseline)
@@ -266,7 +269,7 @@ def fit_beam_and_baselines(compscan, expected_width, dof, stokes='I', band=0):
     logger.debug("Refinement: beam height = %f, width = %f, first null = %f, based on %d of %d scans" % \
                  (beam.height, beam.width, beam.radius_first_null, len(good_scan_resid), len(compscan.scans)))
     
-    return beam, baselines
+    return beam, baselines, initial_baseline
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  interpolate_measured_beam

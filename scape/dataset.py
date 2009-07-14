@@ -181,6 +181,10 @@ class DataSet(object):
         for compscan_ind, compscan in enumerate(self.compscans):
             descr.append("%4d: target='%s' [%s]" % 
                          (compscan_ind, compscan.target.name, compscan.target.tags[0]))
+            if compscan.baseline:
+                descr[-1] += ', initial baseline offset=%f' % (compscan.baseline.poly[-1],) 
+            if compscan.beam:
+                descr[-1] += ', beam height=%f' % (compscan.beam.height,)
             for scan_ind, scan in enumerate(compscan.scans):
                 descr.append('      %4d: %s' % (scan_ind, str(scan)))
         return '\n'.join(descr)
@@ -557,7 +561,8 @@ class DataSet(object):
         # The extra factor of 2 is because Stokes I is the sum of the independent XX and YY samples
         dof = 4.0 * (self.bandwidths[band] * 1e6) / self.dump_rate
         for compscan in self.compscans:
-            compscan.beam, baselines = fit_beam_and_baselines(compscan, expected_width, dof, band=band, **kwargs)
+            compscan.beam, baselines, compscan.baseline = fit_beam_and_baselines(compscan, expected_width, dof, 
+                                                                                 band=band, **kwargs)
             for scan, bl in zip(compscan.scans, baselines):
                 scan.baseline = bl
         return self
