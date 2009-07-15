@@ -458,7 +458,6 @@ def plot_compound_scan_in_time(compscan, stokes='I', add_scan_ids=True, band=0, 
     time_origin = np.array([scan.timestamps.min() for scan in compscan.scans]).min()
     power_limits, data_segments = [], []
     baseline_segments, beam_segments, inner_beam_segments = [], [], []
-    beam_refined = np.any([scan.baseline for scan in compscan.scans])
     
     # Construct segments to be plotted
     for scan in compscan.scans:
@@ -477,7 +476,7 @@ def plot_compound_scan_in_time(compscan, stokes='I', add_scan_ids=True, band=0, 
             baseline_segments.append(np.column_stack((timeline, np.tile(np.nan, len(timeline)))))
         beam_power, inner_beam_power = np.tile(np.nan, len(timeline)), np.tile(np.nan, len(timeline))
         if compscan.beam:
-            if scan.baseline or (not beam_refined and compscan.baseline):
+            if (compscan.beam.is_refined and scan.baseline) or (not compscan.beam.is_refined and compscan.baseline):
                 beam_power = compscan.beam(scan.target_coords.transpose()) + baseline_power
             if scan.baseline:
                 radius = np.sqrt(((scan.target_coords - compscan.beam.center[:, np.newaxis]) ** 2).sum(axis=0))
@@ -489,9 +488,10 @@ def plot_compound_scan_in_time(compscan, stokes='I', add_scan_ids=True, band=0, 
     # Plot segments from back to front
     labels = [str(n) for n in xrange(len(compscan.scans))] if add_scan_ids else []
     plot_compacted_segments(data_segments, labels, ax=ax, color='b', lw=1)
-    beam_color = ('r' if beam_refined else 'g') if compscan.beam and compscan.beam.is_valid() else 'y'
-    plot_compacted_segments(baseline_segments, ax=ax, color=('r' if beam_refined else 'g'), lw=2)
-    if beam_refined:
+    beam_color = ('r' if compscan.beam.is_refined else 'g') if compscan.beam and compscan.beam.is_valid else 'y'
+    baseline_colors = [('r' if scan.baseline else 'g') for scan in compscan.scans]
+    plot_compacted_segments(baseline_segments, ax=ax, color=baseline_colors, lw=2)
+    if compscan.beam and compscan.beam.is_refined:
         plot_compacted_segments(beam_segments, ax=ax, color=beam_color, lw=2, linestyles='dashed')
         plot_compacted_segments(inner_beam_segments, ax=ax, color=beam_color, lw=2)
     else:
@@ -702,10 +702,10 @@ def plot_compound_scan_on_target(compscan, subtract_baseline=True, levels=None, 
         target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans]))
     
     # Show the locations of the scan samples themselves, with marker sizes indicating power values
-    plot_marker_3d(target_coords[0], target_coords[1], total_power, ax=ax)
+    plot_marker_3d(target_coords[0], target_coords[1], total_power, ax=ax, color='b')
     # Plot the fitted Gaussian beam function as contours
     if compscan.beam:
-        if compscan.beam.is_valid():
+        if compscan.beam.is_valid:
             ell_type, center_type = 'r-', 'r+'
         else:
             ell_type, center_type = 'y-', 'y+'
@@ -715,6 +715,10 @@ def plot_compound_scan_on_target(compscan, subtract_baseline=True, levels=None, 
         ellipses = gaussian_ellipses(compscan.beam.center, np.diag(var), contour=levels)
         for ellipse in ellipses:
             ax.plot(rad2deg(ellipse[:, 0]), rad2deg(ellipse[:, 1]), ell_type, lw=2)
+        expected_var = 2 * [fwhm_to_sigma(compscan.beam.expected_width) ** 2.0]
+        expected_ellipses = gaussian_ellipses(compscan.beam.center, np.diag(expected_var), contour=levels)
+        for ellipse in expected_ellipses:
+            ax.plot(rad2deg(ellipse[:, 0]), rad2deg(ellipse[:, 1]), 'k--', lw=2)
         ax.plot([rad2deg(compscan.beam.center[0])], [rad2deg(compscan.beam.center[1])],
                 center_type, ms=12, aa=False, mew=2)
     # Add scan number label next to the start of each scan
