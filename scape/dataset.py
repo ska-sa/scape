@@ -396,7 +396,7 @@ class DataSet(object):
             if extra_outputs:
                 rfi_data.append((norm_power, template, expected_std))
         # Count the number of bad scans per channel, and threshold it
-        rfi_channels = (rfi_count > min_bad_scans * len(self.scans)).nonzero()[0]
+        rfi_channels = (rfi_count > max(min_bad_scans * len(self.scans), 1.0)).nonzero()[0]
         self.rfi_channels = rfi_channels
         if extra_outputs:
             return rfi_channels, rfi_count, rfi_data
@@ -554,9 +554,9 @@ class DataSet(object):
         """
         # FWHM beamwidth for uniformly illuminated circular dish is 1.03 lambda / D
         # FWHM beamwidth for Gaussian-tapered circular dish is 1.22 lambda / D
-        # We are somewhere in between (the factor 1.15 is based on measurements of XDM)
+        # We are somewhere in between (the factor 1.178 is based on measurements of XDM)
         # TODO: this factor needs to be associated with the antenna
-        expected_width = 1.15 * katpoint.lightspeed / (self.freqs[band] * 1e6) / self.antenna.diameter
+        expected_width = 1.178 * katpoint.lightspeed / (self.freqs[band] * 1e6) / self.antenna.diameter
         # Degrees of freedom is time-bandwidth product (2 * BW * t_dump) of each sample
         # The extra factor of 2 is because Stokes I is the sum of the independent XX and YY samples
         dof = 4.0 * (self.bandwidths[band] * 1e6) / self.dump_rate
