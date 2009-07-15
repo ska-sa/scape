@@ -7,6 +7,18 @@ import scipy.signal as signal
 import scipy.stats as stats
 
 #--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  angle_wrap
+#--------------------------------------------------------------------------------------------------
+
+def angle_wrap(angle, period=2.0 * np.pi):
+    """Wrap angle into interval centred on zero.
+    
+    This wraps the *angle* into the interval -*period* / 2 ... *period* / 2.
+    
+    """
+    return (angle + 0.5 * period) % period - 0.5 * period
+
+#--------------------------------------------------------------------------------------------------
 #--- CLASS :  MuSigmaArray
 #--------------------------------------------------------------------------------------------------
 
@@ -320,9 +332,8 @@ def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
     data *= scale
     # Calculate a "safe" mean on the unit circle
     mu = np.arctan2(np.sin(data).mean(axis=0), np.cos(data).mean(axis=0))
-    delta_ang = data - mu
     # Wrap angle differences into interval -pi ... pi
-    delta_ang = (delta_ang + np.pi) % (2.0 * np.pi) - np.pi
+    delta_ang = angle_wrap(data - mu)
     # Calculate variance using standard formula with a second correction term
     sigma2 = (delta_ang ** 2.0).mean(axis=0) - (delta_ang.mean(axis=0) ** 2.0)
     # Scale answers back to original data range
@@ -355,9 +366,8 @@ def minimise_angle_wrap(angles, axis=0):
     angles = np.asarray(angles)
     # Calculate a "safe" mean on the unit circle
     mu = np.arctan2(np.sin(angles).mean(axis=axis), np.cos(angles).mean(axis=axis))
-    delta_ang = angles - np.expand_dims(mu, axis)
     # Wrap angle differences into interval -pi ... pi
-    delta_ang = (delta_ang + np.pi) % (2.0 * np.pi) - np.pi
+    delta_ang = angle_wrap(angles - np.expand_dims(mu, axis))
     return delta_ang + np.expand_dims(mu, axis)
     
 #--------------------------------------------------------------------------------------------------
