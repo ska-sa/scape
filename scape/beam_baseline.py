@@ -257,7 +257,7 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), sto
             continue
         # Calculate standard deviation of samples, based on "ideal total-power radiometer equation"
         mean = scan_power[n].min()
-        lower, upper = chi2_conf_interval(dof, mean)
+        upper = chi2_conf_interval(dof, mean)[1]
         # Move baseline down as low as possible, taking confidence interval into account
         baseline = Polynomial1DFit(max_degree=1)
         for iteration in range(7):

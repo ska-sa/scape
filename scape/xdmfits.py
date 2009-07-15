@@ -105,10 +105,10 @@ class NoiseDiodeXDM(NoiseDiodeModel):
 
 def acsm_target_description(target):
     """Create katpoint target description from ACSM target object."""
+    # pylint: disable-msg=W0212
     ref_target = target.get_reference_target()
     # Extract TLE from TLE targets
     if isinstance(ref_target, acsm.targets.tle.TLE):
-        # pylint: disable-msg=W0212
         return 'tle, ' + ref_target._name + '\n' + ref_target._line1 + '\n' + ref_target._line2
     # Look for fixed and stationary targets
     descr = ref_target.get_description()
