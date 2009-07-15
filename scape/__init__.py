@@ -3,8 +3,13 @@
 import logging
 import sys
 
-# Set up basic logging if it hasn't been done yet, in order to display error messages and such
+# Setup library logger, and suppress spurious logger messages via a null handler
+class _NullHandler(logging.Handler):
+    def emit(self, record):
+        pass
 logger = logging.getLogger("scape")
+logger.addHandler(_NullHandler())
+# Set up basic logging if it hasn't been done yet, in order to display error messages and such
 logging.basicConfig(level=logging.DEBUG, stream=sys.stdout, format="%(levelname)s: %(message)s")
 
 # Most operations are directed through the data set
