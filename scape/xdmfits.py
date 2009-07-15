@@ -24,10 +24,11 @@ acsm_logger.setLevel(logging.ERROR)
 # pylint: disable-msg=W0611
 import acsm
 
-from katpoint import deg2rad, construct_target
+from katpoint import deg2rad, rad2deg, construct_target, construct_antenna
 from .scan import Scan, move_start_to_center
 from .compoundscan import CompoundScan, CorrelatorConfig
 from .gaincal import NoiseDiodeModel, NoiseDiodeNotFound
+from .stats import angle_wrap
 
 logger = logging.getLogger("scape.xdmfits")
 
@@ -90,7 +91,7 @@ class NoiseDiodeXDM(NoiseDiodeModel):
                 logger.error(msg)
                 raise ValueError(msg)
             temperature_x = hdu[2 * feed_id + 1].data
-            temperature_y = hdu[2 * feed_id + 2].data            
+            temperature_y = hdu[2 * feed_id + 2].data
         # Store X and Y tables
         self.temperature_x = np.vstack((np.array(temperature_x.field('Freq') / 1e6, dtype='double'), 
                                         np.array(temperature_x.field('Temp'), dtype='double'))).transpose()
@@ -141,7 +142,7 @@ def acsm_antenna_description(mount):
         return descr
     # This is typically a futile thing to return, but will help debug why the above match failed
     return descr
-    
+
 def load_scan(filename):
     """Load scan from single XDM FITS file.
     
@@ -232,11 +233,15 @@ def load_scan(filename):
     return Scan(data, is_stokes, timestamps, pointing, flags, environment, label, path), \
            data_unit, corrconf, target, antenna, exp_seq_num, feed_id
 
-def load_dataset(data_filename, nd_filename=None):
+def load_dataset(data_filename, nd_filename=None, catalogue=None, **kwargs):
     """Load data set from XDM FITS file series.
     
     This loads the XDM data set starting at the given filename and consisting of
     consecutively numbered FITS files. The noise diode model can be overridden.
+    The target objects of each compound scan can also be refined if they are of
+    *radec* type, by looking them up by name or by closest distance in the given
+    :class:`katpoint.Catalogue`. This is useful to work around the apparent
+    ra/dec values stored in the ACSM target objects.
     
     Parameters
     ----------
@@ -244,6 +249,10 @@ def load_dataset(data_filename, nd_filename=None):
         Name of first FITS file in sequence
     nd_filename : string, optional
         Name of FITS file containing alternative noise diode model
+    catalogue : :class:`katpoint.Catalogue` object, optional
+        Catalogue used to refine ACSM target objects in data set
+    kwargs : dict, optional
+        Extra keyword arguments are ignored, as they usually apply to other formats
     
     Returns
     -------
@@ -314,5 +323,28 @@ def load_dataset(data_filename, nd_filename=None):
     # Assemble CompoundScan objects from scan lists
     compscanlist = []
     for esn, scanlist in scanlists.iteritems():
-        compscanlist.append(CompoundScan(scanlist, targets[esn]))
+        target = construct_target(targets[esn])
+        # Refine radec target to replace its apparent ra/dec coords with astrometric ones
+        if catalogue and (target.tags[0] == 'radec'):
+            # First attempt named lookup, then try distance-based lookup
+            new_target = catalogue[target.name.strip()]
+            if new_target:
+                logger.info("Replaced original ACSM target '%s' with target '%s' in catalogue" %
+                            (target.name, new_target.name))
+                target = new_target
+            else:
+                ant = construct_antenna(antenna)
+                cat_pos = np.array([t.apparent_radec(scan.timestamps[0], ant) for t in catalogue])
+                targ_pos = np.array(target.astrometric_radec(scan.timestamps[0], ant))
+                pos_error = angle_wrap(cat_pos - targ_pos[np.newaxis, :])
+                distance = np.sqrt((pos_error * pos_error).sum(axis=1))
+                closest = distance.argmin()
+                if distance[closest] < deg2rad(30. / 3600.):
+                    logger.info("Replaced original ACSM target '%s' with closest target '%s' in catalogue" %
+                                (target.name, catalogue.targets[closest].name))
+                    target = catalogue.targets[closest]
+                else:
+                    logger.warning("No target in catalogue close enough to '%s' (closest is %.1f arcsecs away)" %
+                                   (target.name, rad2deg(distance[closest]) * 3600.))
+        compscanlist.append(CompoundScan(scanlist, target))
     return compscanlist, data_unit, corrconf, antenna, nd_data

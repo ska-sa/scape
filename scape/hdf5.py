@@ -17,7 +17,7 @@ logger = logging.getLogger("scape.hdf5")
 #--- FUNCTION :  load_dataset
 #--------------------------------------------------------------------------------------------------
 
-def load_dataset(filename):
+def load_dataset(filename, **kwargs):
     """Load data set from HDF5 file.
     
     This loads a data set from an HDF5 file.
@@ -26,6 +26,8 @@ def load_dataset(filename):
     ----------
     filename : string
         Name of input HDF5 file
+    kwargs : dict, optional
+        Extra keyword arguments are ignored, as they usually apply to other formats
     
     Returns
     -------
