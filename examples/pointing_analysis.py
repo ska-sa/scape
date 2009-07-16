@@ -1,5 +1,7 @@
 #
-# Reduce pointing data, possibly interactively.
+# Example script that uses scape to reduce pointing data. The user can interactively
+# observe reduction results and discard bad data. The end product is a file
+# containing pointing offsets.
 #
 # Ludwig Schwardt
 # 13 July 2009
@@ -21,7 +23,7 @@ import katpoint
 # Parse command-line options and arguments
 parser = optparse.OptionParser(usage="%prog [options] <directories or files>",
                                description="This processes one or more datasets (FITS or HDF5) and extracts \
-                                            pointing errors from them. It runs interactively by default, \
+                                            pointing offsets from them. It runs interactively by default, \
                                             which allows the user to inspect results and discard bad scans. \
                                             By default all datasets in the current directory and all \
                                             subdirectories are processed.")
@@ -54,27 +56,24 @@ for arg in args:
         datasets.extend(glob.glob(arg))
 # Use iterator to step through data sets instead as the buttons are pressed
 dataset_iter = iter(datasets)
-pointing_errors = []
+pointing_offsets = []
 
 def load_reduce_plot(ax1=None, ax2=None):
     """Load next data set, reduce the data and update the plot in given axes."""
-    # Get next file name - if no more, stop and save pointing errors to file and exit
+    # Get next file name - if no more, stop and save pointing offsets to file and exit
     try:
         filename = dataset_iter.next()
     except StopIteration:
-        f = file('pointing_errors.txt', 'w')
-        f.write('Name, req az (deg), req el (deg), az offset (deg), el offset (deg)\n')
-        f.writelines([('%s, %.7f, %.7f, %.7f, %.7f\n' % p) for p in pointing_errors if p])
+        f = file('pointing_offsets.csv', 'w')
+        f.write('dataset, azimuth, elevation, delta.azimuth, delta.elevation\n')
+        f.writelines([('%s, %.7f, %.7f, %.7f, %.7f\n' % p) for p in pointing_offsets if p])
         f.close()
         sys.exit(0)
     
     # Load data set
     print "Loading dataset '%s'" % (filename,)
     d = scape.DataSet(filename, catalogue=cat)
-    # Remove silly XDM experiment structure if loading from FITS
     if filename.endswith('.fits'):
-        d.compscans[0].scans.append(d.compscans[1].scans[0])
-        d.compscans.pop()
         name = '%s_%s' % tuple(filename.split(os.path.sep)[-3:-1])
     else:
         name = os.path.splitext(os.path.basename(filename))[0]
@@ -86,7 +85,7 @@ def load_reduce_plot(ax1=None, ax2=None):
     d = d.select(labelkeep='scan')
     d.fit_beams_and_baselines()
     
-    # Calculate pointing error
+    # Calculate pointing offset
     compscan = d.compscans[0]
     middle_time = np.median([scan.timestamps for scan in compscan.scans])
     requested_azel = compscan.target.azel(middle_time)
@@ -116,9 +115,9 @@ def load_reduce_plot(ax1=None, ax2=None):
         plt.draw()
     
     if compscan.beam and compscan.beam.is_valid:
-        pointing_errors.append((name, requested_azel[0], requested_azel[1], offset_azel[0], offset_azel[1]))
+        pointing_offsets.append((name, requested_azel[0], requested_azel[1], offset_azel[0], offset_azel[1]))
     else:
-        pointing_errors.append(None)
+        pointing_offsets.append(None)
     
 # This will cycle through all data sets and stop when done
 if options.batch:
@@ -138,7 +137,7 @@ def keep_callback(event):
 keep_button.on_clicked(keep_callback)
 discard_button = widgets.Button(plt.axes([0.81, 0.05, 0.1, 0.075]), 'Discard')
 def discard_callback(event):
-    pointing_errors.pop()
+    pointing_offsets.pop()
     load_reduce_plot(ax1, ax2)
 discard_button.on_clicked(discard_callback)
 
