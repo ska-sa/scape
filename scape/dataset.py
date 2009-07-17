@@ -412,7 +412,7 @@ class DataSet(object):
         """
         if rfi_channels is None:
             rfi_channels = self.rfi_channels
-        non_rfi = list(set(range(len(self.freqs))) - set(rfi_channels))
+        non_rfi = sorted(list(set(range(len(self.freqs))) - set(rfi_channels)))
         d = self.select(freqkeep=non_rfi, copy=True)
         DataSet.__init__(self, None, d.compscans, d.data_unit, d.corrconf,
                          d.antenna.get_description(), d.noise_diode_data)
