@@ -142,12 +142,13 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
                     # Obtain mean and standard deviation of difference between averaged power in the segments
                     nd_delta = MuSigmaArray(nd_on.mu - nd_off.mu,
                                             np.sqrt(nd_on.sigma ** 2 + nd_off.sigma ** 2))
-                    # Only keep jumps with significant change in power
+                    # Only keep jumps with significant *increase* in power (focus on the positive I or XX/YY)
                     # This discards segments where noise diode did not fire as expected
-                    significance = np.abs(nd_delta.mu / nd_delta.sigma)
+                    norm_jump = nd_delta.mu / nd_delta.sigma
+                    norm_jump = norm_jump[:, :1] if scan.is_stokes else norm_jump[:, :2]
                     # Remove NaNs which typically occur with perfect simulated data (zero mu and zero sigma)
-                    significance[np.isnan(significance)] = 0.0
-                    if np.mean(significance, axis=0).max() > jump_significance:
+                    norm_jump[np.isnan(norm_jump)] = 0.0
+                    if np.mean(norm_jump, axis=0).max() > jump_significance:
                         nd_jump_times.append(scan.timestamps[mid])
                         nd_jump_power.append(nd_delta)
     return nd_jump_times, nd_jump_power
