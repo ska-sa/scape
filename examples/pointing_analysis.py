@@ -74,7 +74,11 @@ def load_reduce_plot(ax1=None, ax2=None):
     print "Loading dataset '%s'" % (filename,)
     d = scape.DataSet(filename, catalogue=cat)
     if filename.endswith('.fits'):
-        name = '%s_%s' % tuple(filename.split(os.path.sep)[-3:-1])
+        dirs = filename.split(os.path.sep)
+        if len(dirs) > 2:
+            name = '%s_%s' % tuple(dirs[-3:-1])
+        else:
+            name = '%s' % (dirs[0],)
     else:
         name = os.path.splitext(os.path.basename(filename))[0]
     
@@ -108,10 +112,11 @@ def load_reduce_plot(ax1=None, ax2=None):
         ax1.set_ylabel('Total power (%s)' % d.data_unit)
         ax2.clear()
         scape.plot_compound_scan_on_target(compscan, ax=ax2)
-        ax2.text(0, -0.2, 'Expected beamwidth = %.1f arcmin\nFitted beamwidth = %.1f arcmin' % 
-                          (60. * katpoint.rad2deg(compscan.beam.expected_width),
-                           60. * katpoint.rad2deg(compscan.beam.width)),
-                 ha='left', va='top', transform=ax2.transAxes)
+        if compscan.beam:
+            ax2.text(0, -0.2, 'Expected beamwidth = %.1f arcmin\nFitted beamwidth = %.1f arcmin' % 
+                              (60. * katpoint.rad2deg(compscan.beam.expected_width),
+                               60. * katpoint.rad2deg(compscan.beam.width)),
+                     ha='left', va='top', transform=ax2.transAxes)
         plt.draw()
     
     if compscan.beam and compscan.beam.is_valid:

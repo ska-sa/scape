@@ -275,9 +275,11 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), sto
     if len(good_scan_coords) > 1:
         # Beam height is underestimated, as remove_spikes() flattens beam top - adjust it based on Gaussian beam
         beam.fit(np.hstack(good_scan_coords).transpose(), 1.0047 * np.hstack(good_scan_resid))
-        beam.is_refined = True
         logger.debug("Refinement: beam height = %f, width = %f, first null = %f, based on %d of %d scans" % \
-                     (beam.height, beam.width, beam.radius_first_null, len(good_scan_resid), len(compscan.scans)))
+                      (beam.height, beam.width, beam.radius_first_null, len(good_scan_resid), len(compscan.scans)))
+        beam.is_refined = True
+        if np.isnan(beam.center).any() or np.isnan(beam.width).any() or np.isnan(beam.height):
+            beam = None
     return beam, baselines, initial_baseline
 
 #--------------------------------------------------------------------------------------------------
