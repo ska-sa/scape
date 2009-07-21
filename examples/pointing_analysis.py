@@ -91,7 +91,7 @@ def load_reduce_plot(ax1=None, ax2=None):
     
     # Calculate pointing offset
     compscan = d.compscans[0]
-    middle_time = np.median([scan.timestamps for scan in compscan.scans])
+    middle_time = np.median([scan.timestamps for scan in compscan.scans], axis=None)
     requested_azel = compscan.target.azel(middle_time)
     requested_azel = katpoint.rad2deg(np.array(requested_azel))
     if compscan.beam:
