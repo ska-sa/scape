@@ -54,23 +54,26 @@ for arg in args:
         os.path.walk(arg, walk_callback, None)
     else:
         datasets.extend(glob.glob(arg))
-# Use iterator to step through data sets instead as the buttons are pressed
-dataset_iter = iter(datasets)
+if len(datasets) == 0:
+    print 'No data sets (HDF5 or XDM FITS) found'
+    sys.exit(1)
+# Index to step through data sets as the buttons are pressed
+index = 0
 pointing_offsets = []
 
-def load_reduce_plot(ax1=None, ax2=None):
-    """Load next data set, reduce the data and update the plot in given axes."""
-    # Get next file name - if no more, stop and save pointing offsets to file and exit
-    try:
-        filename = dataset_iter.next()
-    except StopIteration:
+def next_load_reduce_plot(ax1=None, ax2=None):
+    """Load next data set, reduce the data, update the plot in given axes and store pointing offset."""
+    # If end of list is reached, save pointing offsets to file and exit
+    global index
+    if index >= len(datasets):
         f = file('pointing_offsets.csv', 'w')
         f.write('dataset, azimuth, elevation, delta.azimuth, delta.elevation\n')
         f.writelines([('%s, %.7f, %.7f, %.7f, %.7f\n' % p) for p in pointing_offsets if p])
         f.close()
         sys.exit(0)
     
-    # Load data set
+    # Load next data set
+    filename = datasets[index]
     print "Loading dataset '%s'" % (filename,)
     d = scape.DataSet(filename, catalogue=cat)
     if filename.endswith('.fits'):
@@ -81,7 +84,7 @@ def load_reduce_plot(ax1=None, ax2=None):
             name = '%s' % (dirs[0],)
     else:
         name = os.path.splitext(os.path.basename(filename))[0]
-    
+        
     # Standard reduction
     d.remove_rfi_channels()
     d.convert_power_to_temperature()
@@ -113,39 +116,60 @@ def load_reduce_plot(ax1=None, ax2=None):
         ax2.clear()
         scape.plot_compound_scan_on_target(compscan, ax=ax2)
         if compscan.beam:
-            ax2.text(0, -0.2, 'Expected beamwidth = %.1f arcmin\nFitted beamwidth = %.1f arcmin' % 
-                              (60. * katpoint.rad2deg(compscan.beam.expected_width),
-                               60. * katpoint.rad2deg(compscan.beam.width)),
+            ax2.text(0, -0.25, "Expected beamwidth = %.1f'\nFitted beamwidth = %.1f'" % 
+                               (60. * katpoint.rad2deg(compscan.beam.expected_width),
+                                60. * katpoint.rad2deg(compscan.beam.width)),
                      ha='left', va='top', transform=ax2.transAxes)
         plt.draw()
     
-    if compscan.beam and compscan.beam.is_valid:
-        pointing_offsets.append((name, requested_azel[0], requested_azel[1], offset_azel[0], offset_azel[1]))
-    else:
+    # If beam is marked as invalid, discard pointing only if in batch mode (otherwise discard button has to do it)
+    if not compscan.beam or (options.batch and not compscan.beam.is_valid):
         pointing_offsets.append(None)
+    else:
+        pointing_offsets.append((name, requested_azel[0], requested_azel[1], offset_azel[0], offset_azel[1]))
+    index += 1
     
+### BATCH MODE ###
+
 # This will cycle through all data sets and stop when done
 if options.batch:
     while True:
-        load_reduce_plot()
+        next_load_reduce_plot()
+
+### INTERACTIVE MODE ###
 
 # Set up figure with buttons
 plt.ion()
 plt.figure(1)
 plt.clf()
 ax1, ax2 = plt.subplot(211), plt.subplot(212)
-plt.subplots_adjust(bottom=0.175)
+plt.subplots_adjust(bottom=0.2)
 # Create buttons and their callbacks
-keep_button = widgets.Button(plt.axes([0.7, 0.05, 0.1, 0.075]), 'Keep')
+keep_button = widgets.Button(plt.axes([0.48, 0.05, 0.1, 0.075]), 'Keep')
 def keep_callback(event):
-    load_reduce_plot(ax1, ax2)
+    next_load_reduce_plot(ax1, ax2)
 keep_button.on_clicked(keep_callback)
-discard_button = widgets.Button(plt.axes([0.81, 0.05, 0.1, 0.075]), 'Discard')
+discard_button = widgets.Button(plt.axes([0.59, 0.05, 0.1, 0.075]), 'Discard')
 def discard_callback(event):
-    pointing_offsets.pop()
-    load_reduce_plot(ax1, ax2)
+    pointing_offsets[-1] = None
+    next_load_reduce_plot(ax1, ax2)
 discard_button.on_clicked(discard_callback)
+back_button = widgets.Button(plt.axes([0.7, 0.05, 0.1, 0.075]), 'Back')
+def back_callback(event):
+    global index
+    if index > 1:
+        index -= 2
+        pointing_offsets.pop()
+        pointing_offsets.pop()
+    next_load_reduce_plot(ax1, ax2)
+back_button.on_clicked(back_callback)
+done_button = widgets.Button(plt.axes([0.81, 0.05, 0.1, 0.075]), 'Done')
+def done_callback(event):
+    global index
+    index = len(datasets)
+    next_load_reduce_plot(ax1, ax2)
+done_button.on_clicked(done_callback)
 
 # Start off the processing
-load_reduce_plot(ax1, ax2)
+next_load_reduce_plot(ax1, ax2)
 plt.show()
