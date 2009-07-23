@@ -119,7 +119,7 @@ class DataSet(object):
             if self_compscan != other_compscan:
                 return False
         return (self.data_unit == other.data_unit) and (self.corrconf == other.corrconf) and \
-               (self.antenna.get_description() == other.antenna.get_description()) and \
+               (self.antenna.description == other.antenna.description) and \
                (self.noise_diode_data == other.noise_diode_data)
     
     def __ne__(self, other):
@@ -337,9 +337,9 @@ class DataSet(object):
                 if (labelkeep is None) or (scan.label in labelkeep):
                     scanlist.append(scan.select(timekeep, freqkeep, copy))
             if scanlist:
-                compscanlist.append(CompoundScan(scanlist, compscan.target.get_description()))
+                compscanlist.append(CompoundScan(scanlist, compscan.target.description))
         return DataSet(None, compscanlist, self.data_unit, self.corrconf.select(freqkeep),
-                       self.antenna.get_description(), self.noise_diode_data)
+                       self.antenna.description, self.noise_diode_data)
     
     def identify_rfi_channels(self, sigma=8.0, min_bad_scans=0.25, extra_outputs=False):
         """Identify potential RFI-corrupted channels.
@@ -415,7 +415,7 @@ class DataSet(object):
         non_rfi = sorted(list(set(range(len(self.freqs))) - set(rfi_channels)))
         d = self.select(freqkeep=non_rfi, copy=True)
         DataSet.__init__(self, None, d.compscans, d.data_unit, d.corrconf,
-                         d.antenna.get_description(), d.noise_diode_data)
+                         d.antenna.description, d.noise_diode_data)
         return self
     
     def convert_power_to_temperature(self, randomise=False, **kwargs):

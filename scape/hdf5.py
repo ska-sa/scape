@@ -136,7 +136,7 @@ def save_dataset(dataset, filename):
     with h5py.File(filename, 'w') as f:
         f['/'].create_dataset('pointing_model', data=np.zeros(16, dtype=np.float32))
         f['/'].attrs['data_unit'] = dataset.data_unit
-        f['/'].attrs['antenna'] = dataset.antenna.get_description()
+        f['/'].attrs['antenna'] = dataset.antenna.description
         f['/'].attrs['comment'] = ''
         
         corrconf_group = f.create_group('CorrelatorConfig')
@@ -155,7 +155,7 @@ def save_dataset(dataset, filename):
         scans_group = f.create_group('Scans')
         for compscan_ind, compscan in enumerate(dataset.compscans):
             compscan_group = scans_group.create_group('CompoundScan%d' % compscan_ind)
-            compscan_group.attrs['target'] = compscan.target.get_description()
+            compscan_group.attrs['target'] = compscan.target.description
             compscan_group.attrs['comment'] = ''
             
             for scan_ind, scan in enumerate(compscan.scans):
