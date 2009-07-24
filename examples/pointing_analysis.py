@@ -74,6 +74,7 @@ def next_load_reduce_plot(ax1=None, ax2=None):
     
     # Load next data set
     filename = datasets[index]
+    index += 1
     print "Loading dataset '%s'" % (filename,)
     d = scape.DataSet(filename, catalogue=cat)
     if filename.endswith('.fits'):
@@ -91,6 +92,17 @@ def next_load_reduce_plot(ax1=None, ax2=None):
     d.average()
     d = d.select(labelkeep='scan')
     d.fit_beams_and_baselines()
+    
+    # Handle missing data gracefully
+    if len(d.compscans) == 0:
+        print 'WARNING: No scan data found, skipping data set'
+        pointing_offsets.append(None)
+        if not options.batch:
+            ax1.clear()
+            ax1.set_title("%s - no scan data found" % name, size='medium')
+            ax2.clear()
+            plt.draw()
+        return
     
     # Calculate pointing offset
     compscan = d.compscans[0]
@@ -127,7 +139,6 @@ def next_load_reduce_plot(ax1=None, ax2=None):
         pointing_offsets.append(None)
     else:
         pointing_offsets.append((name, requested_azel[0], requested_azel[1], offset_azel[0], offset_azel[1]))
-    index += 1
     
 ### BATCH MODE ###
 
