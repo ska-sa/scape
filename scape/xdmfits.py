@@ -38,7 +38,7 @@ logger = logging.getLogger("scape.xdmfits")
 
 class NoiseDiodeXDM(NoiseDiodeModel):
     """A container for noise diode calibration data (XDM FITS version).
-    
+
     This allows the (randomised) calculation of the noise diode temperature from
     the tables stored in a FITS file, as a function of frequency. This is the
     second version, used for XDM after April 2009, which uses a simple
@@ -47,7 +47,7 @@ class NoiseDiodeXDM(NoiseDiodeModel):
     actual noise diode temperature is requested. This can load data from both
     the data FITS file and the optional cal FITS file. In the latter case the
     feed ID has to be specified (but not in the former case).
-    
+
     Parameters
     ----------
     filename : string
@@ -59,7 +59,7 @@ class NoiseDiodeXDM(NoiseDiodeModel):
     ------
     gaincal.NoiseDiodeNotFound
         If the noise diode tables are not present in the FITS file
-    
+
     """
     def __init__(self, filename, feed_id=None):
         NoiseDiodeModel.__init__(self)
@@ -93,9 +93,9 @@ class NoiseDiodeXDM(NoiseDiodeModel):
             temperature_x = hdu[2 * feed_id + 1].data
             temperature_y = hdu[2 * feed_id + 2].data
         # Store X and Y tables
-        self.temperature_x = np.vstack((np.array(temperature_x.field('Freq') / 1e6, dtype='double'), 
+        self.temperature_x = np.vstack((np.array(temperature_x.field('Freq') / 1e6, dtype='double'),
                                         np.array(temperature_x.field('Temp'), dtype='double'))).transpose()
-        self.temperature_y = np.vstack((np.array(temperature_y.field('Freq') / 1e6, dtype='double'), 
+        self.temperature_y = np.vstack((np.array(temperature_y.field('Freq') / 1e6, dtype='double'),
                                         np.array(temperature_y.field('Temp'), dtype='double'))).transpose()
         hdu.close()
 
@@ -145,12 +145,12 @@ def acsm_antenna_description(mount):
 
 def load_scan(filename):
     """Load scan from single XDM FITS file.
-    
+
     Parameters
     ----------
     filename : string
         Name of FITS file
-    
+
     Returns
     -------
     scan : :class:`scan.Scan` object
@@ -167,12 +167,12 @@ def load_scan(filename):
         Experiment sequence number associated with scan
     feed_id : int
         Index of feed used (0 for main feed or 1 for offset feed)
-    
+
     Raises
     ------
     IOError
         If file would not open or is not a proper FITS file
-    
+
     """
     hdu = pyfits.open(filename)
     try:
@@ -181,7 +181,7 @@ def load_scan(filename):
         hdu.close()
         raise IOError("File '%s' does not comply with FITS standard" % filename)
     header = hdu['PRIMARY'].header
-    
+
     is_stokes = (header['Stokes0'] == 'I')
     start_time = np.double(header['tEpoch'])
     start_time_offset = np.double(header['tStart'])
@@ -191,7 +191,7 @@ def load_scan(filename):
     channel_width = np.double(header['ChannelB'])
     exp_seq_num = int(header['ExpSeqN'])
     feed_id = int(header['FeedID'])
-    
+
     if is_stokes:
         data = np.dstack([hdu['MSDATA'].data.field(s) for s in ['I', 'Q', 'U', 'V']])
     else:
@@ -200,7 +200,7 @@ def load_scan(filename):
     timestamps = np.arange(num_samples, dtype=np.float64) * sample_period + start_time + start_time_offset
     # Round timestamp to nearest millisecond, as this corresponds to KAT7 accuracy and allows better data comparison
     timestamps = np.round(timestamps * 1000.0) / 1000.0
-    pointing = np.rec.fromarrays([deg2rad(hdu['MSDATA'].data.field(s).astype(np.float32)) 
+    pointing = np.rec.fromarrays([deg2rad(hdu['MSDATA'].data.field(s).astype(np.float32))
                                   for s in ['AzAng', 'ElAng', 'RotAng']],
                                  names=['az', 'el', 'rot'])
     # Move timestamps and pointing from start of each sample to the middle
@@ -217,7 +217,7 @@ def load_scan(filename):
     data_header = hdu['MSDATA'].header
     label = str(data_header['ID'+str(data_header['DATAID'])])
     path = filename
-    
+
     data_unit = 'raw'
     freqs = hdu['CHANNELS'].data.field('Freq') / 1e6
     bandwidths = np.repeat(channel_width, len(freqs)) / 1e6
@@ -226,23 +226,23 @@ def load_scan(filename):
     # Therefore, remove any invalid indices, as a further safeguard
     rfi_channels = [x for x in rfi_channels if (x >= 0) and (x < len(freqs))]
     corrconf = CorrelatorConfig(freqs, bandwidths, rfi_channels, dump_rate)
-    
+
     target = acsm_target_description(cPickle.loads(hdu['OBJECTS'].data.field('Target')[0]))
     antenna = acsm_antenna_description(cPickle.loads(hdu['OBJECTS'].data.field('Mount')[0]))
-    
+
     return Scan(data, is_stokes, timestamps, pointing, flags, environment, label, path), \
            data_unit, corrconf, target, antenna, exp_seq_num, feed_id
 
 def load_dataset(data_filename, nd_filename=None, catalogue=None, **kwargs):
     """Load data set from XDM FITS file series.
-    
+
     This loads the XDM data set starting at the given filename and consisting of
     consecutively numbered FITS files. The noise diode model can be overridden.
     The target objects of each compound scan can also be refined if they are of
     *radec* type, by looking them up by name or by closest distance in the given
     :class:`katpoint.Catalogue`. This is useful to work around the apparent
     ra/dec values stored in the ACSM target objects.
-    
+
     Parameters
     ----------
     data_filename : string
@@ -253,7 +253,7 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, **kwargs):
         Catalogue used to refine ACSM target objects in data set
     kwargs : dict, optional
         Extra keyword arguments are ignored, as they usually apply to other formats
-    
+
     Returns
     -------
     compscanlist : list of :class:`compoundscan.CompoundScan` objects
@@ -266,14 +266,14 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, **kwargs):
         Description string of antenna that produced the data set
     nd_data : :class:`NoiseDiodeXDM` object
         Noise diode model
-    
+
     Raises
     ------
     ValueError
         If data filename does not have expected numbering as part of name
     IOError
         If data file does not exist, could not be opened or is invalid FITS file
-    
+
     """
     match = re.match(r'(.+)_(\d\d\d\d).fits$', data_filename)
     if not match:
@@ -317,7 +317,7 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, **kwargs):
                 except NoiseDiodeNotFound:
                     pass
         target = construct_target(target)
-        logger.info("Loaded %s: %s '%s' [%s] (%d samps, %d chans, %d pols)" % 
+        logger.info("Loaded %s: %s '%s' [%s] (%d samps, %d chans, %d pols)" %
                     (os.path.basename(fits_file), scan.label, target.name, target.tags[0],
                      scan.data.shape[0], scan.data.shape[1], scan.data.shape[2]))
     # Assemble CompoundScan objects from scan lists

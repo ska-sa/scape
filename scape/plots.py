@@ -26,7 +26,7 @@ def ordinal_suffix(n):
 
 def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
     """Waterfall plot of power data as a function of time and frequency.
-    
+
     Parameters
     ----------
     dataset : :class:`scape.DataSet` object
@@ -38,12 +38,12 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
         channel). The default results in about 32 channels.
     fig : :class:`matplotlib.figure.Figure` object, optional
         Matplotlib Figure object to contain plots (default is current figure)
-    
+
     Returns
     -------
     axes_list : list of :class:`matplotlib.axes.Axes` objects
         List of matplotlib Axes objects, one per plot
-    
+
     """
     if not channel_skip:
         channel_skip = max(len(dataset.freqs) // 32, 1)
@@ -52,12 +52,12 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
     # Set up axes: one figure with custom subfigures for waterfall and spectrum plots, with shared x and y axes
     axes_list = []
     axes_list.append(fig.add_axes([0.125, 6 / 11., 0.6, 4 / 11.]))
-    axes_list.append(fig.add_axes([0.125, 0.1, 0.6, 4 / 11.], 
+    axes_list.append(fig.add_axes([0.125, 0.1, 0.6, 4 / 11.],
                                                sharex=axes_list[0], sharey=axes_list[0]))
     axes_list.append(fig.add_axes([0.74, 6 / 11., 0.16, 4 / 11.], sharey=axes_list[0]))
     axes_list.append(fig.add_axes([0.74, 0.1, 0.16, 4 / 11.],
                                   sharex=axes_list[2], sharey=axes_list[0]))
-    
+
     # Use relative time axis and obtain data limits (of smoothed data) per channel
     scans = dataset.scans
     if not scans:
@@ -67,7 +67,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
     channel_bandwidths_GHz = dataset.bandwidths / 1e3
     rfi_channels = dataset.rfi_channels
     num_channels = len(channel_freqs_GHz)
-    data_min = {'XX': np.tile(np.inf, (len(scans), num_channels)), 
+    data_min = {'XX': np.tile(np.inf, (len(scans), num_channels)),
                 'YY': np.tile(np.inf, (len(scans), num_channels))}
     data_max = {'XX': np.zeros((len(scans), num_channels)),
                 'YY': np.zeros((len(scans), num_channels))}
@@ -87,7 +87,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
     channel_list = np.arange(0, num_channels, channel_skip, dtype='int')
     offsets = np.column_stack((np.zeros(len(channel_list), dtype='float'), channel_freqs_GHz[channel_list]))
     scale = 0.08 * num_channels
-    
+
     # Plot of raw XX and YY power in all channels
     t_limits, p_limits = [], []
     for ax_ind, pol in enumerate(['XX', 'YY']):
@@ -112,7 +112,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
                     lines.set_linewidth(0.5)
                     ax.add_collection(lines)
                 else:
-                    ax.plot(segments[0][:, 0] + offsets.squeeze()[0], 
+                    ax.plot(segments[0][:, 0] + offsets.squeeze()[0],
                             segments[0][:, 1] + offsets.squeeze()[1], color=colors[0], lw=0.5)
                 t_limits += [time_line.min(), time_line.max()]
                 all_scans.append(scan.coherency(pol))
@@ -204,7 +204,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
     p_limits = np.array(p_limits)
     for ax in axes_list[2:]:
         ax.set_xlim(p_limits.min(), p_limits.max())
-        
+
     return axes_list
 
 #--------------------------------------------------------------------------------------------------
@@ -213,13 +213,13 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
 
 def plot_compacted_spectrogram(dataset, stokes='I', add_scan_ids=True, ax=None):
     """Plot spectrogram of all scans in data set in compacted form.
-    
+
     This plots the spectrogram of each scan in the data set on a single set of
     axes, with no gaps between the spectrogram images. This is done for all times
     and all channels. The tick labels on the *x* axis are modified to reflect
     the correct timestamps, and the breaks between scans are indicated by
     vertical lines.
-    
+
     Parameters
     ----------
     dataset : :class:`scape.DataSet` object
@@ -230,7 +230,7 @@ def plot_compacted_spectrogram(dataset, stokes='I', add_scan_ids=True, ax=None):
         True if scan index numbers are to be added to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
-    
+
     Returns
     -------
     images : list of :class:`matplotlib.image.AxesImage` objects
@@ -239,7 +239,7 @@ def plot_compacted_spectrogram(dataset, stokes='I', add_scan_ids=True, ax=None):
         Collection of vertical lines separating the segments
     text_labels : list of :class:`matplotlib.text.Text` objects
         List of added text labels
-    
+
     """
     if ax is None:
         ax = plt.gca()
@@ -266,7 +266,7 @@ def plot_compacted_spectrogram(dataset, stokes='I', add_scan_ids=True, ax=None):
                                         dataset.freqs[0], dataset.freqs[-1])))
     # These border lines have x coordinates fixed to the data and y coordinates fixed to the axes
     transFixedY = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
-    border_lines = mpl.collections.LineCollection([[(s, 0), (s, 1)] for s in compacted_start[1:-1]], 
+    border_lines = mpl.collections.LineCollection([[(s, 0), (s, 1)] for s in compacted_start[1:-1]],
                                                   colors='k', linewidths=2.0, linestyles='solid',
                                                   transform=transFixedY)
     ax.add_collection(border_lines)
@@ -296,21 +296,21 @@ def plot_compacted_spectrogram(dataset, stokes='I', add_scan_ids=True, ax=None):
 
 def plot_compacted_segments(segments, labels=None, ax=None, **kwargs):
     """Plot sequence of line segments in compacted form.
-    
+
     This plots a sequence of line segments (of possibly varying length) on a
     single set of axes, with no gaps between the segments along the *x* axis.
     The tick labels on the *x* axis are modified to reflect the original (padded)
     values, and the breaks between segments are indicated by vertical lines.
-    
+
     Parameters
     ----------
     segments : sequence of array-like, shape (N_k, 2)
         Sequence of line segments (*line0*, *line1*, ..., *linek*, ..., *lineK*),
         where the k'th line is given by::
-        
+
             linek = (x0, y0), (x1, y1), ... (x_{N_k - 1}, y_{N_k - 1})
-        
-        or the equivalent numpy array with two columns (for *x* and *y* values, 
+
+        or the equivalent numpy array with two columns (for *x* and *y* values,
         respectively). Each line segment can be a different length. This is
         identical to the *segments* parameter of
         :class:`matplotlib.collections.LineCollection`.
@@ -320,7 +320,7 @@ def plot_compacted_segments(segments, labels=None, ax=None, **kwargs):
         Matplotlib axes object to receive plot (default is current axes)
     kwargs : dict, optional
         Extra keyword arguments are passed on to line collection constructor
-    
+
     Returns
     -------
     segment_lines : :class:`matplotlib.collections.LineCollection` object
@@ -329,7 +329,7 @@ def plot_compacted_segments(segments, labels=None, ax=None, **kwargs):
         Collection of vertical lines separating the segments
     text_labels : list of :class:`matplotlib.text.Text` objects
         List of added text labels
-    
+
     """
     if ax is None:
         ax = plt.gca()
@@ -345,7 +345,7 @@ def plot_compacted_segments(segments, labels=None, ax=None, **kwargs):
     ax.add_collection(segment_lines)
     # These border lines have x coordinates fixed to the data and y coordinates fixed to the axes
     transFixedY = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
-    border_lines = mpl.collections.LineCollection([[(s, 0), (s, 1)] for s in compacted_start[1:-1]], 
+    border_lines = mpl.collections.LineCollection([[(s, 0), (s, 1)] for s in compacted_start[1:-1]],
                                                   colors='k', linewidths=0.5, linestyles='dotted',
                                                   transform=transFixedY)
     ax.add_collection(border_lines)
@@ -382,7 +382,7 @@ def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=N
     axes_list = []
     axes_list.append(fig.add_axes([0.125, 6 / 11., 0.8, 4 / 11.]))
     axes_list.append(fig.add_axes([0.125, 0.1, 0.8, 4 / 11.], sharex=axes_list[0], sharey=axes_list[0]))
-    
+
     labels = [str(n) for n in xrange(len(dataset.scans))] if add_scan_ids else []
     start = np.array([scan.timestamps.min() for scan in dataset.scans])
     end = np.array([scan.timestamps.max() for scan in dataset.scans])
@@ -422,18 +422,18 @@ def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=N
     ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
     ax.set_ylabel('Normalised power')
     return axes_list
-    
+
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_compound_scan_in_time
 #--------------------------------------------------------------------------------------------------
 
 def plot_compound_scan_in_time(compscan, stokes='I', add_scan_ids=True, band=0, ax=None):
     """Plot total power scans of compound scan with superimposed beam/baseline fit.
-    
+
     This plots time series plots of the total power in the scans comprising a
     compound scan, with the beam and baseline fits superimposed. It highlights
     the success of the beam and baseline fitting procedure.
-    
+
     Parameters
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
@@ -446,19 +446,19 @@ def plot_compound_scan_in_time(compscan, stokes='I', add_scan_ids=True, band=0, 
         Frequency band to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
-    
+
     Returns
     -------
     axes_list : list of :class:`matplotlib.axes.Axes` objects
         List of matplotlib Axes objects, one per plot
-    
+
     """
     if ax is None:
         ax = plt.gca()
     time_origin = np.array([scan.timestamps.min() for scan in compscan.scans]).min()
     power_limits, data_segments = [], []
     baseline_segments, beam_segments, inner_beam_segments = [], [], []
-    
+
     # Construct segments to be plotted
     for scan in compscan.scans:
         timeline = scan.timestamps - time_origin
@@ -511,7 +511,7 @@ def plot_compound_scan_in_time(compscan, stokes='I', add_scan_ids=True, band=0, 
 
 def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter', num_lines=8, ax=None, **kwargs):
     """Pseudo-3D scatter plot using marker size to indicate height.
-    
+
     This plots markers at given ``(x, y)`` positions, with marker size determined
     by *z* values. This is an alternative to :func:`matplotlib.pyplot.pcolor`,
     with the advantage that the *x* and *y* values do not need to be on a regular
@@ -519,7 +519,7 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
     disadvantage is that the markers may have excessive overlap or very small
     sizes, which obscures the plot. This can be controlled by the max_size and
     min_size parameters.
-    
+
     Parameters
     ----------
     x : sequence
@@ -540,23 +540,23 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
         Matplotlib axes object to receive plot (default is current axes)
     kwargs : dict, optional
         Extra keyword arguments are passed on to underlying plot function
-    
+
     Returns
     -------
     handle : handle or list
         Handle of asterisk line, list of circle patches, or scatter collection
-    
+
     Raises
     ------
     ValueError
         If marker type is unknown
-    
+
     """
     x, y, z = np.asarray(x), np.asarray(y), np.asarray(z)
     assert max_size >= min_size, "In plot_marker_3d, min_size should not be bigger than max_size."
     if ax is None:
         ax = plt.gca()
-    
+
     # Normalise z to lie between 0 and 1
     z = (z - z.min()) / (z.max() - z.min())
     # Threshold z, so that the minimum size will have the desired ratio to the maximum size
@@ -568,7 +568,7 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
         min_dist[ind] = np.sqrt(dist_sq[dist_sq > 0].min())
     # Scale z so that maximum value is desired factor of median spacing
     z *= max_size * np.median(min_dist)
-    
+
     if marker_type == 'asterisk':
         # Use random initial angles so that asterisks don't overlap in regular pattern, which obscures their size
         ang = np.pi * np.random.random_sample(z.shape)
@@ -582,13 +582,13 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
             ang += np.pi / num_lines
         # All asterisks form part of one big line...
         return ax.plot(x_asterisks, y_asterisks, **kwargs)
-        
+
     elif marker_type == 'circle':
         # Add a circle patch for each marker
         for ind in xrange(len(x)):
             ax.add_patch(mpl.patches.Circle((x[ind], y[ind]), z[ind], **kwargs))
         return ax.patches
-    
+
     elif marker_type == 'scatter':
         # Get axes size in points
         points_per_axis = ax.get_position().extents[2:] * ax.get_figure().get_size_inches() * 72.0
@@ -598,7 +598,7 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
         # Scale according to largest data axis
         z *= points_per_data.min()
         return ax.scatter(x, y, 20.0 * z ** 2, **kwargs)
-        
+
     else:
         raise ValueError("Unknown marker type '" + marker_type + "'")
 
@@ -608,7 +608,7 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
 
 def gaussian_ellipses(mean, cov, contour=0.5, num_points=200):
     """Contour ellipses of two-dimensional Gaussian function.
-    
+
     Parameters
     ----------
     mean : real array-like, shape (2,)
@@ -620,17 +620,17 @@ def gaussian_ellipses(mean, cov, contour=0.5, num_points=200):
         For a factor *sigma* of standard deviation, use ``exp(-0.5 * sigma**2)``.
     num_points : int, optional
         Number of points *N* on each ellipse
-    
+
     Returns
     -------
     ellipses : real array, shape (*K*, *N*, 2)
         Array containing 2-D ellipse coordinates
-    
+
     Raises
     ------
     ValueError
         If mean and/or cov has wrong shape
-    
+
     """
     mean = np.asarray(mean)
     cov = np.asarray(cov)
@@ -657,11 +657,11 @@ def gaussian_ellipses(mean, cov, contour=0.5, num_points=200):
 
 def plot_compound_scan_on_target(compscan, subtract_baseline=True, levels=None, add_scan_ids=True, band=0, ax=None):
     """Plot total power scans of compound scan in target space with beam fit.
-    
+
     This plots contour ellipses of a Gaussian beam function fitted to the scans
     of a compound scan, as well as the total power of the scans as a pseudo-3D
     plot. It highlights the success of the beam fitting procedure.
-    
+
     Parameters
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
@@ -677,12 +677,12 @@ def plot_compound_scan_on_target(compscan, subtract_baseline=True, levels=None, 
         Frequency band to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
-    
+
     Returns
     -------
     ax : :class:`matplotlib.axes.Axes` object
         Matplotlib Axes object representing plot
-    
+
     """
     if ax is None:
         ax = plt.gca()
@@ -694,13 +694,13 @@ def plot_compound_scan_on_target(compscan, subtract_baseline=True, levels=None, 
         logger.warning('No scans were found with baselines - setting subtract_baseline to False')
     # Extract total power and target coordinates (in degrees) of all scans (or those with baselines)
     if subtract_baseline:
-        total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) - scan.baseline(scan.timestamps) 
+        total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) - scan.baseline(scan.timestamps)
                                  for scan in compscan.scans if scan.baseline])
         target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans if scan.baseline]))
     else:
         total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
         target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans]))
-    
+
     # Show the locations of the scan samples themselves, with marker sizes indicating power values
     plot_marker_3d(target_coords[0], target_coords[1], total_power, ax=ax, color='b')
     # Plot the fitted Gaussian beam function as contours
@@ -747,7 +747,7 @@ def plot_compound_scan_on_target(compscan, subtract_baseline=True, levels=None, 
 
 def plot_data_set_in_mount_space(dataset, levels=None, band=0, ax=None):
     """Plot total power scans of all compound scans in mount space with beam fits.
-    
+
     This plots the total power of all scans in the data set as a pseudo-3D plot
     in 'instantaneous mount' space. This space has azimuth and elevation
     coordinates like the standard antenna pointing data, but assumes that each
@@ -756,11 +756,11 @@ def plot_data_set_in_mount_space(dataset, levels=None, band=0, ax=None):
     in mount space, which makes the plots easier to interpret. Its advantage
     over normal target space is that it can display multiple compound scans on
     the same plot.
-    
+
     For each compound scan, contour ellipses of the fitted Gaussian beam function
     are added, if it exists. It highlights the success of the beam fitting
     procedure.
-    
+
     Parameters
     ----------
     dataset : :class:`scape.DataSet` object
@@ -772,18 +772,18 @@ def plot_data_set_in_mount_space(dataset, levels=None, band=0, ax=None):
         Frequency band to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
-    
+
     Returns
     -------
     ax : :class:`matplotlib.axes.Axes` object
         Matplotlib Axes object representing plot
-    
+
     """
     if ax is None:
         ax = plt.gca()
     if levels is None:
         levels = [0.5, 0.1]
-    
+
     for compscan in dataset.compscans:
         total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
         target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
@@ -808,7 +808,7 @@ def plot_data_set_in_mount_space(dataset, levels=None, band=0, ax=None):
             mount_ellipses[0] = all_az[len(mount_coords[0]) + 1:].reshape(mount_ellipses[0].shape[:2])
         else:
             mount_coords[0] = minimise_angle_wrap(mount_coords[0])
-            
+
         # Show the locations of the scan samples themselves, with marker sizes indicating power values
         plot_marker_3d(rad2deg(mount_coords[0]), rad2deg(mount_coords[1]), total_power, ax=ax)
         # Plot the fitted Gaussian beam function as contours
@@ -817,7 +817,7 @@ def plot_data_set_in_mount_space(dataset, levels=None, band=0, ax=None):
             for ellipse in np.dstack(mount_ellipses):
                 ax.plot(rad2deg(ellipse[:, 0]), rad2deg(ellipse[:, 1]), ell_type, lw=2)
             ax.plot([rad2deg(mount_center[0])], [rad2deg(mount_center[1])], center_type, ms=12, aa=False, mew=2)
-    
+
     # Axis settings and labels
     ax.set_aspect('equal')
     ax.set_xlabel('az (deg)')
@@ -830,12 +830,12 @@ def plot_data_set_in_mount_space(dataset, levels=None, band=0, ax=None):
 
 def plot_db_contours(x, y, Z, levels=None, sin_coords=False, add_lines=True, ax=None):
     """Filled contour plot of 2-D spherical function in decibels.
-    
+
     The spherical function ``z = f(x, y)`` is a function of two angles, *x* and
     *y*, given in degrees. The function should be real-valued, but may contain
     negative parts. These are indicated by dashed contours. The contour levels
     are based on the absolute value of *z* in dBs.
-    
+
     Parameters
     ----------
     x : real array-like, shape (N,)
@@ -853,12 +853,12 @@ def plot_db_contours(x, y, Z, levels=None, sin_coords=False, add_lines=True, ax=
         True if contour lines should be added to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
-    
+
     Returns
     -------
     cset : :class:`matplotlib.contour.ContourSet` object
         Set of filled contour regions (useful for setting up color bar)
-    
+
     """
     # pylint: disable-msg=C0103
     if ax is None:
@@ -879,7 +879,7 @@ def plot_db_contours(x, y, Z, levels=None, sin_coords=False, add_lines=True, ax=
     Z_db[Z_db < levels.min() + 0.01] = levels.min() + 0.01
     # Also keep below highest contour level for the same reason
     Z_db[Z_db > levels.max() - 0.01] = levels.max() - 0.01
-    
+
     cset = ax.contourf(x, y, Z_db, levels)
     mpl.rc('contour', negative_linestyle='solid')
     if add_lines:
@@ -916,7 +916,7 @@ def plot_db_contours(x, y, Z, levels=None, sin_coords=False, add_lines=True, ax=
 def plot_measured_beam_pattern(compscan, stokes='I', subtract_baseline=True, add_samples=True, add_colorbar=True,
                                band=0, ax=None, **kwargs):
     """Plot measured beam pattern contained in compound scan.
-    
+
     Parameters
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
@@ -936,14 +936,14 @@ def plot_measured_beam_pattern(compscan, stokes='I', subtract_baseline=True, add
     kwargs : dict, optional
         Extra keyword arguments are passed to underlying :func:`plot_db_contours`
         function
-    
+
     Returns
     -------
     ax : :class:`matplotlib.axes.Axes` object
         Matplotlib Axes object representing plot
     cset : :class:`matplotlib.contour.ContourSet` object
         Set of filled contour regions (useful for setting up color bar)
-    
+
     """
     if ax is None:
         ax = plt.gca()

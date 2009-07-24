@@ -32,7 +32,7 @@ logger = logging.getLogger("scape.dataset")
 
 class DataSet(object):
     """Container for the data of a single-dish experiment.
-    
+
     This is the top-level container for the data of a single-dish experiment.
     Given a data filename, the initialiser determines the appropriate file format
     to use, based on the file extension. If the filename is blank, the
@@ -40,7 +40,7 @@ class DataSet(object):
     parts, which is useful for simulations and creating the data sets from
     scratch. The :class:`DataSet` object contains a list of compound scans, as
     well as the correlator configuration, antenna details and noise diode model.
-    
+
     Parameters
     ----------
     filename : string
@@ -52,12 +52,12 @@ class DataSet(object):
     corrconf : :class:`compoundscan.CorrelatorConfig` object, optional
         Correlator configuration object
     antenna : :class:`katpoint.Antenna` object or string, optional
-        Antenna that produced the data set, as object or description string 
+        Antenna that produced the data set, as object or description string
     nd_data : :class:`gaincal.NoiseDiodeModel` object, optional
         Noise diode model
     kwargs : dict, optional
         Extra keyword arguments are passed to selected :func:`load_dataset` function
-    
+
     Attributes
     ----------
     freqs : real array, shape (*F*,)
@@ -70,7 +70,7 @@ class DataSet(object):
         Correlator dump rate, in Hz (same as in *corrconf*)
     scans : list of :class:`scan.Scan` objects
         Flattened list of all scans in data set
-    
+
     Raises
     ------
     ImportError
@@ -79,7 +79,7 @@ class DataSet(object):
         If file extension is unknown
     KeyError
         If the antenna name is unknown
-    
+
     """
     def __init__(self, filename, compscanlist=None, data_unit=None, corrconf=None,
                  antenna=None, nd_data=None, **kwargs):
@@ -110,7 +110,7 @@ class DataSet(object):
             compscan.target.antenna = self.antenna
             self.scans.extend(compscan.scans)
         self.calc_target_coords()
-        
+
     def __eq__(self, other):
         """Equality comparison operator."""
         if len(self.compscans) != len(other.compscans):
@@ -121,11 +121,11 @@ class DataSet(object):
         return (self.data_unit == other.data_unit) and (self.corrconf == other.corrconf) and \
                (self.antenna.description == other.antenna.description) and \
                (self.noise_diode_data == other.noise_diode_data)
-    
+
     def __ne__(self, other):
         """Inequality comparison operator."""
         return not self.__eq__(other)
-    
+
     # Provide properties to access the attributes of the correlator configuration directly
     # This uses the same trick as in stats.MuSigmaArray to create the properties, which
     # leads to less class namespace clutter, but more pylint uneasiness (shame).
@@ -139,7 +139,7 @@ class DataSet(object):
             self.corrconf.freqs = value
         return locals()
     freqs = property(**freqs())
-    
+
     # pylint: disable-msg=E0211,E0202,W0612,W0142
     def bandwidths():
         """Class method which creates bandwidths property."""
@@ -150,7 +150,7 @@ class DataSet(object):
             self.corrconf.bandwidths = value
         return locals()
     bandwidths = property(**bandwidths())
-    
+
     # pylint: disable-msg=E0211,E0202,W0612,W0142
     def rfi_channels():
         """Class method which creates rfi_channels property."""
@@ -161,7 +161,7 @@ class DataSet(object):
             self.corrconf.rfi_channels = value
         return locals()
     rfi_channels = property(**rfi_channels())
-    
+
     # pylint: disable-msg=E0211,E0202,W0612,W0142
     def dump_rate():
         """Class method which creates dump_rate property."""
@@ -172,72 +172,72 @@ class DataSet(object):
             self.corrconf.dump_rate = value
         return locals()
     dump_rate = property(**dump_rate())
-    
+
     def __str__(self):
         """Verbose human-friendly string representation of data set object."""
         descr = ["antenna='%s', data_unit=%s, bands=%d, freqs=%f - %f MHz, total bw=%f MHz, dumprate=%f Hz" %
-                 (self.antenna.name, self.data_unit, len(self.freqs), self.freqs[0], 
+                 (self.antenna.name, self.data_unit, len(self.freqs), self.freqs[0],
                   self.freqs[-1], self.bandwidths.sum(), self.dump_rate)]
         for compscan_ind, compscan in enumerate(self.compscans):
-            descr.append("%4d: target='%s' [%s]" % 
+            descr.append("%4d: target='%s' [%s]" %
                          (compscan_ind, compscan.target.name, compscan.target.tags[0]))
             if compscan.baseline:
-                descr[-1] += ', initial baseline offset=%f' % (compscan.baseline.poly[-1],) 
+                descr[-1] += ', initial baseline offset=%f' % (compscan.baseline.poly[-1],)
             if compscan.beam:
                 descr[-1] += ', beam height=%f' % (compscan.beam.height,)
             for scan_ind, scan in enumerate(compscan.scans):
                 descr.append('      %4d: %s' % (scan_ind, str(scan)))
         return '\n'.join(descr)
-    
+
     def __repr__(self):
         """Short human-friendly string representation of data set object."""
         return "<scape.DataSet '%s' compscans=%d at 0x%x>" % (self.antenna.name, len(self.compscans), id(self))
-    
+
     def calc_target_coords(self):
         """Calculate scan target coordinates, using compound scan target and data set antenna.
-        
+
         This functionality is here at the highest level because it involves
         interaction between the DataSet, CompoundScan and Scan levels, while the
         results need to be stored at a Scan level.
-        
+
         """
         for compscan in self.compscans:
             for scan in compscan.scans:
                 scan.calc_target_coords(compscan.target, self.antenna)
-        
+
     def convert_to_coherency(self):
         """Convert power data to coherency format.
-        
+
         This is a convenience function to convert the data of the underlying
         scans to coherency format.
-        
+
         """
         for scan in self.scans:
             scan.convert_to_coherency()
-    
+
     def convert_to_stokes(self):
         """Convert power data to Stokes parameter format.
-        
+
         This is a convenience function to convert the data of the underlying
         scans to Stokes parameter format.
-        
+
         """
         for scan in self.scans:
             scan.convert_to_stokes()
-    
+
     def save(self, filename, **kwargs):
         """Save data set object to file.
-        
+
         This automatically figures out which file format to use based on the
         file extension.
-        
+
         Parameters
         ----------
         filename : string
             Name of output file
         kwargs : dict, optional
             Extra keyword arguments are passed on to underlying save function
-        
+
         Raises
         ------
         IOError
@@ -246,7 +246,7 @@ class DataSet(object):
             If file extension is unknown or unsupported
         ImportError
             If file extension is known, but appropriate module would not import
-        
+
         """
         if os.path.exists(filename):
             raise IOError('File %s already exists - please remove first!' % filename)
@@ -259,10 +259,10 @@ class DataSet(object):
             hdf5_save(self, filename, **kwargs)
         else:
             raise ValueError("File extension '%s' not understood" % ext)
-    
+
     def select(self, labelkeep=None, flagkeep=None, freqkeep=None, copy=False):
         """Select subset of data set, based on scan label, flags and frequency.
-        
+
         This returns a data set with a possibly reduced number of time samples,
         frequency channels/bands and scans, based on the selection criteria.
         Since each scan potentially has a different number of time samples,
@@ -270,12 +270,12 @@ class DataSet(object):
         flags are used to select a subset of time samples in each scan. The
         list of flags are ANDed together to determine which parts are kept. It
         is also possible to invert flags by prepending a ~ (tilde) character.
-        
+
         Based on the value of *copy*, the new data set contains either a view of
         the original data or a copy. All criteria are optional, and with no
         parameters the returned data set is unchanged. This can be used to make
         a copy of the data set.
-        
+
         Parameters
         ----------
         labelkeep : string or list of strings, optional
@@ -292,17 +292,17 @@ class DataSet(object):
             be kept). The default is None, which keeps all channels/bands.
         copy : {False, True}, optional
             True if the new scan is a copy, False if it is a view
-        
+
         Returns
         -------
         dataset : :class:`DataSet` object
             Data set with selection of scans with possibly smaller data arrays.
-        
+
         Raises
         ------
         KeyError
             If flag in *flagkeep* is unknown
-        
+
         """
         # Handle the cases of a single input string (not in a list)
         if isinstance(labelkeep, basestring):
@@ -340,15 +340,15 @@ class DataSet(object):
                 compscanlist.append(CompoundScan(scanlist, compscan.target.description))
         return DataSet(None, compscanlist, self.data_unit, self.corrconf.select(freqkeep),
                        self.antenna.description, self.noise_diode_data)
-    
+
     def identify_rfi_channels(self, sigma=8.0, min_bad_scans=0.25, extra_outputs=False):
         """Identify potential RFI-corrupted channels.
-        
+
         This is a simple RFI detection procedure that assumes that there are
         less RFI-corrupted channels than good channels, and that the desired
         signal is broadband/continuum with similar features across the entire
         spectrum.
-        
+
         Parameters
         ----------
         sigma : float, optional
@@ -363,12 +363,12 @@ class DataSet(object):
             in RFI corruption.
         extra_outputs : {False, True}, optional
             True if extra information should be returned (intended for plots)
-        
+
         Returns
         -------
         rfi_channels : list of ints
             List of potential RFI-corrupted channel indices
-        
+
         """
         rfi_count = np.zeros(len(self.freqs))
         dof = 4.0 * (self.bandwidths * 1e6) / self.dump_rate
@@ -402,13 +402,13 @@ class DataSet(object):
             return rfi_channels, rfi_count, rfi_data
         else:
             return rfi_channels
-    
+
     def remove_rfi_channels(self, rfi_channels=None):
         """Remove RFI-flagged channels from data set, returning a copy.
-        
+
         This is a convenience function that selects all the non-RFI-flagged
         frequency channels in the data set and returns a copy.
-        
+
         """
         if rfi_channels is None:
             rfi_channels = self.rfi_channels
@@ -417,10 +417,10 @@ class DataSet(object):
         DataSet.__init__(self, None, d.compscans, d.data_unit, d.corrconf,
                          d.antenna.description, d.noise_diode_data)
         return self
-    
+
     def convert_power_to_temperature(self, randomise=False, **kwargs):
         """Convert raw power into temperature (K) based on noise injection.
-        
+
         This is a convenience function that converts the raw power measurements
         in the data set to temperatures, based on the change in levels caused by
         switching the noise diode on and off. At the same time it corrects for
@@ -428,7 +428,7 @@ class DataSet(object):
         relative phase shifts between them. It should be called before averaging
         the data, as gain calibration should happen on the finest available
         frequency scale.
-        
+
         Parameters
         ----------
         randomise : {False, True}, optional
@@ -451,7 +451,7 @@ class DataSet(object):
             return calibrate_gain(self, randomise, **kwargs)
         except NoSuitableNoiseDiodeDataFound:
             logger.error('No suitable noise diode on/off blocks were found - calibration aborted')
-        
+
     def average(self, channels_per_band='all', time_window=1):
         """Average data in time and/or frequency.
 
@@ -462,7 +462,7 @@ class DataSet(object):
         non-overlapping windows of this length, and the rest of the time-varying
         data is averaged accordingly. The default behaviour is to average all
         channels into one band, in line with the continuum focus of :mod:`scape`.
-        
+
         Parameters
         ----------
         channels_per_band : List of lists of ints, optional
@@ -473,18 +473,18 @@ class DataSet(object):
         time_window : int, optional
             Window length in samples, within which to average data in time. If
             this is 1 or None, no averaging is done in time.
-        
+
         Returns
         -------
         dataset : :class:`DataSet` object
             Data set with averaged power data
-        
+
         Notes
         -----
         The average power is simpler to use than the total power in each band,
         as total power is dependent on the bandwidth of each band. This method
         should be called *after* :meth:`convert_power_to_temperature`.
-        
+
         """
         # The string 'all' means average all channels together
         if channels_per_band == 'all':
@@ -530,14 +530,14 @@ class DataSet(object):
             self.corrconf.dump_rate /= time_window
         self.corrconf.merge(channels_per_band)
         return self
-    
+
     def fit_beams_and_baselines(self, band=0, **kwargs):
         """Simultaneously fit beams and baselines to all compound scans.
-        
+
         This fits a beam pattern and baseline to the total power data of all the
         scans comprising each compound scan, and stores the resulting fitted function
         in each CompoundScan object. Only one frequency band is used.
-        
+
         Parameters
         ----------
         band : int, optional
@@ -545,12 +545,12 @@ class DataSet(object):
         kwargs : dict, optional
             Extra keyword arguments are passed to underlying :mod:`beam_baseline`
             functions
-        
+
         Returns
         -------
         dataset : :class:`DataSet` object
             Data set with fitted beam/baseline functions added
-        
+
         """
         # FWHM beamwidth for uniformly illuminated circular dish is 1.03 lambda / D
         # FWHM beamwidth for Gaussian-tapered circular dish is 1.22 lambda / D
@@ -561,7 +561,7 @@ class DataSet(object):
         # The extra factor of 2 is because Stokes I is the sum of the independent XX and YY samples
         dof = 4.0 * (self.bandwidths[band] * 1e6) / self.dump_rate
         for compscan in self.compscans:
-            compscan.beam, baselines, compscan.baseline = fit_beam_and_baselines(compscan, expected_width, dof, 
+            compscan.beam, baselines, compscan.baseline = fit_beam_and_baselines(compscan, expected_width, dof,
                                                                                  band=band, **kwargs)
             for scan, bl in zip(compscan.scans, baselines):
                 scan.baseline = bl

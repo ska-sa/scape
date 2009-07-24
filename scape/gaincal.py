@@ -16,9 +16,9 @@ class NoiseDiodeNotFound(Exception):
 
 class NoiseDiodeModel(object):
     """Container for noise diode calibration data.
-    
+
     This allows different noise diode data formats to co-exist in the code.
-    
+
     Parameters
     ----------
     temperature_x : real array, shape (N, 2)
@@ -27,44 +27,44 @@ class NoiseDiodeModel(object):
     temperature_y : real array, shape (N, 2)
         Table containing frequencies [MHz] in the first column and measured
         temperatures [K] in the second column, for port 2 or H (Y polarisation)
-    
+
     """
     def __init__(self, temperature_x=None, temperature_y=None):
         self.temperature_x = temperature_x
         self.temperature_y = temperature_y
-    
+
     def __eq__(self, other):
         """Equality comparison operator."""
         return np.all(self.temperature_x == other.temperature_x) and \
                np.all(self.temperature_y == other.temperature_y)
-    
+
     def __ne__(self, other):
         """Inequality comparison operator."""
         return not self.__eq__(other)
-    
+
     def temperature(self, freqs, randomise=False):
         """Obtain noise diode temperature at given frequencies.
-        
+
         Obtain interpolated noise diode temperature at desired frequencies.
         Optionally, randomise the smooth fit to the noise diode power spectrum,
         to represent some uncertainty as part of a larger Monte Carlo iteration.
         The function returns an array of shape (2, *F*), where the first
         dimension represents the feed input ports (X and Y polarisations) and
         second dimension is frequency.
-        
+
         Parameters
         ----------
         freqs : float or array-like, shape (*F*,)
             Frequency (or frequencies) at which to evaluate temperature, in MHz
         randomise : {False, True}, optional
             True if noise diode spectrum smoothing should be randomised
-        
+
         Returns
         -------
         temp : real array, shape (*F*, 2)
             Noise diode temperature interpolated to the frequencies in *freqs*,
             for X and Y polarisations
-        
+
         """
         # Fit a spline to noise diode power spectrum measurements, with optional perturbation
         interp_x, interp_y = Spline1DFit(), Spline1DFit()
@@ -86,13 +86,13 @@ class NoSuitableNoiseDiodeDataFound(Exception):
 
 def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
     """Estimate jumps in power when noise diode toggles state in data set.
-    
+
     This examines all time instants where the noise diode flag changes state
     (both off -> on and on -> off). The average power is calculated for the time
     segments immediately before and after the jump, for all frequencies and
     polarisations, using robust statistics. All jumps with a significant
     difference between these two power levels are returned.
-    
+
     Parameters
     ----------
     dataset : :class:`dataset.DataSet` object
@@ -101,7 +101,7 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
         Minimum duration of each time segment in seconds, to ensure good estimates
     jump_significance : float, optional
         The jump in power level should be at least this number of standard devs
-    
+
     Returns
     -------
     nd_jump_times : list of floats
@@ -109,7 +109,7 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
     nd_jump_power : list of :class:`stats.MuSigmaArray` objects, shape (*F*, 4)
         Power level changes at each jump, stored as a :class:`stats.MuSigmaArray`
         object of shape (*F*, 4), where *F* is the number of channels/bands
-    
+
     """
     nd_jump_times, nd_jump_power = [], []
     min_samples = dataset.dump_rate * min_duration
@@ -126,7 +126,7 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
                 before_segment = scan.flags['valid'][start:mid].nonzero()[0] + start
                 after_segment = scan.flags['valid'][mid:end].nonzero()[0] + mid
                 if (len(before_segment) > min_samples) and (len(after_segment) > min_samples):
-                    # Utilise both off -> on and on -> off transitions 
+                    # Utilise both off -> on and on -> off transitions
                     # (mid is the first sample of the segment after the jump)
                     if scan.flags['nd_on'][mid]:
                         off_segment, on_segment = before_segment, after_segment
@@ -155,20 +155,20 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
 
 def estimate_gain(dataset, **kwargs):
     """Estimate gain and relative phase of both polarisations via injected noise.
-    
+
     Each successful noise diode transition in the data set is used to estimate
     the gain and relative phase in the two receiver chains for the X and Y
     polarisations at the instant of the transition. The X and Y gains are power
     gains (i.e. the square of the voltage gains found in the Jones matrix), and
     the phase is that of the Y chain relative to the X chain.
-    
+
     Parameters
     ----------
     dataset : :class:`dataset.DataSet` object
         Data set to analyse (converted to coherency form in the process)
     kwargs : dict, optional
         Extra keyword arguments are passed to :func:`estimate_nd_jumps`
-    
+
     Returns
     -------
     timestamps : real array, shape (*T*,)
@@ -179,7 +179,7 @@ def estimate_gain(dataset, **kwargs):
         Power gain of Y chain per measurement and channel, in units of raw/K
     phi : real array, shape (*T*, *F*)
         Phase of Y relative to X, per measurement and channel, in radians
-    
+
     """
     dataset.convert_to_coherency()
     nd_jump_times, nd_jump_power = estimate_nd_jumps(dataset, **kwargs)
@@ -196,12 +196,12 @@ def estimate_gain(dataset, **kwargs):
 
 def calibrate_gain(dataset, randomise=False, **kwargs):
     """Calibrate X and Y gains and relative phase, based on noise injection.
-    
+
     This converts the raw power measurements in the data set to temperatures,
     based on the change in levels caused by switching the noise diode on and off.
     At the same time it corrects for different gains in the X and Y polarisation
     receiver chains and for relative phase shifts between them.
-    
+
     Parameters
     ----------
     dataset : :class:`dataset.DataSet` object
@@ -210,12 +210,12 @@ def calibrate_gain(dataset, randomise=False, **kwargs):
         True if raw data and noise diode spectrum smoothing should be randomised
     kwargs : dict, optional
         Extra keyword arguments are passed to :func:`estimate_nd_jumps`
-    
+
     Raises
     ------
     NoSuitableNoiseDiodeDataFound
         If no suitable noise diode on/off blocks were found in data set
-    
+
     """
     dataset.convert_to_coherency()
     nd_jump_power = estimate_nd_jumps(dataset, **kwargs)[1]
@@ -240,7 +240,7 @@ def calibrate_gain(dataset, randomise=False, **kwargs):
         scan.data[:, :, 2] =  smooth_gains[:, :, 2] * u + smooth_gains[:, :, 3] * v
         scan.data[:, :, 3] = -smooth_gains[:, :, 3] * u + smooth_gains[:, :, 2] * v
         # Divide U and V by g_x g_y, as well as length of sin + cos terms above
-        gain_xy = np.sqrt(smooth_gains[:, :, 0] * smooth_gains[:, :, 1] * 
+        gain_xy = np.sqrt(smooth_gains[:, :, 0] * smooth_gains[:, :, 1] *
                           (smooth_gains[:, :, 2] ** 2 + smooth_gains[:, :, 3] ** 2))
         scan.data[:, :, 2:] /= gain_xy[:, :, np.newaxis]
     dataset.data_unit = 'K'

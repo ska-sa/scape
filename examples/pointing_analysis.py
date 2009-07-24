@@ -34,7 +34,7 @@ parser.add_option("-c", "--catalogue", dest="catfilename", type="string",
                   help="Name of optional source catalogue file used to override XDM FITS targets")
 parser.add_option("-o", "--output", dest="outfilebase", type="string",
                   help="Base name of output files (*.csv for offsets and *.log for messages)")
-                  
+
 (options, args) = parser.parse_args()
 if len(args) < 1:
     args = ['.']
@@ -80,7 +80,7 @@ def next_load_reduce_plot(ax1=None, ax2=None):
         f.writelines([('%s, %.7f, %.7f, %.7f, %.7f\n' % p) for p in pointing_offsets if p])
         f.close()
         sys.exit(0)
-    
+
     # Load next data set
     filename = datasets[index]
     index += 1
@@ -94,14 +94,14 @@ def next_load_reduce_plot(ax1=None, ax2=None):
             name = '%s' % (dirs[0],)
     else:
         name = os.path.splitext(os.path.basename(filename))[0]
-        
+
     # Standard reduction
     d.remove_rfi_channels()
     d.convert_power_to_temperature()
     d.average()
     d = d.select(labelkeep='scan')
     d.fit_beams_and_baselines()
-    
+
     # Handle missing data gracefully
     if len(d.compscans) == 0:
         logger.warning('No scan data found, skipping data set')
@@ -112,7 +112,7 @@ def next_load_reduce_plot(ax1=None, ax2=None):
             ax2.clear()
             plt.draw()
         return
-    
+
     # Calculate pointing offset
     compscan = d.compscans[0]
     middle_time = np.median([scan.timestamps for scan in compscan.scans], axis=None)
@@ -125,7 +125,7 @@ def next_load_reduce_plot(ax1=None, ax2=None):
         offset_azel = scape.stats.angle_wrap(beam_center_azel - requested_azel, 360.)
     else:
         offset_azel = np.array([np.nan, np.nan])
-    
+
     # Display compound scan
     if not options.batch:
         ax1.clear()
@@ -137,18 +137,18 @@ def next_load_reduce_plot(ax1=None, ax2=None):
         ax2.clear()
         scape.plot_compound_scan_on_target(compscan, ax=ax2)
         if compscan.beam:
-            ax2.text(0, -0.25, "Expected beamwidth = %.1f'\nFitted beamwidth = %.1f'" % 
+            ax2.text(0, -0.25, "Expected beamwidth = %.1f'\nFitted beamwidth = %.1f'" %
                                (60. * katpoint.rad2deg(compscan.beam.expected_width),
                                 60. * katpoint.rad2deg(compscan.beam.width)),
                      ha='left', va='top', transform=ax2.transAxes)
         plt.draw()
-    
+
     # If beam is marked as invalid, discard pointing only if in batch mode (otherwise discard button has to do it)
     if not compscan.beam or (options.batch and not compscan.beam.is_valid):
         pointing_offsets.append(None)
     else:
         pointing_offsets.append((name, requested_azel[0], requested_azel[1], offset_azel[0], offset_azel[1]))
-    
+
 ### BATCH MODE ###
 
 # This will cycle through all data sets and stop when done

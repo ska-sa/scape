@@ -12,9 +12,9 @@ import scipy.stats as stats
 
 def angle_wrap(angle, period=2.0 * np.pi):
     """Wrap angle into interval centred on zero.
-    
+
     This wraps the *angle* into the interval -*period* / 2 ... *period* / 2.
-    
+
     """
     return (angle + 0.5 * period) % period - 0.5 * period
 
@@ -24,7 +24,7 @@ def angle_wrap(angle, period=2.0 * np.pi):
 
 class MuSigmaArray(np.ndarray):
     """Container that bundles mean and standard deviation of N-dimensional data.
-    
+
     This is a subclass of numpy.ndarray, which adds a :attr:`sigma` data member.
     The idea is that the main array is the mean, while :atrr:`sigma` contains
     the standard deviation of each corresponding element of the main array.
@@ -40,19 +40,19 @@ class MuSigmaArray(np.ndarray):
     - A dict with 'mu' and 'sigma' keys and array values (ditto)
     - A tuple containing two arrays (mean still has to be extracted first)
     - Extending the mu array to contain another dimension (can be misleading)
-    
+
     Parameters
     ----------
     mu : array-like
         The mean array (which becomes the main array of this object)
     sigma : array-like, optional
         The standard deviation array (default=None)
-    
+
     Raises
     ------
     TypeError
         If *sigma* does not have the same shape as *mu*
-    
+
     Notes
     -----
     The class has both a creator (__new__) and initialiser (__init__) method.
@@ -60,33 +60,33 @@ class MuSigmaArray(np.ndarray):
     while the latter stores the *sigma* parameter and verifies that its
     shape is the same as that of *mu*. The :attr:`mu` and :attr:`sigma`
     attributes are actually handled via properties.
-    
+
     """
     def __init__(self, mu, sigma=None):
         # Standard deviation of each element in main array (internal variable set via property).
         self._sigma = None
         # Standard deviation of each element in main array (property).
         self.sigma = sigma
-    
+
     def __new__(cls, mu, sigma=None):
         """Object creation, which casts the mu array to the current subclass."""
         return np.asarray(mu).view(cls)
-    
+
     # pylint: disable-msg=E0211,E0202,W0612,W0142,W0613
     def mu():
         """Class method which creates mean property.
-        
+
         This is a nice way to create Python properties. It prevents clutter of
         the class namespace with getter and setter methods, while being more
         readable than lambda notation. The function below is effectively hidden
         by giving it the same name as the eventual property. Pylint gets queasy
         here, for obvious reasons.
-        
+
         Returns
         -------
         local : dict
             Dictionary with property getter and setter methods, and doc string
-        
+
         """
         doc = 'Mean array.'
         def fget(self):
@@ -97,18 +97,18 @@ class MuSigmaArray(np.ndarray):
     # Mean array. This is merely for convenience, to restrict the object to be an numpy.ndarray.
     # Normal access to the object also provides the mean.
     mu = property(**mu())
-    
+
     # pylint: disable-msg=E0211,E0202,W0612,W0142,W0212
     def sigma():
         """Class method which creates sigma property.
-        
+
         See the docstring of :meth:`mu` for more details.
-        
+
         Returns
         -------
         local : dict
             Dictionary with property getter and setter methods, and doc string
-        
+
         """
         doc = 'Standard deviation of each element in main array.'
         def fget(self):
@@ -123,7 +123,7 @@ class MuSigmaArray(np.ndarray):
         return locals()
     # Standard deviation of each element in main array (property).
     sigma = property(**sigma())
-    
+
     def __repr__(self):
         """Official string representation."""
         return self.__class__.__name__ + '(' + repr(self.mu) + ',' + repr(self.sigma) + ')'
@@ -145,28 +145,28 @@ class MuSigmaArray(np.ndarray):
             return MuSigmaArray(self.mu[first:last], None)
         else:
             return MuSigmaArray(self.mu[first:last], self.sigma[first:last])
-    
+
     def __copy__(self):
         """Shallow copy operation."""
         return MuSigmaArray(self.mu, self.sigma)
-    
+
     def __deepcopy__(self, memo):
         """Deep copy operation."""
         return MuSigmaArray(copy.deepcopy(self.mu, memo), copy.deepcopy(self.sigma, memo))
-    
+
 def ms_concatenate(msa_list):
     """Concatenate MuSigmaArrays.
-    
+
     Parameters
     ----------
     msa_list : list of :class:`MuSigmaArray` objects
         List of MuSigmaArrays to concatenate
-        
+
     Returns
     -------
     msa : :class:`MuSigmaArray` object
         MuSigmaArray that is concatenation of list
-    
+
     """
     mu_list = [msa.mu for msa in msa_list]
     sigma_list = [msa.sigma for msa in msa_list]
@@ -178,17 +178,17 @@ def ms_concatenate(msa_list):
 
 def ms_hstack(msa_list):
     """Stack MuSigmaArrays horizontally.
-    
+
     Parameters
     ----------
     msa_list : list of :class:`MuSigmaArray` objects
         List of MuSigmaArrays to stack
-        
+
     Returns
     -------
     msa : :class:`MuSigmaArray` object
         MuSigmaArray that is horizontal stack of list
-    
+
     """
     mu_list = [msa.mu for msa in msa_list]
     sigma_list = [msa.sigma for msa in msa_list]
@@ -200,17 +200,17 @@ def ms_hstack(msa_list):
 
 def ms_vstack(msa_list):
     """Stack MuSigmaArrays vertically.
-    
+
     Parameters
     ----------
     msa_list : list of :class:`MuSigmaArray` objects
         List of MuSigmaArrays to stack
-        
+
     Returns
     -------
     msa : :class:`MuSigmaArray` object
         MuSigmaArray that is vertical stack of list
-    
+
     """
     mu_list = [msa.mu for msa in msa_list]
     sigma_list = [msa.sigma for msa in msa_list]
@@ -222,10 +222,10 @@ def ms_vstack(msa_list):
 
 def mu_sigma(data, axis=0):
     """Determine second-order statistics from data.
-    
+
     Convenience function to return second-order statistics of data along given
     axis as a MuSigmaArray.
-    
+
     Parameters
     ----------
     data : array
@@ -233,23 +233,23 @@ def mu_sigma(data, axis=0):
     axis : int, optional
         Index of axis along which stats are calculated (will be averaged away
         in the process) [default=0]
-    
+
     Returns
     -------
     msa : :class:`MuSigmaArray` object
         MuSigmaArray containing data stats, of same dimension as data, but
         without given axis
-    
+
     """
     return MuSigmaArray(data.mean(axis=axis), data.std(axis=axis))
 
 def robust_mu_sigma(data, axis=0):
     """Determine second-order statistics from data, using robust statistics.
-    
+
     Convenience function to return second-order statistics of data along given
     axis as a MuSigmaArray. These are determined via the median and
     interquartile range.
-    
+
     Parameters
     ----------
     data : array
@@ -257,13 +257,13 @@ def robust_mu_sigma(data, axis=0):
     axis : int, optional
         Index of axis along which stats are calculated (will be averaged away
         in the process) [default=0]
-    
+
     Returns
     -------
     msa : :class:`MuSigmaArray` object
         MuSigmaArray containing data stats, of same dimension as data, but
         without given axis
-    
+
     """
     data = np.asarray(data)
     # Create sequence of axis indices with specified axis at the front, and the rest following it
@@ -282,7 +282,7 @@ def robust_mu_sigma(data, axis=0):
 
 def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
     """Determine second-order statistics of periodic (angular, directional) data.
-    
+
     Convenience function to return second-order statistics of data along given
     axis as a MuSigmaArray. This handles periodic variables, which exhibit the
     problem of wrap-around and therefore are unsuited for the normal mu_sigma
@@ -294,7 +294,7 @@ def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
     .. [1] R. J. Yamartino, "A Comparison of Several 'Single-Pass' Estimators
        of the Standard Deviation of Wind Direction," Journal of Climate and
        Applied Meteorology, vol. 23, pp. 1362-1366, 1984.
-    
+
     Parameters
     ----------
     data : array
@@ -304,13 +304,13 @@ def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
         in the process) [default=0]
     period : float, optional
         Period with which data values repeat [default is 2.0 * pi]
-    
+
     Returns
     -------
     msa : :class:`MuSigmaArray` object
         MuSigmaArray containing data stats, of same dimension as data, but
         without given axis
-    
+
     Notes
     -----
     The approach in [1]_ is used.
@@ -318,7 +318,7 @@ def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
     .. [1] R. J. Yamartino, "A Comparison of Several 'Single-Pass' Estimators
        of the Standard Deviation of Wind Direction," Journal of Climate and
        Applied Meteorology, vol. 23, pp. 1362-1366, 1984.
-    
+
     """
     data = np.asarray(data, dtype='double')
     # Create sequence of axis indices with specified axis at the front, and the rest following it
@@ -345,10 +345,10 @@ def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
 
 def minimise_angle_wrap(angles, axis=0):
     """Minimise wrapping of angles to improve interpretation.
-    
+
     Move wrapping point as far away as possible from mean angle on given axis.
     The main use of this function is to improve the appearance of angle plots.
-    
+
     Parameters
     ----------
     angles : array-like
@@ -356,12 +356,12 @@ def minimise_angle_wrap(angles, axis=0):
     axis : int, optional
         Axis along which angle wrap is evaluated. Plots along this axis will
         typically improve in appearance.
-    
+
     Returns
     -------
     angles : array
         Array of same shape as input array, with angles wrapped around new point
-    
+
     """
     angles = np.asarray(angles)
     # Calculate a "safe" mean on the unit circle
@@ -369,17 +369,17 @@ def minimise_angle_wrap(angles, axis=0):
     # Wrap angle differences into interval -pi ... pi
     delta_ang = angle_wrap(angles - np.expand_dims(mu, axis))
     return delta_ang + np.expand_dims(mu, axis)
-    
+
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  remove_spikes
 #--------------------------------------------------------------------------------------------------
 
 def remove_spikes(data, axis=0, kernel_size=7, outlier_sigma=5.0):
     """Remove outliers from data, replacing them with a local median value.
-    
+
     The data is median-filtered along the specified axis, and any data values
     that deviate significantly from the local median is replaced with the median.
-    
+
     Parameters
     ----------
     data : array-like
@@ -390,22 +390,22 @@ def remove_spikes(data, axis=0, kernel_size=7, outlier_sigma=5.0):
         Kernel size for median filter, should be an odd integer
     outlier_sigma : float, optional
         Multiple of standard deviation that indicates an outlier
-    
+
     Returns
     -------
     cleaned_data : array
         N-dimensional numpy array of same shape as original data, with outliers
         removed
-    
+
     Notes
     -----
     This is very similar to a *Hampel filter*, also known as a *decision-based
     filter* or three-sigma edit rule combined with a Hampel outlier identifier.
-    
+
     .. todo::
-    
+
        TODO: Make this more like a Hampel filter by making MAD time-variable too.
-    
+
     """
     data = np.atleast_1d(data)
     # Median filter data along the desired axis, with given kernel size
@@ -418,7 +418,7 @@ def remove_spikes(data, axis=0, kernel_size=7, outlier_sigma=5.0):
     # Calculate median absolute deviation (MAD)
     med_abs_dev = np.expand_dims(np.median(abs_dev, axis), axis)
 #    med_abs_dev = signal.medfilt(abs_dev, kernel)
-    # Assuming normally distributed deviations, this is a robust estimator of the standard deviation 
+    # Assuming normally distributed deviations, this is a robust estimator of the standard deviation
     estm_stdev = 1.4826 * med_abs_dev
     # Identify outliers (again based on normal assumption), and replace them with local median
     outliers = (abs_dev > outlier_sigma * estm_stdev)
@@ -432,7 +432,7 @@ def remove_spikes(data, axis=0, kernel_size=7, outlier_sigma=5.0):
 
 def chi2_conf_interval(dof, mean=1.0, sigma=3.0):
     """Confidence interval for chi-square distribution.
-    
+
     Return lower and upper limit of confidence interval of chi-square
     distribution, defined in terms of a normal confidence interval. That is,
     given *sigma*, which is a multiple of the standard deviation, calculate the
@@ -443,38 +443,38 @@ def chi2_conf_interval(dof, mean=1.0, sigma=3.0):
     standard deviation of ``mean*sqrt(2/dof)``. This represents the distribution
     of the power estimator $P = 1/N \sum_{i=1}^{N} x_i^2$, with N = *dof* and
     zero-mean Gaussian voltages $x_i$ with variance *mean*.
-    
+
     Parameters
     ----------
     dof : array-like or float
-        Degrees of freedom (number of independent samples summed to form chi^2 
+        Degrees of freedom (number of independent samples summed to form chi^2
         variable)
     mean : array-like or float, optional
         Desired mean of chi^2 distribution
     sigma : array-like or float, optional
         Multiple of standard deviation, used to specify size of required
         confidence interval
-    
+
     Returns
     -------
     lower : array or float
         Lower limit of confidence interval (numpy array if any input is one)
     upper : array or float
         Upper limit of confidence interval (numpy array if any input is one)
-    
+
     Notes
     -----
     The advantage of this approach is that it uses a well-known concept to
     specify the interval (multiples of standard deviation), while returning
     valid intervals for all values of *dof*. For (very) large values of *dof*,
     (lower, upper) will be close to
-    
+
     (mean - sigma * mean*sqrt(2/dof), mean + sigma * mean*sqrt(2/dof)),
-    
+
     as the chi-square distribution will be approximately normal. For small *dof*
     or large *sigma*, however, this approximation breaks down and may lead to
     negative lower values, for example.
-    
+
     """
     if not np.isscalar(dof):
         dof = np.atleast_1d(np.asarray(dof))

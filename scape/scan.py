@@ -28,7 +28,7 @@ from katpoint import rad2deg
 
 def move_start_to_center(start_times, pointing_at_start, sample_period):
     """Move timestamps and pointing from start to center of each sample.
-    
+
     The :mod:`scape` data files contain timestamps and associated pointing info
     for the start of each integration sample. The power data is most naturally
     associated with the center of the sample, though. For long integration
@@ -36,7 +36,7 @@ def move_start_to_center(start_times, pointing_at_start, sample_period):
     plots, etc. This function moves the timestamps and pointing info to coincide
     with the power data at the center of each sample, which is more natural for
     processing and plots. It returns copies of the data.
-    
+
     Parameters
     ----------
     start_times : real array, shape (*T*,)
@@ -47,7 +47,7 @@ def move_start_to_center(start_times, pointing_at_start, sample_period):
         time-aligned with *start_times*, at the start of each integration.
     sample_period : float
         Sample period (length of integration), in seconds
-    
+
     Returns
     -------
     center_times : real array, shape (*T*,)
@@ -56,7 +56,7 @@ def move_start_to_center(start_times, pointing_at_start, sample_period):
     pointing_at_center : real record array, shape (*T*,)
         Pointing coordinates, with one record per integration. Each record is
         time-aligned with *center_times*, in the middle of each integration.
-    
+
     """
     center_times = start_times + 0.5 * sample_period
     next_start_times = np.hstack((start_times[1:], [2.0 * start_times[-1] - start_times[-2]]))
@@ -71,7 +71,7 @@ def move_start_to_center(start_times, pointing_at_start, sample_period):
 
 def move_center_to_start(center_times, pointing_at_center, sample_period):
     """Move timestamps and pointing from center to start of each sample.
-    
+
     The :mod:`scape` data files contain timestamps and associated pointing info
     for the start of each integration sample. The power data is most naturally
     associated with the center of the sample, though. For long integration
@@ -79,7 +79,7 @@ def move_center_to_start(center_times, pointing_at_center, sample_period):
     plots, etc. This function moves the timestamps and pointing info from the
     center of each sample to the start, which is how it will be stored on disk.
     It returns copies of the data.
-    
+
     Parameters
     ----------
     center_times : real array, shape (*T*,)
@@ -90,7 +90,7 @@ def move_center_to_start(center_times, pointing_at_center, sample_period):
         time-aligned with *center_times*, in the middle of each integration.
     sample_period : float
         Sample period (length of integration), in seconds
-    
+
     Returns
     -------
     start_times : real array, shape (*T*,)
@@ -99,7 +99,7 @@ def move_center_to_start(center_times, pointing_at_center, sample_period):
     pointing_at_start : real record array, shape (*T*,)
         Pointing coordinates, with one record per integration. Each record is
         time-aligned with *start_times*, at the start of each integration.
-    
+
     """
     start_times = center_times - 0.5 * sample_period
     next_start_times = np.hstack((start_times[1:], [2.0 * start_times[-1] - start_times[-2]]))
@@ -171,7 +171,7 @@ class Scan(object):
         Coordinates on projected plane, with target as reference, in radians
     baseline : :class:`fitting.Polynomial1DFit` object, optional
         Object that describes fitted baseline
-    
+
     """
     def __init__(self, data, is_stokes, timestamps, pointing, flags, environment,
                  label, path, target_coords=None, baseline=None):
@@ -185,7 +185,7 @@ class Scan(object):
         self.path = path
         self.target_coords = target_coords
         self.baseline = baseline
-    
+
     def __eq__(self, other):
         """Equality comparison operator."""
         # Make sure that both data sets have the same polarisation format first
@@ -216,11 +216,11 @@ class Scan(object):
                np.allclose(self.timestamps, other.timestamps, atol=1e-6) and \
                np.allclose(self.pointing.view(np.float32), other.pointing.view(np.float32), 1e-4) and \
                np.allclose(self.target_coords, other.target_coords, atol=1e-6)
-    
+
     def __ne__(self, other):
         """Inequality comparison operator."""
         return not self.__eq__(other)
-    
+
     def __str__(self):
         """Verbose human-friendly string representation of scan object."""
         mean_az = rad2deg(minimise_angle_wrap(self.pointing['az']).mean())
@@ -228,21 +228,21 @@ class Scan(object):
         return "'%s', data=%s, start='%s', az=%.1f, el=%.1f, path='%s'" % \
                (self.label, self.data.shape, time.strftime('%Y/%m/%d %H:%M:%S', time.gmtime(self.timestamps[0])),
                 mean_az, mean_el, self.path)
-    
+
     def __repr__(self):
         """Short human-friendly string representation of scan object."""
         return "<scape.Scan '%s' data=%s at 0x%x>" % (self.label, self.data.shape, id(self))
-    
+
     def calc_target_coords(self, target, antenna=None):
         """Calculate target coordinates, based on target and antenna objects.
-        
+
         Parameters
         ----------
         target : :class:`katpoint.Target` object
             Target object which is scanned across, obtained from CompoundScan
         antenna : :class:`katpoint.Antenna` object, optional
             Antenna object for antenna that does scanning, obtained from DataSet
-        
+
         Returns
         -------
         target_coords : real array, shape (2, *T*)
@@ -257,7 +257,7 @@ class Scan(object):
                                                     self.timestamps, antenna)
         self.target_coords = np.vstack((target_x, target_y))
         return self.target_coords
-    
+
     def coherency(self, key):
         """Calculate specific coherency from data.
 
@@ -270,12 +270,12 @@ class Scan(object):
         -------
         coherency : real/complex array, shape (*T*, *F*)
             The array is real for XX and YY, and complex for XY and YX.
-        
+
         Raises
         ------
         KeyError
             If *key* is not one of the allowed coherency names
-        
+
         """
         if key == 'XX':
             if not self.is_stokes:
@@ -296,22 +296,22 @@ class Scan(object):
 
     def stokes(self, key):
         """Calculate specific Stokes parameter from data.
-        
+
         Parameters
         ----------
         key : {'I', 'Q', 'U', 'V'}
             Stokes parameter to calculate
-        
+
         Returns
         -------
         stokes : real array, shape (*T*, *F*)
             Specified Stokes parameter as a function of time and frequency
-        
+
         Raises
         ------
         KeyError
             If *key* is not one of the allowed Stokes parameter names
-        
+
         """
         # If data is already in Stokes form, just return appropriate subarray
         if self.is_stokes:
@@ -358,17 +358,17 @@ class Scan(object):
             self.data[:, :, 1] = data_xx - data_yy
             self.is_stokes = True
         return self
-    
+
     def select(self, timekeep=None, freqkeep=None, copy=False):
         """Select a subset of time and frequency indices in data matrix.
-        
+
         This creates a new :class:`Scan` object that contains a subset of the
         rows and columns of the data matrix. This allows time samples and/or
         frequency channels/bands to be discarded. If *copy* is False, the data
         is selected via a masked array or view, and the returned object is a
         view on the original data. If *copy* is True, the data matrix and all
         associated coordinate vectors are reduced to a smaller size and copied.
-        
+
         Parameters
         ----------
         timekeep : sequence of bools or ints, optional
@@ -381,12 +381,12 @@ class Scan(object):
             be kept). The default is None, which keeps everything.
         copy : {False, True}, optional
             True if the new scan is a copy, False if it is a view
-        
+
         Returns
         -------
         scan : :class:`Scan` object
             Scan with reduced data matrix (either masked array or smaller copy)
-        
+
         """
         # Use advanced indexing to create a smaller copy of the data matrix
         if copy:
@@ -408,7 +408,7 @@ class Scan(object):
                 selected_data = self.data[np.atleast_2d(timekeep).transpose(), np.atleast_2d(freqkeep), :]
             target_coords = self.target_coords
             if not target_coords is None:
-                target_coords = target_coords[:, timekeep] 
+                target_coords = target_coords[:, timekeep]
             return Scan(selected_data, self.is_stokes, self.timestamps[timekeep], self.pointing[timekeep],
                         self.flags[timekeep], self.environment, self.label, self.path, target_coords, self.baseline)
         # Create a shallow view of data matrix via a masked array or view

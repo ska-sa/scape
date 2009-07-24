@@ -10,7 +10,7 @@ from scape import dataset, compoundscan, scan, gaincal
 
 class SaveLoadTestCases(unittest.TestCase):
     """Save and reload data set to verify that file was written successfully."""
-    
+
     def setUp(self):
         # Create dummy data set
         num_samples, num_chans = 100, 16
@@ -19,7 +19,7 @@ class SaveLoadTestCases(unittest.TestCase):
         pointing = np.rec.fromarrays(0.01 * np.random.randn(3, num_samples).astype(np.float32),
                                      names='az,el,rot')
         flags = np.rec.fromarrays((np.random.randn(2, num_samples) > 0.0), names='valid,nd_on')
-        enviro = np.rec.array([(timestamps[0], 35.1, 1020.4, 31.0, 2.0, 45.3)], 
+        enviro = np.rec.array([(timestamps[0], 35.1, 1020.4, 31.0, 2.0, 45.3)],
                               dtype=[('timestamp', np.float64), ('temperature', np.float32),
                                      ('pressure', np.float32), ('humidity', np.float32),
                                      ('wind_speed', np.float32), ('wind_direction', np.float32)])
@@ -38,7 +38,7 @@ class SaveLoadTestCases(unittest.TestCase):
         self.filename = 'scape_test_dataset.h5'
         if os.path.exists(self.filename):
             os.remove(self.filename)
-        
+
     def test_hdf5_save_load(self):
         # Skip test if HDF5 support is not available
         try:
@@ -47,7 +47,7 @@ class SaveLoadTestCases(unittest.TestCase):
             self.assertEqual(self.d, d2, "Dataset loaded from HDF5 file is not the same as the one saved to file.")
         except ImportError:
             pass
-    
+
     def tearDown(self):
         try:
             os.remove(self.filename)

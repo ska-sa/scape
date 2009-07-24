@@ -25,12 +25,12 @@ import katpoint
 
 class CorrelatorConfig(object):
     """Container for spectral configuration of correlator.
-    
+
     This is a convenience container for all the items related to the correlator
     configuration, such as channel centre frequencies and bandwidths. It
     simplifies the copying of these bits of data, while they are usually also
     found together in use.
-    
+
     Parameters
     ----------
     freqs : real array-like, shape (*F*,)
@@ -41,7 +41,7 @@ class CorrelatorConfig(object):
         RFI-flagged channel indices
     dump_rate : float
         Correlator dump rate, in Hz
-    
+
     Notes
     -----
     This class should ideally be grouped with :class:`dataset.DataSet`, as that
@@ -50,7 +50,7 @@ class CorrelatorConfig(object):
     circular imports if this class is stored in the :mod:`dataset` module. If
     the functionality of this class grows, it might be useful to move it to
     its own module.
-    
+
     """
     def __init__(self, freqs, bandwidths, rfi_channels, dump_rate):
         # Keep as doubles to prevent precision issues
@@ -58,31 +58,31 @@ class CorrelatorConfig(object):
         self.bandwidths = np.asarray(bandwidths, dtype='double')
         self.rfi_channels = rfi_channels
         self.dump_rate = dump_rate
-    
+
     def __eq__(self, other):
         """Equality comparison operator."""
         return np.all(self.freqs == other.freqs) and np.all(self.bandwidths == other.bandwidths) and \
                np.all(self.rfi_channels == other.rfi_channels) and (self.dump_rate == other.dump_rate)
-    
+
     def __ne__(self, other):
         """Inequality comparison operator."""
         return not self.__eq__(other)
-    
+
     def select(self, freqkeep=None):
         """Select a subset of frequency channels/bands.
-        
+
         Parameters
         ----------
         freqkeep : sequence of bools or ints, optional
             Sequence of indicators of which frequency channels/bands to keep
             (either integer indices or booleans that are True for the values to
             be kept). The default is None, which keeps all channels/bands.
-        
+
         Returns
         -------
         corrconf : :class:`CorrelatorConfig` object
             Correlator configuration object with subset of channels/bands
-        
+
         """
         if freqkeep is None:
             return self
@@ -91,22 +91,22 @@ class CorrelatorConfig(object):
         return CorrelatorConfig(self.freqs[freqkeep], self.bandwidths[freqkeep],
                                 [freqkeep.index(n) for n in (set(self.rfi_channels) & set(freqkeep))],
                                 self.dump_rate)
-    
+
     def merge(self, channels_per_band):
         """Merge frequency channels into bands.
-        
+
         This applies the *channels_per_band* mapping to the frequency data.
         Each band centre frequency is the mean of the corresponding channel
         group's frequencies, while the band bandwidth is the sum of the
         corresponding channel group's bandwidths. Any band containing an
         RFI-flagged channel is RFI-flagged too.
-        
+
         Parameters
         ----------
         channels_per_band : List of lists of ints, optional
             List of lists of channel indices (one list per band), indicating
             which channels are averaged together to form each band.
-        
+
         """
         # Each band centre frequency is the mean of the corresponding channel centre frequencies
         self.freqs = np.array([self.freqs[chans].mean() for chans in channels_per_band], dtype='double')
@@ -114,7 +114,7 @@ class CorrelatorConfig(object):
         self.bandwidths = np.array([self.bandwidths[chans].sum() for chans in channels_per_band],
                                    dtype='double')
         # If the band contains *any* RFI-flagged channel, it is RFI-flagged too
-        self.rfi_channels = np.array([(len(set(chans) & set(self.rfi_channels)) > 0) 
+        self.rfi_channels = np.array([(len(set(chans) & set(self.rfi_channels)) > 0)
                                       for chans in channels_per_band], dtype='bool').nonzero()[0].tolist()
         return self
 
@@ -124,7 +124,7 @@ class CorrelatorConfig(object):
 
 class CompoundScan(object):
     """Container for the data of a compound scan.
-    
+
     Parameters
     ----------
     scanlist : list of :class:`scan.Scan` objects
@@ -135,7 +135,7 @@ class CompoundScan(object):
         Object that describes fitted beam
     baseline : :class:`fitting.Polynomial2DFit` object, optional
         Object that describes initial fitted baseline
-    
+
     """
     def __init__(self, scanlist, target, beam=None, baseline=None):
         self.scans = scanlist
@@ -154,7 +154,7 @@ class CompoundScan(object):
             if self_scan != other_scan:
                 return False
         return (self.target.description == other.target.description)
-    
+
     def __ne__(self, other):
         """Inequality comparison operator."""
         return not self.__eq__(other)
@@ -163,13 +163,13 @@ class CompoundScan(object):
         """Verbose human-friendly string representation of compound scan object."""
         descr = ["target='%s' [%s]" % (self.target.name, self.target.tags[0])]
         if self.baseline:
-            descr[0] += ', initial baseline offset=%f' % (self.baseline.poly[-1],) 
+            descr[0] += ', initial baseline offset=%f' % (self.baseline.poly[-1],)
         if self.beam:
-            descr[0] += ', beam height=%f' % (self.beam.height,) 
+            descr[0] += ', beam height=%f' % (self.beam.height,)
         for scan_ind, scan in enumerate(self.scans):
             descr.append('%4d: %s' % (scan_ind, str(scan)))
         return '\n'.join(descr)
-    
+
     def __repr__(self):
         """Short human-friendly string representation of compound scan object."""
         return "<scape.CompoundScan '%s' scans=%d at 0x%x>" % (self.target.name, len(self.scans), id(self))
