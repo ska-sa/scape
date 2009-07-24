@@ -27,17 +27,26 @@ parser = optparse.OptionParser(usage="%prog [options] <directories or files>",
                                             which allows the user to inspect results and discard bad scans. \
                                             By default all datasets in the current directory and all \
                                             subdirectories are processed.")
-parser.set_defaults(catfilename='source_list.csv')
+parser.set_defaults(catfilename='source_list.csv', outfilebase='pointing_offsets')
 parser.add_option("-b", "--batch", dest="batch", action="store_true",
                   help="True if processing is to be done in batch mode without user interaction")
 parser.add_option("-c", "--catalogue", dest="catfilename", type="string",
                   help="Name of optional source catalogue file used to override XDM FITS targets")
+parser.add_option("-o", "--output", dest="outfilebase", type="string",
+                  help="Base name of output files (*.csv for offsets and *.log for messages)")
+                  
 (options, args) = parser.parse_args()
 if len(args) < 1:
     args = ['.']
 
-# Global message logging level
-logging.root.setLevel(logging.DEBUG)
+# Set up logging: logging everything (DEBUG & above), both to console and file
+logger = logging.root
+logger.setLevel(logging.DEBUG)
+fh = logging.FileHandler(options.outfilebase + '.log', 'w')
+fh.setLevel(logging.DEBUG)
+fh.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+logger.addHandler(fh)
+
 # Load catalogue used to convert ACSM targets to katpoint ones
 cat = katpoint.Catalogue(add_specials=False)
 try:
@@ -55,7 +64,7 @@ for arg in args:
     else:
         datasets.extend(glob.glob(arg))
 if len(datasets) == 0:
-    print 'No data sets (HDF5 or XDM FITS) found'
+    logger.error('No data sets (HDF5 or XDM FITS) found')
     sys.exit(1)
 # Index to step through data sets as the buttons are pressed
 index = 0
@@ -66,7 +75,7 @@ def next_load_reduce_plot(ax1=None, ax2=None):
     # If end of list is reached, save pointing offsets to file and exit
     global index
     if index >= len(datasets):
-        f = file('pointing_offsets.csv', 'w')
+        f = file(options.outfilebase + '.csv', 'w')
         f.write('dataset, azimuth, elevation, delta.azimuth, delta.elevation\n')
         f.writelines([('%s, %.7f, %.7f, %.7f, %.7f\n' % p) for p in pointing_offsets if p])
         f.close()
@@ -75,7 +84,7 @@ def next_load_reduce_plot(ax1=None, ax2=None):
     # Load next data set
     filename = datasets[index]
     index += 1
-    print "Loading dataset '%s'" % (filename,)
+    logger.info("Loading dataset '%s'" % (filename,))
     d = scape.DataSet(filename, catalogue=cat)
     if filename.endswith('.fits'):
         dirs = filename.split(os.path.sep)
@@ -95,7 +104,7 @@ def next_load_reduce_plot(ax1=None, ax2=None):
     
     # Handle missing data gracefully
     if len(d.compscans) == 0:
-        print 'WARNING: No scan data found, skipping data set'
+        logger.warning('No scan data found, skipping data set')
         pointing_offsets.append(None)
         if not options.batch:
             ax1.clear()
