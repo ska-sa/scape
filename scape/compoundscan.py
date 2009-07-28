@@ -172,4 +172,4 @@ class CompoundScan(object):
 
     def __repr__(self):
         """Short human-friendly string representation of compound scan object."""
-        return "<scape.CompoundScan '%s' scans=%d at 0x%x>" % (self.target.name, len(self.scans), id(self))
+        return "<scape.CompoundScan target='%s' scans=%d at 0x%x>" % (self.target.name, len(self.scans), id(self))

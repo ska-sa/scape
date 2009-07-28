@@ -191,7 +191,8 @@ class DataSet(object):
 
     def __repr__(self):
         """Short human-friendly string representation of data set object."""
-        return "<scape.DataSet '%s' compscans=%d at 0x%x>" % (self.antenna.name, len(self.compscans), id(self))
+        return "<scape.DataSet antenna='%s' compscans=%d at 0x%x>" % \
+               (self.antenna.name, len(self.compscans), id(self))
 
     def calc_target_coords(self):
         """Calculate scan target coordinates, using compound scan target and data set antenna.
@@ -447,6 +448,9 @@ class DataSet(object):
             logger.error("Expected raw power data to convert to temperature, got data with units '" +
                          self.data_unit + "' instead.")
             return self
+        if self.noise_diode_data is None:
+            logger.error('No noise diode model found in data set - calibration aborted')
+            return  self
         try:
             return calibrate_gain(self, randomise, **kwargs)
         except NoSuitableNoiseDiodeDataFound:
