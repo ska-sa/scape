@@ -76,8 +76,9 @@ def next_load_reduce_plot(ax1=None, ax2=None):
     global index
     if index >= len(datasets):
         f = file(options.outfilebase + '.csv', 'w')
-        f.write('dataset, azimuth, elevation, delta.azimuth, delta.elevation\n')
-        f.writelines([('%s, %.7f, %.7f, %.7f, %.7f\n' % p) for p in pointing_offsets if p])
+        f.write('dataset, target, timestamp, azimuth, elevation, delta.azimuth, delta.elevation, ' +
+                'temperature, wind_speed, wind_direction\n')
+        f.writelines([('%s, %s, %s, %.7f, %.7f, %.7f, %.7f, %.2f, %.2f, %.2f\n' % p) for p in pointing_offsets if p])
         f.close()
         sys.exit(0)
 
@@ -126,6 +127,13 @@ def next_load_reduce_plot(ax1=None, ax2=None):
     else:
         offset_azel = np.array([np.nan, np.nan])
 
+    # Obtain target, middle timestamp, average environmental data
+    temperature = np.mean([scan.environment['temperature'] for scan in d.scans])
+    wind_speed = np.hstack([scan.environment['wind_speed'] for scan in d.scans])
+    wind_direction = katpoint.deg2rad(np.hstack([scan.environment['wind_direction'] for scan in d.scans]))
+    wind_n, wind_e = np.mean(wind_speed * np.cos(wind_direction)), np.mean(wind_speed * np.sin(wind_direction))
+    wind_speed, wind_direction = np.sqrt(wind_n ** 2 + wind_e ** 2), katpoint.rad2deg(np.arctan2(wind_e, wind_n))
+
     # Display compound scan
     if not options.batch:
         ax1.clear()
@@ -147,7 +155,9 @@ def next_load_reduce_plot(ax1=None, ax2=None):
     if not compscan.beam or (options.batch and not compscan.beam.is_valid):
         pointing_offsets.append(None)
     else:
-        pointing_offsets.append((name, requested_azel[0], requested_azel[1], offset_azel[0], offset_azel[1]))
+        pointing_offsets.append((name, compscan.target.name, katpoint.Timestamp(middle_time).local(),
+                                 requested_azel[0], requested_azel[1], offset_azel[0], offset_azel[1],
+                                 temperature, wind_speed, wind_direction))
 
 ### BATCH MODE ###
 
