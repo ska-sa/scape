@@ -702,7 +702,7 @@ def plot_compound_scan_on_target(compscan, subtract_baseline=True, levels=None, 
         target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans]))
 
     # Show the locations of the scan samples themselves, with marker sizes indicating power values
-    plot_marker_3d(target_coords[0], target_coords[1], total_power, ax=ax, color='b')
+    plot_marker_3d(target_coords[0], target_coords[1], total_power, ax=ax, color='b',  alpha=0.75)
     # Plot the fitted Gaussian beam function as contours
     if compscan.beam:
         if compscan.beam.is_valid:
@@ -810,7 +810,7 @@ def plot_data_set_in_mount_space(dataset, levels=None, band=0, ax=None):
             mount_coords[0] = minimise_angle_wrap(mount_coords[0])
 
         # Show the locations of the scan samples themselves, with marker sizes indicating power values
-        plot_marker_3d(rad2deg(mount_coords[0]), rad2deg(mount_coords[1]), total_power, ax=ax)
+        plot_marker_3d(rad2deg(mount_coords[0]), rad2deg(mount_coords[1]), total_power, ax=ax, alpha=0.75)
         # Plot the fitted Gaussian beam function as contours
         if compscan.beam:
             ell_type, center_type = 'r-', 'r+'
