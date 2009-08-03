@@ -148,7 +148,7 @@ class BeamPatternFit(ScatterFit):
 #--- FUNCTION :  fit_beam_and_baselines
 #--------------------------------------------------------------------------------------------------
 
-def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), stokes='I', band=0):
+def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), stokes='I', refine_beam=True, band=0):
     """Simultaneously fit beam and baselines to all scans in a compound scan.
 
     This fits a beam pattern and baselines to the total power data in all the
@@ -170,6 +170,10 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), sto
         Degrees of initial polynomial baseline, along x and y coordinate
     stokes : {'I', 'Q', 'U', 'V'}, optional
         The Stokes parameter in which to fit beam and baselines
+    refine_beam : {True, False}, optional
+        If true, baselines are refined per scan and beam is refitted to within
+        FWHM region around peak. This is a good idea for linear scans, but not
+        for spiral or other exotic scans.
     band : int, optional
         Frequency band in which to fit beam and baselines
 
@@ -243,10 +247,13 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), sto
         # Stop when total power starts increasing again as a function of radius
         if np.median(total_power[outside_null]) > np.median(total_power[inside_null]):
             break
+    # pylint: disable-msg=W0631
     beam.radius_first_null = null
 
-    # Refine beam by redoing baseline fits on per-scan basis, fitted against time
+    # If requested, refine beam by redoing baseline fits on per-scan basis, fitted against time
     good_scan_coords, good_scan_resid, baselines = [], [], []
+    if not refine_beam:
+        return beam, baselines, initial_baseline
     for n, scan in enumerate(compscan.scans):
         radius = np.sqrt(((scan.target_coords - beam.center[:, np.newaxis]) ** 2).sum(axis=0))
         around_null = np.abs(radius - beam.radius_first_null) < 0.2 * beam.width
