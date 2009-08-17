@@ -24,7 +24,7 @@ acsm_logger.setLevel(logging.ERROR)
 # pylint: disable-msg=W0611
 import acsm
 
-from katpoint import deg2rad, rad2deg, construct_target, construct_antenna
+from katpoint import deg2rad, rad2deg, construct_target, construct_antenna, Catalogue
 from .scan import Scan, move_start_to_center
 from .compoundscan import CompoundScan, CorrelatorConfig
 from .gaincal import NoiseDiodeModel, NoiseDiodeNotFound
@@ -240,8 +240,8 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, **kwargs):
     consecutively numbered FITS files. The noise diode model can be overridden.
     The target objects of each compound scan can also be refined if they are of
     *radec* type, by looking them up by name or by closest distance in the given
-    :class:`katpoint.Catalogue`. This is useful to work around the apparent
-    ra/dec values stored in the ACSM target objects.
+    :class:`katpoint.Catalogue` (or file containing targets). This is useful to
+    work around the apparent ra/dec values stored in the ACSM target objects.
 
     Parameters
     ----------
@@ -249,8 +249,8 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, **kwargs):
         Name of first FITS file in sequence
     nd_filename : string, optional
         Name of FITS file containing alternative noise diode model
-    catalogue : :class:`katpoint.Catalogue` object, optional
-        Catalogue used to refine ACSM target objects in data set
+    catalogue : :class:`katpoint.Catalogue` object or string, optional
+        Catalogue used to refine ACSM target objects in data set (or filename)
     kwargs : dict, optional
         Extra keyword arguments are ignored, as they usually apply to other formats
 
@@ -326,10 +326,13 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, **kwargs):
         target = construct_target(targets[esn])
         # Refine radec target to replace its apparent ra/dec coords with astrometric ones
         if catalogue and (target.tags[0] == 'radec'):
+            # A string argument for catalogue is assumed to be a file name - try to open it blindly
+            if isinstance(catalogue, basestring):
+                catalogue = Catalogue(file(catalogue), add_specials=False)
             # First attempt named lookup, then try distance-based lookup
             new_target = catalogue[target.name.strip()]
             if new_target:
-                logger.info("Replaced original ACSM target '%s' with target '%s' in catalogue" %
+                logger.info("Replaced original ACSM target '%s' with target '%s' with matching name in catalogue" %
                             (target.name, new_target.name))
                 target = new_target
             else:
