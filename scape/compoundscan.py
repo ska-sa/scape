@@ -161,7 +161,7 @@ class CompoundScan(object):
 
     def __str__(self):
         """Verbose human-friendly string representation of compound scan object."""
-        descr = ["target='%s' [%s]" % (self.target.name, self.target.tags[0])]
+        descr = ["target='%s' [%s]" % (self.target.name, self.target.body_type)]
         if self.baseline:
             descr[0] += ', initial baseline offset=%f' % (self.baseline.poly[-1],)
         if self.beam:

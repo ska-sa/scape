@@ -180,7 +180,7 @@ class DataSet(object):
                   self.freqs[-1], self.bandwidths.sum(), self.dump_rate)]
         for compscan_ind, compscan in enumerate(self.compscans):
             descr.append("%4d: target='%s' [%s]" %
-                         (compscan_ind, compscan.target.name, compscan.target.tags[0]))
+                         (compscan_ind, compscan.target.name, compscan.target.body_type))
             if compscan.baseline:
                 descr[-1] += ', initial baseline offset=%f' % (compscan.baseline.poly[-1],)
             if compscan.beam:

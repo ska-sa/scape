@@ -318,14 +318,14 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, **kwargs):
                     pass
         target = construct_target(target)
         logger.info("Loaded %s: %s '%s' [%s] (%d samps, %d chans, %d pols)" %
-                    (os.path.basename(fits_file), scan.label, target.name, target.tags[0],
+                    (os.path.basename(fits_file), scan.label, target.name, target.body_type,
                      scan.data.shape[0], scan.data.shape[1], scan.data.shape[2]))
     # Assemble CompoundScan objects from scan lists
     compscanlist = []
     for esn, scanlist in scanlists.iteritems():
         target = construct_target(targets[esn])
         # Refine radec target to replace its apparent ra/dec coords with astrometric ones
-        if catalogue and (target.tags[0] == 'radec'):
+        if catalogue and (target.body_type == 'radec'):
             # A string argument for catalogue is assumed to be a file name - try to open it blindly
             if isinstance(catalogue, basestring):
                 catalogue = Catalogue(file(catalogue), add_specials=False)
