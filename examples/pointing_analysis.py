@@ -48,9 +48,8 @@ fh.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
 logger.addHandler(fh)
 
 # Load catalogue used to convert ACSM targets to katpoint ones
-cat = katpoint.Catalogue(add_specials=False)
 try:
-    cat.add(file(options.catfilename))
+    cat = katpoint.Catalogue(file(options.catfilename), add_specials=False)
 except IOError:
     cat = None
 
@@ -70,8 +69,8 @@ if len(datasets) == 0:
 index = 0
 pointing_offsets = []
 
-def next_load_reduce_plot(ax1=None, ax2=None):
-    """Load next data set, reduce the data, update the plot in given axes and store pointing offset."""
+def next_load_reduce_plot(fig=None):
+    """Load next data set, reduce the data, update the plots in given figure and store pointing offset."""
     # If end of list is reached, save pointing offsets to file and exit
     global index
     if index >= len(datasets):
@@ -136,6 +135,7 @@ def next_load_reduce_plot(ax1=None, ax2=None):
 
     # Display compound scan
     if not options.batch:
+        (ax1, ax2), info = fig.axes[:2], fig.texts[0]
         ax1.clear()
         scape.plot_compound_scan_in_time(compscan, ax=ax1)
         ax1.set_title("%s '%s'\nazel=(%.1f, %.1f) deg, offset=(%.1f, %.1f) arcmin" %
@@ -145,10 +145,13 @@ def next_load_reduce_plot(ax1=None, ax2=None):
         ax2.clear()
         scape.plot_compound_scan_on_target(compscan, ax=ax2)
         if compscan.beam:
-            ax2.text(0, -0.25, "Expected beamwidth = %.1f'\nFitted beamwidth = %.1f'" %
-                               (60. * katpoint.rad2deg(compscan.beam.expected_width),
-                                60. * katpoint.rad2deg(compscan.beam.width)),
-                     ha='left', va='top', transform=ax2.transAxes)
+            info.set_text("Beamwidth = %.1f' (expected %.1f')\nBeam height = %.1f %s\nBaseline height = %.1f %s" %
+                          (60. * katpoint.rad2deg(compscan.beam.width),
+                           60. * katpoint.rad2deg(compscan.beam.expected_width),
+                           compscan.beam.height, d.data_unit,
+                           compscan.baseline.poly[-1], d.data_unit))
+        else:
+            info.set_text("No beam\nBaseline height = %.2f %s" % (compscan.baseline.poly[-1], d.data_unit))
         plt.draw()
 
     # If beam is marked as invalid, discard pointing only if in batch mode (otherwise discard button has to do it)
@@ -170,19 +173,21 @@ if options.batch:
 
 # Set up figure with buttons
 plt.ion()
-plt.figure(1)
+fig = plt.figure(1)
 plt.clf()
-ax1, ax2 = plt.subplot(211), plt.subplot(212)
+plt.subplot(211)
+plt.subplot(212)
 plt.subplots_adjust(bottom=0.2)
+plt.figtext(0.05, 0.05, '', va='bottom', ha='left')
 # Create buttons and their callbacks
 keep_button = widgets.Button(plt.axes([0.48, 0.05, 0.1, 0.075]), 'Keep')
 def keep_callback(event):
-    next_load_reduce_plot(ax1, ax2)
+    next_load_reduce_plot(fig)
 keep_button.on_clicked(keep_callback)
 discard_button = widgets.Button(plt.axes([0.59, 0.05, 0.1, 0.075]), 'Discard')
 def discard_callback(event):
     pointing_offsets[-1] = None
-    next_load_reduce_plot(ax1, ax2)
+    next_load_reduce_plot(fig)
 discard_button.on_clicked(discard_callback)
 back_button = widgets.Button(plt.axes([0.7, 0.05, 0.1, 0.075]), 'Back')
 def back_callback(event):
@@ -191,15 +196,15 @@ def back_callback(event):
         index -= 2
         pointing_offsets.pop()
         pointing_offsets.pop()
-    next_load_reduce_plot(ax1, ax2)
+    next_load_reduce_plot(fig)
 back_button.on_clicked(back_callback)
 done_button = widgets.Button(plt.axes([0.81, 0.05, 0.1, 0.075]), 'Done')
 def done_callback(event):
     global index
     index = len(datasets)
-    next_load_reduce_plot(ax1, ax2)
+    next_load_reduce_plot(fig)
 done_button.on_clicked(done_callback)
 
 # Start off the processing
-next_load_reduce_plot(ax1, ax2)
+next_load_reduce_plot(fig)
 plt.show()
