@@ -17,6 +17,7 @@ logger = logging.getLogger("scape.hdf5")
 #--- FUNCTION :  load_dataset
 #--------------------------------------------------------------------------------------------------
 
+# pylint: disable-msg=W0613
 def load_dataset(filename, **kwargs):
     """Load data set from HDF5 file.
 
@@ -41,11 +42,13 @@ def load_dataset(filename, **kwargs):
         Description string of antenna that produced the data set
     nd_data : :class:`NoiseDiodeModel` object
         Noise diode model
+    pointing_model : array of float
+        Pointing model parameters, nominally in radians
 
     """
     # pylint: disable-msg=R0914
     with h5py.File(filename, 'r') as f:
-        pointing_model = f['pointing_model'].value  # TODO return this as well
+        pointing_model = f['pointing_model'].value
         data_unit = f.attrs['data_unit']
         antenna = f.attrs['antenna']
         comment = f.attrs['comment'] # TODO return this as well
@@ -96,6 +99,7 @@ def load_dataset(filename, **kwargs):
                 scan_timestamps = f['Scans'][compscan][scan]['timestamps'].value.astype(np.float64) / 1000.0
                 scan_pointing = f['Scans'][compscan][scan]['pointing'].value
                 # Convert contents of pointing from degrees to radians
+                # pylint: disable-msg=W0612
                 pointing_view = scan_pointing.view(np.float32)
                 pointing_view *= np.pi / 180.0
                 # Move timestamps and pointing from start of each sample to the middle
@@ -114,7 +118,7 @@ def load_dataset(filename, **kwargs):
 
         # Sort compound scans chronologically too
         compscanlist.sort(key=lambda compscan: compscan.scans[0].timestamps[0])
-        return compscanlist, data_unit, corrconf, antenna, nd_data
+        return compscanlist, data_unit, corrconf, antenna, nd_data, pointing_model
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  save_dataset
@@ -134,7 +138,7 @@ def save_dataset(dataset, filename):
 
     """
     with h5py.File(filename, 'w') as f:
-        f['/'].create_dataset('pointing_model', data=np.zeros(16, dtype=np.float32))
+        f['/'].create_dataset('pointing_model', data=dataset.pointing_model.params)
         f['/'].attrs['data_unit'] = dataset.data_unit
         f['/'].attrs['antenna'] = dataset.antenna.description
         f['/'].attrs['comment'] = ''
@@ -172,6 +176,7 @@ def save_dataset(dataset, filename):
                 timestamps = np.round(1000.0 * timestamps).astype(np.uint64)
                 scan_group.create_dataset('timestamps', data=timestamps, compression='gzip')
                 # Convert contents of pointing from radians to degrees, without disturbing original
+                # pylint: disable-msg=W0612
                 pointing_view = pointing.view(np.float32)
                 pointing_view *= 180.0 / np.pi
                 scan_group.create_dataset('pointing', data=pointing, compression='gzip')

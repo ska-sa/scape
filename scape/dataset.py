@@ -39,7 +39,8 @@ class DataSet(object):
     :class:`DataSet` can also be directly initialised from its constituent
     parts, which is useful for simulations and creating the data sets from
     scratch. The :class:`DataSet` object contains a list of compound scans, as
-    well as the correlator configuration, antenna details and noise diode model.
+    well as the correlator configuration, antenna details, and noise diode and
+    pointing models.
 
     Parameters
     ----------
@@ -55,6 +56,8 @@ class DataSet(object):
         Antenna that produced the data set, as object or description string
     nd_data : :class:`gaincal.NoiseDiodeModel` object, optional
         Noise diode model
+    pointing_model : :class:`katpoint.PointingModel` object or array of float, optional
+        Pointing model in use during experiment (or array of parameters in radians)
     kwargs : dict, optional
         Extra keyword arguments are passed to selected :func:`load_dataset` function
 
@@ -76,13 +79,11 @@ class DataSet(object):
     ImportError
         If file extension is known, but appropriate module would not import
     ValueError
-        If file extension is unknown
-    KeyError
-        If the antenna name is unknown
+        If file extension is unknown or parameter is invalid
 
     """
     def __init__(self, filename, compscanlist=None, data_unit=None, corrconf=None,
-                 antenna=None, nd_data=None, **kwargs):
+                 antenna=None, nd_data=None, pointing_model=None, **kwargs):
         if filename:
             ext = os.path.splitext(filename)[1]
             if ext == '.fits':
@@ -92,9 +93,13 @@ class DataSet(object):
             elif (ext == '.h5') or (ext == '.hdf5'):
                 if not hdf5_found:
                     raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
-                compscanlist, data_unit, corrconf, antenna, nd_data = hdf5_load(filename, **kwargs)
+                hdf5_results = hdf5_load(filename, **kwargs)
+                compscanlist, data_unit, corrconf, antenna, nd_data = hdf5_results[:5]
+                if pointing_model is None:
+                    pointing_model = hdf5_results[5]
             else:
                 raise ValueError("File extension '%s' not understood" % ext)
+
         self.compscans = compscanlist
         self.data_unit = data_unit
         self.corrconf = corrconf
@@ -103,6 +108,21 @@ class DataSet(object):
         else:
             self.antenna = katpoint.construct_antenna(antenna)
         self.noise_diode_data = nd_data
+
+        if isinstance(pointing_model, katpoint.PointingModel):
+            self.pointing_model = pointing_model
+        elif pointing_model is None:
+            self.pointing_model = katpoint.PointingModel()
+        else:
+            # Complain if loaded model has too many parameters (= newer...), but happily load smaller (older) models
+            params = np.zeros(katpoint.PointingModel.num_params)
+            if len(pointing_model) > len(params):
+                logger.warning('Loaded pointing model has too many parameters (%d), expected only %d' %
+                                 (len(pointing_model), len(params)))
+            common_params = min(len(pointing_model), len(params))
+            params[:common_params] = pointing_model[:common_params]
+            self.pointing_model = katpoint.PointingModel(params)
+
         # Create scan list and calculate target coordinates for all scans
         self.scans = []
         for compscan in self.compscans:
@@ -120,7 +140,8 @@ class DataSet(object):
                 return False
         return (self.data_unit == other.data_unit) and (self.corrconf == other.corrconf) and \
                (self.antenna.description == other.antenna.description) and \
-               (self.noise_diode_data == other.noise_diode_data)
+               (self.noise_diode_data == other.noise_diode_data) and \
+               np.all(self.pointing_model.params == other.pointing_model.params)
 
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -340,7 +361,7 @@ class DataSet(object):
             if scanlist:
                 compscanlist.append(CompoundScan(scanlist, compscan.target.description))
         return DataSet(None, compscanlist, self.data_unit, self.corrconf.select(freqkeep),
-                       self.antenna.description, self.noise_diode_data)
+                       self.antenna.description, self.noise_diode_data, self.pointing_model)
 
     def identify_rfi_channels(self, sigma=8.0, min_bad_scans=0.25, extra_outputs=False):
         """Identify potential RFI-corrupted channels.
@@ -416,7 +437,7 @@ class DataSet(object):
         non_rfi = sorted(list(set(range(len(self.freqs))) - set(rfi_channels)))
         d = self.select(freqkeep=non_rfi, copy=True)
         DataSet.__init__(self, None, d.compscans, d.data_unit, d.corrconf,
-                         d.antenna.description, d.noise_diode_data)
+                         d.antenna.description, d.noise_diode_data, d.pointing_model)
         return self
 
     def convert_power_to_temperature(self, randomise=False, **kwargs):

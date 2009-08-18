@@ -27,11 +27,13 @@ parser = optparse.OptionParser(usage="%prog [options] <directories or files>",
                                             which allows the user to inspect results and discard bad scans. \
                                             By default all datasets in the current directory and all \
                                             subdirectories are processed.")
-parser.set_defaults(catfilename='source_list.csv', outfilebase='pointing_offsets')
+parser.set_defaults(catfilename='source_list.csv', pmfilename='pointing_model.csv', outfilebase='pointing_offsets')
 parser.add_option("-b", "--batch", dest="batch", action="store_true",
                   help="True if processing is to be done in batch mode without user interaction")
 parser.add_option("-c", "--catalogue", dest="catfilename", type="string",
                   help="Name of optional source catalogue file used to override XDM FITS targets")
+parser.add_option("-p", "--pointing_model", dest="pmfilename", type="string",
+                  help="Name of optional file containing pointing model parameters in degrees (needed for XDM)")
 parser.add_option("-o", "--output", dest="outfilebase", type="string",
                   help="Base name of output files (*.csv for offsets and *.log for messages)")
 
@@ -52,6 +54,15 @@ try:
     cat = katpoint.Catalogue(file(options.catfilename), add_specials=False)
 except IOError:
     cat = None
+# Load pointing model parameters
+try:
+    pm = katpoint.deg2rad(np.loadtxt(options.pmfilename, delimiter=','))
+    # These scale factors are unitless, and should not be converted to radians
+    pm[8] = katpoint.rad2deg(pm[8])
+    pm[11] = katpoint.rad2deg(pm[11])
+    logger.debug("Loaded %d-parameter pointing model from '%s'" % (len(pm), options.pmfilename))
+except IOError:
+    pm = None
 
 # Find all data sets (HDF5 or FITS) mentioned, and add them to datasets
 datasets = []
@@ -85,7 +96,7 @@ def next_load_reduce_plot(fig=None):
     filename = datasets[index]
     index += 1
     logger.info("Loading dataset '%s'" % (filename,))
-    d = scape.DataSet(filename, catalogue=cat)
+    d = scape.DataSet(filename, catalogue=cat, pointing_model=pm)
     if filename.endswith('.fits'):
         dirs = filename.split(os.path.sep)
         if len(dirs) > 2:

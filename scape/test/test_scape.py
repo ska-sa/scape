@@ -80,7 +80,8 @@ class PointSourceScanTestCases(unittest.TestCase):
 
         # Construct data set
         nd_data = scape.gaincal.NoiseDiodeModel(np.array([[center_freq_MHz, 10.]]), np.array([[center_freq_MHz, 10.]]))
-        self.dataset = scape.DataSet('', [scape.CompoundScan(scanlist, target)], 'Jy', corrconf, ant, nd_data)
+        pm = np.ones(20)
+        self.dataset = scape.DataSet('', [scape.CompoundScan(scanlist, target)], 'Jy', corrconf, ant, nd_data, pm)
 
     def test_beam_fit(self):
         """Check if beam fitting is successful."""

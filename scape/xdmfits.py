@@ -233,6 +233,7 @@ def load_scan(filename):
     return Scan(data, is_stokes, timestamps, pointing, flags, environment, label, path), \
            data_unit, corrconf, target, antenna, exp_seq_num, feed_id
 
+# pylint: disable-msg=W0613
 def load_dataset(data_filename, nd_filename=None, catalogue=None, **kwargs):
     """Load data set from XDM FITS file series.
 
