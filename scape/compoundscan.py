@@ -173,3 +173,53 @@ class CompoundScan(object):
     def __repr__(self):
         """Short human-friendly string representation of compound scan object."""
         return "<scape.CompoundScan target='%s' scans=%d at 0x%x>" % (self.target.name, len(self.scans), id(self))
+
+    def baseline_height(self):
+        """Estimate height of fitted baseline (at fitted beam center).
+
+        This estimates the height of the fitted baseline (if any) at the beam
+        center (or the target position, if no beam is fitted). It takes into
+        account scan-based baselines in the case of a refined beam.
+
+        Returns
+        -------
+        height : float or None
+            Estimated baseline height, in data units (None if no baseline)
+
+        """
+        if self.beam and self.beam.is_valid:
+            # Refined beam has at least 2 per-scan baselines - obtain weighted average closest to beam center
+            if self.beam.is_refined:
+                dist_to_center = np.tile(np.inf, len(self.scans))
+                closest_time = np.zeros(len(self.scans))
+                # Find sample in time in each scan that is closest to beam center
+                for n, scan in enumerate(self.scans):
+                    if scan.baseline:
+                        dist_sq = (scan.target_coords[0] - self.beam.center[0]) ** 2 + \
+                                  (scan.target_coords[1] - self.beam.center[1]) ** 2
+                        closest_sample = dist_sq.argmin()
+                        dist_to_center[n] = np.sqrt(dist_sq[closest_sample])
+                        closest_time[n] = scan.timestamps[closest_sample]
+                # Pick the closest two samples (in different scans)
+                closest_scan = dist_to_center.argmin()
+                dist_closest = dist_to_center[closest_scan]
+                assert dist_closest < np.inf, 'Beam is refined but no scan-based baselines found'
+                dist_to_center[closest_scan] = np.inf
+                next_closest_scan = dist_to_center.argmin()
+                dist_next_closest = dist_to_center[next_closest_scan]
+                assert dist_next_closest < np.inf, 'Beam is refined but less than 2 scan-based baselines found'
+                # Return a weighted sum of the per-scan baseline heights at the closest two samples
+                # Baseline height is linear combination - assumes beam center is *between* nearest two scans
+                baseline_closest = self.scans[closest_scan].baseline(closest_time[closest_scan])
+                baseline_next_closest = self.scans[next_closest_scan].baseline(closest_time[next_closest_scan])
+                return (dist_next_closest * baseline_closest + dist_closest * baseline_next_closest) / \
+                       (dist_closest + dist_next_closest)
+            else:
+                # Return compound scan-based baseline height at beam center
+                return self.baseline(np.expand_dims(self.beam.center, 1))
+        elif self.baseline:
+            # Without a beam, return the baseline height at the target position
+            return self.baseline([[0.], [0.]])
+        else:
+            # Without no baseline or beam, return None
+            return None

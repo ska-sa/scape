@@ -148,10 +148,9 @@ def next_load_reduce_plot(fig=None):
             info.set_text("Beamwidth = %.1f' (expected %.1f')\nBeam height = %.1f %s\nBaseline height = %.1f %s" %
                           (60. * katpoint.rad2deg(compscan.beam.width),
                            60. * katpoint.rad2deg(compscan.beam.expected_width),
-                           compscan.beam.height, d.data_unit,
-                           compscan.baseline.poly[-1], d.data_unit))
+                           compscan.beam.height, d.data_unit, compscan.baseline_height(), d.data_unit))
         else:
-            info.set_text("No beam\nBaseline height = %.2f %s" % (compscan.baseline.poly[-1], d.data_unit))
+            info.set_text("No beam\nBaseline height = %.2f %s" % (compscan.baseline_height(), d.data_unit))
         plt.draw()
 
     # If beam is marked as invalid, discard pointing only if in batch mode (otherwise discard button has to do it)
