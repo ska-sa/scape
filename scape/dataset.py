@@ -108,20 +108,10 @@ class DataSet(object):
         else:
             self.antenna = katpoint.construct_antenna(antenna)
         self.noise_diode_data = nd_data
-
         if isinstance(pointing_model, katpoint.PointingModel):
             self.pointing_model = pointing_model
-        elif pointing_model is None:
-            self.pointing_model = katpoint.PointingModel()
         else:
-            # Complain if loaded model has too many parameters (= newer...), but happily load smaller (older) models
-            params = np.zeros(katpoint.PointingModel.num_params)
-            if len(pointing_model) > len(params):
-                logger.warning('Loaded pointing model has too many parameters (%d), expected only %d' %
-                                 (len(pointing_model), len(params)))
-            common_params = min(len(pointing_model), len(params))
-            params[:common_params] = pointing_model[:common_params]
-            self.pointing_model = katpoint.PointingModel(params)
+            self.pointing_model = katpoint.PointingModel(pointing_model, strict=False)
 
         # Create scan list and calculate target coordinates for all scans
         self.scans = []
