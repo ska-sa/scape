@@ -130,7 +130,12 @@ class MuSigmaArray(np.ndarray):
 
     def __str__(self):
         """Informal string representation."""
-        return 'mu    = ' + str(self.mu) + '\nsigma = ' + str(self.sigma)
+        if self.sigma is None:
+            return str(self.mu)
+        else:
+            str_array = np.array(['%s(%s)' % (m, s)
+                                  for m, s in zip(self.mu.ravel(), self.sigma.ravel())]).reshape(self.shape)
+            return str(str_array).replace("'", '')
 
     def __getitem__(self, value):
         """Index both arrays at the same time."""
@@ -145,6 +150,92 @@ class MuSigmaArray(np.ndarray):
             return MuSigmaArray(self.mu[first:last], None)
         else:
             return MuSigmaArray(self.mu[first:last], self.sigma[first:last])
+
+    def __add__(self, other):
+        """Perform self + other."""
+        if isinstance(other, MuSigmaArray):
+            if self.sigma is None:
+                new_sigma = None
+            else:
+                other_sigma = np.zeros(other.mu.shape) if other.sigma is None else other.sigma
+                new_sigma = np.sqrt(self_sigma ** 2 + other_sigma ** 2)
+            return MuSigmaArray(self.mu + other.mu, new_sigma)
+        else:
+            return MuSigmaArray(self.mu + other, self.sigma)
+
+    def __sub__(self, other):
+        """Perform self - other."""
+        if isinstance(other, MuSigmaArray):
+            if self.sigma is None:
+                new_sigma = None
+            else:
+                other_sigma = np.zeros(other.mu.shape) if other.sigma is None else other.sigma
+                new_sigma = np.sqrt(self_sigma ** 2 + other_sigma ** 2)
+            return MuSigmaArray(self.mu - other.mu, new_sigma)
+        else:
+            return MuSigmaArray(self.mu - other, self.sigma)
+
+    def __mul__(self, other):
+        """Perform self * other."""
+        return MuSigmaArray(self.mu * other, None if self.sigma is None else self.sigma * np.abs(other))
+
+    def __div__(self, other):
+        """Perform self / other."""
+        return MuSigmaArray(self.mu / other, None if self.sigma is None else self.sigma / np.abs(other))
+
+    def __radd__(self, other):
+        """Perform other + self."""
+        return self.__add__(other)
+
+    def __rsub__(self, other):
+        """Perform other - self."""
+        return self.__sub__(other)
+
+    def __rmul__(self, other):
+        """Perform other * self."""
+        return self.__mul__(other)
+
+    def __iadd__(self, other):
+        """Perform self += other."""
+        if isinstance(other, MuSigmaArray):
+            if self.sigma is None:
+                new_sigma = None
+            else:
+                other_sigma = np.zeros(other.mu.shape) if other.sigma is None else other.sigma
+                new_sigma = np.sqrt(self_sigma ** 2 + other_sigma ** 2)
+            self.mu += other.mu
+            self.sigma = new_sigma
+        else:
+            self.mu += other
+        return self
+
+    def __isub__(self, other):
+        """Perform self -= other."""
+        if isinstance(other, MuSigmaArray):
+            if self.sigma is None:
+                new_sigma = None
+            else:
+                other_sigma = np.zeros(other.mu.shape) if other.sigma is None else other.sigma
+                new_sigma = np.sqrt(self_sigma ** 2 + other_sigma ** 2)
+            self.mu -= other.mu
+            self.sigma = new_sigma
+        else:
+            self.mu -= other
+        return self
+
+    def __imul__(self, other):
+        """Perform self *= other."""
+        self.mu *= other
+        if not self.sigma is None:
+            self.sigma *= np.abs(other)
+        return self
+
+    def __idiv__(self, other):
+        """Perform self /= other."""
+        self.mu /= other
+        if not self.sigma is None:
+            self.sigma /= np.abs(other)
+        return self
 
     def __copy__(self):
         """Shallow copy operation."""
