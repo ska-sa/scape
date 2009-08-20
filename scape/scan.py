@@ -59,12 +59,20 @@ def move_start_to_center(start_times, pointing_at_start, sample_period):
 
     """
     center_times = start_times + 0.5 * sample_period
-    next_start_times = np.hstack((start_times[1:], [2.0 * start_times[-1] - start_times[-2]]))
+    if len(start_times) > 1:
+        next_start_times = np.hstack((start_times[1:], [2.0 * start_times[-1] - start_times[-2]]))
+    else:
+        # If there is only one sample, assume next sample would have been a sample period later
+        next_start_times = start_times + sample_period
     weights = (next_start_times - center_times) / (next_start_times - start_times)
     pointing_at_center = pointing_at_start.copy()
     for name in pointing_at_start.dtype.names:
         x_at_start = pointing_at_start[name]
-        x_at_next_start = np.hstack((x_at_start[1:], [2.0 * x_at_start[-1] - x_at_start[-2]]))
+        if len(x_at_start) > 1:
+            x_at_next_start = np.hstack((x_at_start[1:], [2.0 * x_at_start[-1] - x_at_start[-2]]))
+        else:
+            # Not much you can interpolate with only one sample... Assume it stays constant
+            x_at_next_start = x_at_start
         x_at_center = weights * x_at_start + (1.0 - weights) * x_at_next_start
         pointing_at_center[name] = x_at_center
     return center_times, pointing_at_center
@@ -102,16 +110,24 @@ def move_center_to_start(center_times, pointing_at_center, sample_period):
 
     """
     start_times = center_times - 0.5 * sample_period
-    next_start_times = np.hstack((start_times[1:], [2.0 * start_times[-1] - start_times[-2]]))
+    if len(start_times) > 1:
+        next_start_times = np.hstack((start_times[1:], [2.0 * start_times[-1] - start_times[-2]]))
+    else:
+        # If there is only one sample, assume next sample would have been a sample period later
+        next_start_times = start_times + sample_period
     weights = (next_start_times - center_times) / (next_start_times - start_times)
     pointing_at_start = pointing_at_center.copy()
     for name in pointing_at_center.dtype.names:
         x_at_center = pointing_at_center[name]
         x_at_start = np.zeros(x_at_center.shape)
-        x_at_start[-1] = (weights[-2] * x_at_center[-1] + (1.0 - weights[-1]) * x_at_center[-2]) / \
-                         (weights[-2] + 1.0 - weights[-1])
-        for n in xrange(len(x_at_start) - 2, -1, -1):
-            x_at_start[n] = (x_at_center[n] - (1.0 - weights[n]) * x_at_start[n + 1]) / weights[n]
+        if len(x_at_center) > 1:
+            x_at_start[-1] = (weights[-2] * x_at_center[-1] + (1.0 - weights[-1]) * x_at_center[-2]) / \
+                             (weights[-2] + 1.0 - weights[-1])
+            for n in xrange(len(x_at_start) - 2, -1, -1):
+                x_at_start[n] = (x_at_center[n] - (1.0 - weights[n]) * x_at_start[n + 1]) / weights[n]
+        else:
+            # Not much you can interpolate with only one sample... Assume it stays constant
+            x_at_start = x_at_center
         pointing_at_start[name] = x_at_start
     return start_times, pointing_at_start
 
