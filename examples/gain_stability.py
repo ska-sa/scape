@@ -56,7 +56,7 @@ for filename in datasets:
     d = scape.DataSet(filename)
     # Estimate receiver gains and phases based on valid noise diode jumps in data set
     t, gx, gy, phi = scape.gaincal.estimate_gain(d)
-    temp = np.ma.masked_array(zeros(t.shape), np.tile(True, t.shape))
+    temp = np.ma.masked_array(np.zeros(t.shape), np.tile(True, t.shape))
     az, el = np.tile(np.nan, t.shape), np.tile(np.nan, t.shape)
     freqs = d.freqs
     if len(t) > 0:
