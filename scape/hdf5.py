@@ -45,9 +45,19 @@ def load_dataset(filename, **kwargs):
     pointing_model : array of float
         Pointing model parameters, nominally in radians
 
+    Raises
+    ------
+    ValueError
+        If file has not been augmented to contain all data fields
+    h5py.H5Error
+        If HDF5 error occurred
+
     """
     # pylint: disable-msg=R0914
     with h5py.File(filename, 'r') as f:
+        # Only continue if file has been properly augmented
+        if not 'augment' in f.attrs.listnames():
+            raise ValueError('HDF5 file not augmented - please run k7augment/augment.py on this file')
         pointing_model = f['pointing_model'].value
         data_unit = f.attrs['data_unit']
         antenna = f.attrs['antenna']
