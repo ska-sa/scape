@@ -152,6 +152,7 @@ def save_dataset(dataset, filename):
         f['/'].attrs['data_unit'] = dataset.data_unit
         f['/'].attrs['antenna'] = dataset.antenna.description
         f['/'].attrs['comment'] = ''
+        f['/'].attrs['augment'] = 'File created by scape'
 
         corrconf_group = f.create_group('CorrelatorConfig')
         corrconf_group.create_dataset('center_freqs', data=dataset.corrconf.freqs * 1e6, compression='gzip')
