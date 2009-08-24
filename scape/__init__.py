@@ -23,5 +23,6 @@ try:
 except ImportError:
     logger.warn('Matplotlib was not found - plotting will be disabled')
 else:
-    from .plots import plot_waterfall, plot_compound_scan_in_time, plot_compound_scan_on_target, \
+    from .plots import plot_spectrum, plot_waterfall, \
+                       plot_compound_scan_in_time, plot_compound_scan_on_target, \
                        plot_data_set_in_mount_space, plot_measured_beam_pattern

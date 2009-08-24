@@ -8,7 +8,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 from katpoint import rad2deg
-from .stats import remove_spikes, minimise_angle_wrap
+from .stats import robust_mu_sigma, remove_spikes, minimise_angle_wrap
 from .beam_baseline import fwhm_to_sigma, interpolate_measured_beam
 
 logger = logging.getLogger("scape.plots")
@@ -19,6 +19,71 @@ def ordinal_suffix(n):
         return 'th'
     else:
         return {1 : 'st', 2 : 'nd', 3 : 'rd'}.get(n % 10, 'th')
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  plot_spectrum
+#--------------------------------------------------------------------------------------------------
+
+def plot_spectrum(dataset, scan=0, sigma=1.0, coherency=None, stokes='I', ax=None):
+    """Spectrum plot of power data as a function of frequency.
+
+    This plots the power spectrum of the given scan (either in Stokes or
+    coherency form), with error bars indicating the variation in the data
+    (+/- *sigma* times the standard deviation). Robust statistics are used for
+    the plot (median and standard deviation derived from interquartile range).
+
+    Parameters
+    ----------
+    dataset : :class:`scape.DataSet` object
+        Data set to plot
+    scan : int, optional
+        Index of scan in data set to plot
+    sigma : float, optional
+        The error bar is this factor of standard deviation above and below mean
+    coherency : {None, 'XX', 'YY'}, optional
+        The coherency to display (default is to display Stokes parameter instead)
+    stokes : {'I', 'Q', 'U', 'V'}, optional
+        The Stokes parameter to display
+    ax : :class:`matplotlib.axes.Axes` object, optional
+        Matplotlib axes object to receive plot (default is current axes)
+
+    Returns
+    -------
+    ax : :class:`matplotlib.axes.Axes` object
+        Matplotlib Axes object representing plot
+
+    """
+    if ax is None:
+        ax = plt.gca()
+    if coherency is None:
+        power = robust_mu_sigma(dataset.scans[scan].stokes(stokes))
+    elif coherency in ['XX', 'YY']:
+        power = robust_mu_sigma(dataset.scans[scan].coherency(coherency))
+    else:
+        raise ValueError('Cannot plot complex coherency %s - select XX or YY instead' % coherency)
+
+    # Form makeshift rectangular patches indicating power variation in each channel
+    power_mean = np.repeat(power.mu, 3)
+    power_upper = np.repeat(power.mu + sigma * power.sigma, 3)
+    power_lower = np.repeat(power.mu - sigma * power.sigma, 3)
+    freqs = np.array([dataset.freqs - 0.999 * dataset.bandwidths / 2.0,
+                      dataset.freqs + 0.999 * dataset.bandwidths / 2.0,
+                      dataset.freqs + dataset.bandwidths / 2.0]).transpose().ravel()
+    mask = np.arange(len(power_mean)) % 3 == 2
+    # Fill_between (which uses poly path) is much faster than a Rectangle patch collection
+    ax.fill_between(freqs, power_lower, power_upper, where=~mask, facecolors='0.7', edgecolors='0.7')
+    ax.plot(freqs, np.ma.masked_array(power_mean, mask), color='b', lw=2)
+    ax.plot(dataset.freqs, power.mu, 'ob')
+    ax.set_xlim(dataset.freqs[0]  - dataset.bandwidths[0] / 2.0,
+                dataset.freqs[-1] + dataset.bandwidths[-1] / 2.0)
+    ax.set_xlabel('Frequency (MHz)')
+    if dataset.data_unit == 'Jy':
+        ax.set_ylabel('Flux density (Jy)')
+    elif dataset.data_unit == 'K':
+        ax.set_ylabel('Temperature (K)')
+    else:
+        ax.set_ylabel('Raw power')
+    return ax
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_waterfall
