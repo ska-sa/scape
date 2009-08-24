@@ -158,7 +158,7 @@ class MuSigmaArray(np.ndarray):
                 new_sigma = None
             else:
                 other_sigma = np.zeros(other.mu.shape) if other.sigma is None else other.sigma
-                new_sigma = np.sqrt(self_sigma ** 2 + other_sigma ** 2)
+                new_sigma = np.sqrt(self.sigma ** 2 + other_sigma ** 2)
             return MuSigmaArray(self.mu + other.mu, new_sigma)
         else:
             return MuSigmaArray(self.mu + other, self.sigma)
@@ -170,7 +170,7 @@ class MuSigmaArray(np.ndarray):
                 new_sigma = None
             else:
                 other_sigma = np.zeros(other.mu.shape) if other.sigma is None else other.sigma
-                new_sigma = np.sqrt(self_sigma ** 2 + other_sigma ** 2)
+                new_sigma = np.sqrt(self.sigma ** 2 + other_sigma ** 2)
             return MuSigmaArray(self.mu - other.mu, new_sigma)
         else:
             return MuSigmaArray(self.mu - other, self.sigma)
@@ -202,7 +202,7 @@ class MuSigmaArray(np.ndarray):
                 new_sigma = None
             else:
                 other_sigma = np.zeros(other.mu.shape) if other.sigma is None else other.sigma
-                new_sigma = np.sqrt(self_sigma ** 2 + other_sigma ** 2)
+                new_sigma = np.sqrt(self.sigma ** 2 + other_sigma ** 2)
             self.mu += other.mu
             self.sigma = new_sigma
         else:
@@ -216,7 +216,7 @@ class MuSigmaArray(np.ndarray):
                 new_sigma = None
             else:
                 other_sigma = np.zeros(other.mu.shape) if other.sigma is None else other.sigma
-                new_sigma = np.sqrt(self_sigma ** 2 + other_sigma ** 2)
+                new_sigma = np.sqrt(self.sigma ** 2 + other_sigma ** 2)
             self.mu -= other.mu
             self.sigma = new_sigma
         else:
