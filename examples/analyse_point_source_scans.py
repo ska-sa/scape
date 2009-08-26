@@ -1,7 +1,10 @@
+#!/usr/bin/python
 #
-# Example script that uses scape to reduce pointing data. The user can interactively
-# observe reduction results and discard bad data. The end product is a file
-# containing pointing offsets.
+# Example script that uses scape to reduce data consisting of scans across
+# multiple point sources. This can be used to determine gain curves, tipping
+# curves and pointing models. The user can interactively observe reduction
+# results and discard bad data. The end product is a file containing pointing,
+# fitted beam parameters, baseline height and weather measurements, etc.
 #
 # Ludwig Schwardt
 # 13 July 2009
@@ -23,11 +26,11 @@ import katpoint
 # Parse command-line options and arguments
 parser = optparse.OptionParser(usage="%prog [options] <directories or files>",
                                description="This processes one or more datasets (FITS or HDF5) and extracts \
-                                            pointing offsets from them. It runs interactively by default, \
+                                            fitted beam parameters from them. It runs interactively by default, \
                                             which allows the user to inspect results and discard bad scans. \
                                             By default all datasets in the current directory and all \
                                             subdirectories are processed.")
-parser.set_defaults(catfilename='source_list.csv', pmfilename='pointing_model.csv', outfilebase='pointing_offsets')
+parser.set_defaults(catfilename='source_list.csv', pmfilename='pointing_model.csv', outfilebase='point_source_scans')
 parser.add_option("-b", "--batch", dest="batch", action="store_true",
                   help="True if processing is to be done in batch mode without user interaction")
 parser.add_option("-c", "--catalogue", dest="catfilename", type="string",
@@ -35,7 +38,7 @@ parser.add_option("-c", "--catalogue", dest="catfilename", type="string",
 parser.add_option("-p", "--pointing_model", dest="pmfilename", type="string",
                   help="Name of optional file containing pointing model parameters in degrees (needed for XDM)")
 parser.add_option("-o", "--output", dest="outfilebase", type="string",
-                  help="Base name of output files (*.csv for offsets and *.log for messages)")
+                  help="Base name of output files (*.csv for output data and *.log for messages)")
 
 (options, args) = parser.parse_args()
 if len(args) < 1:
@@ -54,7 +57,7 @@ try:
     cat = katpoint.Catalogue(file(options.catfilename), add_specials=False)
 except IOError:
     cat = None
-# Load pointing model parameters
+# Load old pointing model parameters (useful if it is not in data file, like on XDM)
 try:
     pm = katpoint.deg2rad(np.loadtxt(options.pmfilename, delimiter=','))
     # These scale factors are unitless, and should not be converted to radians
@@ -78,17 +81,19 @@ if len(datasets) == 0:
     sys.exit(1)
 # Index to step through data sets as the buttons are pressed
 index = 0
-pointing_offsets = []
+output_data = []
 
 def next_load_reduce_plot(fig=None):
-    """Load next data set, reduce the data, update the plots in given figure and store pointing offset."""
-    # If end of list is reached, save pointing offsets to file and exit
+    """Load next data set, reduce the data, update the plots in given figure and store output data."""
+    # If end of list is reached, save output data to file and exit
     global index
     if index >= len(datasets):
         f = file(options.outfilebase + '.csv', 'w')
-        f.write('dataset, target, timestamp, azimuth, elevation, delta.azimuth, delta.elevation, ' +
-                'temperature, wind_speed, wind_direction\n')
-        f.writelines([('%s, %s, %s, %.7f, %.7f, %.7f, %.7f, %.2f, %.2f, %.2f\n' % p) for p in pointing_offsets if p])
+        f.write('dataset, target, timestamp_ut, azimuth, elevation, delta_azimuth, delta_elevation, ' +
+                'data_unit, beam_height, baseline_height, frequency, flux, ' +
+                'temperature, pressure, humidity, wind_speed, wind_direction\n')
+        f.writelines([(('%s, %s, %s, %.7f, %.7f, %.7f, %.7f, %s, %.7f, %.7f, %.7f, %.4f, ' +
+                        '%.2f, %.2f, %.2f, %.2f, %.2f\n') % p) for p in output_data if p])
         f.close()
         sys.exit(0)
 
@@ -109,14 +114,16 @@ def next_load_reduce_plot(fig=None):
     # Standard reduction
     d.remove_rfi_channels()
     d.convert_power_to_temperature()
-    d.average()
     d = d.select(labelkeep='scan')
+    # Save original channel frequencies before averaging
+    channel_freqs = d.freqs
+    d.average()
     d.fit_beams_and_baselines()
 
     # Handle missing data gracefully
     if len(d.compscans) == 0:
         logger.warning('No scan data found, skipping data set')
-        pointing_offsets.append(None)
+        output_data.append(None)
         if not options.batch:
             ax1.clear()
             ax1.set_title("%s - no scan data found" % name, size='medium')
@@ -124,25 +131,47 @@ def next_load_reduce_plot(fig=None):
             plt.draw()
         return
 
-    # Calculate pointing offset
+    # Obtain middle timestamp of compound scan, where all pointing calculations are done
     compscan = d.compscans[0]
     middle_time = np.median([scan.timestamps for scan in compscan.scans], axis=None)
-    requested_azel = compscan.target.azel(middle_time)
-    requested_azel = katpoint.rad2deg(np.array(requested_azel))
-    if compscan.beam:
-        beam_center_xy = compscan.beam.center
-        beam_center_azel = compscan.target.plane_to_sphere(beam_center_xy[0], beam_center_xy[1], middle_time)
-        beam_center_azel = katpoint.rad2deg(np.array(beam_center_azel))
-        offset_azel = scape.stats.angle_wrap(beam_center_azel - requested_azel, 360.)
-    else:
-        offset_azel = np.array([np.nan, np.nan])
-
-    # Obtain target, middle timestamp, average environmental data
+    # Obtain average environmental data
     temperature = np.mean([scan.environment['temperature'] for scan in d.scans])
+    pressure = np.mean([scan.environment['pressure'] for scan in d.scans])
+    humidity = np.mean([scan.environment['humidity'] for scan in d.scans])
     wind_speed = np.hstack([scan.environment['wind_speed'] for scan in d.scans])
     wind_direction = katpoint.deg2rad(np.hstack([scan.environment['wind_direction'] for scan in d.scans]))
     wind_n, wind_e = np.mean(wind_speed * np.cos(wind_direction)), np.mean(wind_speed * np.sin(wind_direction))
     wind_speed, wind_direction = np.sqrt(wind_n ** 2 + wind_e ** 2), katpoint.rad2deg(np.arctan2(wind_e, wind_n))
+
+    # Calculate pointing offset
+    # Start with requested (az, el) coordinates, as they apply at the middle time for a moving target
+    requested_azel = compscan.target.azel(middle_time)
+    # Correct for refraction, which becomes the requested value at input of pointing model
+    rc = katpoint.RefractionCorrection()
+    requested_azel = [requested_azel[0], rc.apply(requested_azel[1], temperature, pressure, humidity)]
+    requested_azel = katpoint.rad2deg(np.array(requested_azel))
+    if compscan.beam:
+        # Fitted beam center is in (x, y) coordinates, in projection centred on target
+        beam_center_xy = compscan.beam.center
+        # Convert this offset back to spherical (az, el) coordinates
+        beam_center_azel = compscan.target.plane_to_sphere(beam_center_xy[0], beam_center_xy[1], middle_time)
+        # Now correct the measured (az, el) for refraction and then apply the old pointing model
+        # to get a "raw" measured (az, el) at the output of the pointing model
+        beam_center_azel = [beam_center_azel[0], rc.apply(beam_center_azel[1], temperature, pressure, humidity)]
+        beam_center_azel = d.pointing_model.apply(*beam_center_azel)
+        beam_center_azel = katpoint.rad2deg(np.array(beam_center_azel))
+        # Make sure the offset is a small angle around 0 degrees
+        offset_azel = scape.stats.angle_wrap(beam_center_azel - requested_azel, 360.)
+    else:
+        offset_azel = np.array([np.nan, np.nan])
+
+    # Calculate beam and baseline height, and target flux for band
+    beam_height = compscan.beam.height if compscan.beam else np.nan
+    baseline_height = compscan.baseline_height()
+    if baseline_height is None:
+        baseline_height = np.nan
+    flux_spectrum = [compscan.target.flux_density(freq) for freq in channel_freqs]
+    average_flux = np.mean([flux for flux in flux_spectrum if flux])
 
     # Display compound scan
     if not options.batch:
@@ -159,18 +188,19 @@ def next_load_reduce_plot(fig=None):
             info.set_text("Beamwidth = %.1f' (expected %.1f')\nBeam height = %.1f %s\nBaseline height = %.1f %s" %
                           (60. * katpoint.rad2deg(compscan.beam.width),
                            60. * katpoint.rad2deg(compscan.beam.expected_width),
-                           compscan.beam.height, d.data_unit, compscan.baseline_height(), d.data_unit))
+                           compscan.beam.height, d.data_unit, baseline_height, d.data_unit))
         else:
-            info.set_text("No beam\nBaseline height = %.2f %s" % (compscan.baseline_height(), d.data_unit))
+            info.set_text("No beam\nBaseline height = %.2f %s" % (baseline_height, d.data_unit))
         plt.draw()
 
-    # If beam is marked as invalid, discard pointing only if in batch mode (otherwise discard button has to do it)
+    # If beam is marked as invalid, discard scan only if in batch mode (otherwise discard button has to do it)
     if not compscan.beam or (options.batch and not compscan.beam.is_valid):
-        pointing_offsets.append(None)
+        output_data.append(None)
     else:
-        pointing_offsets.append((name, compscan.target.name, katpoint.Timestamp(middle_time).local(),
-                                 requested_azel[0], requested_azel[1], offset_azel[0], offset_azel[1],
-                                 temperature, wind_speed, wind_direction))
+        output_data.append((name, compscan.target.name, katpoint.Timestamp(middle_time),
+                            requested_azel[0], requested_azel[1], offset_azel[0], offset_azel[1],
+                            d.data_unit, beam_height, baseline_height, d.freqs.mean(), average_flux,
+                            temperature, pressure, humidity, wind_speed, wind_direction))
 
 ### BATCH MODE ###
 
@@ -196,7 +226,7 @@ def keep_callback(event):
 keep_button.on_clicked(keep_callback)
 discard_button = widgets.Button(plt.axes([0.59, 0.05, 0.1, 0.075]), 'Discard')
 def discard_callback(event):
-    pointing_offsets[-1] = None
+    output_data[-1] = None
     next_load_reduce_plot(fig)
 discard_button.on_clicked(discard_callback)
 back_button = widgets.Button(plt.axes([0.7, 0.05, 0.1, 0.075]), 'Back')
@@ -204,8 +234,8 @@ def back_callback(event):
     global index
     if index > 1:
         index -= 2
-        pointing_offsets.pop()
-        pointing_offsets.pop()
+        output_data.pop()
+        output_data.pop()
     next_load_reduce_plot(fig)
 back_button.on_clicked(back_callback)
 done_button = widgets.Button(plt.axes([0.81, 0.05, 0.1, 0.075]), 'Done')
