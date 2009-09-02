@@ -82,6 +82,7 @@ if len(datasets) == 0:
 # Index to step through data sets as the buttons are pressed
 index = 0
 output_data = []
+antenna = None
 
 def next_load_reduce_plot(fig=None):
     """Load next data set, reduce the data, update the plots in given figure and store output data."""
@@ -89,6 +90,7 @@ def next_load_reduce_plot(fig=None):
     global index
     if index >= len(datasets):
         f = file(options.outfilebase + '.csv', 'w')
+        f.write('# antenna = %s\n' % antenna.description)
         f.write('dataset, target, timestamp_ut, azimuth, elevation, delta_azimuth, delta_elevation, ' +
                 'data_unit, beam_height, baseline_height, frequency, flux, ' +
                 'temperature, pressure, humidity, wind_speed, wind_direction\n')
@@ -102,6 +104,7 @@ def next_load_reduce_plot(fig=None):
     index += 1
     logger.info("Loading dataset '%s'" % (filename,))
     d = scape.DataSet(filename, catalogue=cat, pointing_model=pm)
+    antenna = d.antenna
     if filename.endswith('.fits'):
         dirs = filename.split(os.path.sep)
         if len(dirs) > 2:
