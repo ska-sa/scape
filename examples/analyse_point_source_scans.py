@@ -138,11 +138,16 @@ def next_load_reduce_plot(fig=None):
     compscan = d.compscans[0]
     middle_time = np.median([scan.timestamps for scan in compscan.scans], axis=None)
     # Obtain average environmental data
-    temperature = np.mean([scan.environment['temperature'] for scan in d.scans])
-    pressure = np.mean([scan.environment['pressure'] for scan in d.scans])
-    humidity = np.mean([scan.environment['humidity'] for scan in d.scans])
-    wind_speed = np.hstack([scan.environment['wind_speed'] for scan in d.scans])
-    wind_direction = katpoint.deg2rad(np.hstack([scan.environment['wind_direction'] for scan in d.scans]))
+    temperature = np.mean([scan.environment['temperature'] for scan in d.scans]) \
+                  if scan.environment.dtype.fields.has_key('temperature') else np.nan
+    pressure = np.mean([scan.environment['pressure'] for scan in d.scans]) \
+               if scan.environment.dtype.fields.has_key('pressure') else np.nan
+    humidity = np.mean([scan.environment['humidity'] for scan in d.scans]) \
+               if scan.environment.dtype.fields.has_key('humidity') else np.nan
+    wind_speed = np.hstack([scan.environment['wind_speed'] for scan in d.scans]) \
+                 if scan.environment.dtype.fields.has_key('wind_speed') else np.nan
+    wind_direction = katpoint.deg2rad(np.hstack([scan.environment['wind_direction'] for scan in d.scans])) \
+                     if scan.environment.dtype.fields.has_key('wind_direction') else np.nan
     wind_n, wind_e = np.mean(wind_speed * np.cos(wind_direction)), np.mean(wind_speed * np.sin(wind_direction))
     wind_speed, wind_direction = np.sqrt(wind_n ** 2 + wind_e ** 2), katpoint.rad2deg(np.arctan2(wind_e, wind_n))
 
