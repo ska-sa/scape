@@ -87,7 +87,7 @@ antenna = None
 def next_load_reduce_plot(fig=None):
     """Load next data set, reduce the data, update the plots in given figure and store output data."""
     # If end of list is reached, save output data to file and exit
-    global index
+    global index, antenna
     if index >= len(datasets):
         f = file(options.outfilebase + '.csv', 'w')
         f.write('# antenna = %s\n' % antenna.description)
