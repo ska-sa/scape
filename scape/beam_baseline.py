@@ -84,8 +84,8 @@ class BeamPatternFit(ScatterFit):
     radius_first_null : float
         Radius of first null in beam in target coordinate units (stored here for
         convenience, but not calculated internally)
-    is_refined : bool
-        True if beam has been refined based on scan-based baselines
+    refined : int
+        Number of scan-based baselines used to refine beam (0 means unrefined)
     is_valid : bool
         True if beam parameters are within reasonable ranges after fit
 
@@ -103,7 +103,7 @@ class BeamPatternFit(ScatterFit):
         # Initial guess for radius of first null
         self.radius_first_null = 1.3 * self.expected_width
         # Beam initially unrefined and invalid
-        self.is_refined = False
+        self.refined = 0
         self.is_valid = False
 
     def fit(self, x, y):
@@ -313,13 +313,13 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
                 good_scan_coords.append(scan.target_coords[:, inner])
                 good_scan_resid.append(bl_resid[inner])
         # Need at least 2 good scans, since fitting beam to single scan will introduce large errors in orthogonal dir
-        if len(good_scan_coords) > 1:
+        if len(good_scan_resid) > 1:
             # Refit beam to inner region across all good scans
             # Beam height is underestimated, as remove_spikes() flattens beam top - adjust it based on Gaussian beam
             beam.fit(np.hstack(good_scan_coords).transpose(), 1.0047 * np.hstack(good_scan_resid))
             logger.debug("Refinement: beam height = %f, width = %f, first null = %f, based on %d of %d scans" % \
                           (beam.height, beam.width, beam.radius_first_null, len(good_scan_resid), len(compscan.scans)))
-            beam.is_refined = True
+            beam.refined = len(good_scan_resid)
 
     # Do final validation of beam fit (also discard beam for non-positive pols)
     if (pol in ('Q', 'U', 'V')) or np.isnan(beam.center).any() or np.isnan(beam.width).any() or np.isnan(beam.height):

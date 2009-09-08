@@ -189,7 +189,7 @@ class CompoundScan(object):
         """
         if self.beam and self.beam.is_valid:
             # Refined beam has at least 2 per-scan baselines - obtain weighted average closest to beam center
-            if self.beam.is_refined:
+            if self.beam.refined:
                 dist_to_center = np.tile(np.inf, len(self.scans))
                 closest_time = np.zeros(len(self.scans))
                 # Find sample in time in each scan that is closest to beam center

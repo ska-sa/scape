@@ -556,7 +556,7 @@ def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, band=0, ax=
             baseline_segments.append(np.column_stack((timeline, np.tile(np.nan, len(timeline)))))
         beam_power, inner_beam_power = np.tile(np.nan, len(timeline)), np.tile(np.nan, len(timeline))
         if compscan.beam:
-            if (compscan.beam.is_refined and scan.baseline) or (not compscan.beam.is_refined and compscan.baseline):
+            if (compscan.beam.refined and scan.baseline) or (not compscan.beam.refined and compscan.baseline):
                 beam_power = compscan.beam(scan.target_coords.transpose()) + baseline_power
             if scan.baseline:
                 radius = np.sqrt(((scan.target_coords - compscan.beam.center[:, np.newaxis]) ** 2).sum(axis=0))
@@ -568,10 +568,10 @@ def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, band=0, ax=
     # Plot segments from back to front
     labels = [str(n) for n in xrange(len(compscan.scans))] if add_scan_ids else []
     plot_compacted_segments(data_segments, labels, ax=ax, color='b', lw=1)
-    beam_color = ('r' if compscan.beam.is_refined else 'g') if compscan.beam and compscan.beam.is_valid else 'y'
+    beam_color = ('r' if compscan.beam.refined else 'g') if compscan.beam and compscan.beam.is_valid else 'y'
     baseline_colors = [('r' if scan.baseline else 'g') for scan in compscan.scans]
     plot_compacted_segments(baseline_segments, ax=ax, color=baseline_colors, lw=2)
-    if compscan.beam and compscan.beam.is_refined:
+    if compscan.beam and compscan.beam.refined:
         plot_compacted_segments(beam_segments, ax=ax, color=beam_color, lw=2, linestyles='dashed')
         plot_compacted_segments(inner_beam_segments, ax=ax, color=beam_color, lw=2)
     else:
