@@ -92,11 +92,11 @@ def next_load_reduce_plot(fig=None):
         f = file(options.outfilebase + '.csv', 'w')
         f.write('# antenna = %s\n' % antenna.description)
         f.write('dataset, target, timestamp_ut, azimuth, elevation, delta_azimuth, delta_elevation, data_unit, ' +
-                'beam_height_I, baseline_height_I, refined_I, beam_height_XX, baseline_height_XX, refined_XX, ' +
-                'beam_height_YY, baseline_height_YY, refined_YY, frequency, flux, ' +
-                'temperature, pressure, humidity, wind_speed, wind_direction\n')
-        f.writelines([(('%s, %s, %s, %.7f, %.7f, %.7f, %.7f, %s, %.7f, %.7f, %d, %.7f, %.7f, %d, %.7f, %.7f, %d, ' +
-                        '%.7f, %.4f, %.2f, %.2f, %.2f, %.2f, %.2f\n') % p) for p in output_data if p])
+                'beam_height_I, beam_width_I, baseline_height_I, refined_I, beam_height_XX, beam_width_XX, ' +
+                'baseline_height_XX, refined_XX, beam_height_YY, beam_width_YY, baseline_height_YY, refined_YY, ' +
+                'frequency, flux, temperature, pressure, humidity, wind_speed, wind_direction\n')
+        f.writelines([(('%s, %s, %s, %.7f, %.7f, %.7f, %.7f, %s, %.7f, %.7f, %.7f, %d, %.7f, %.7f, %.7f, %d, %.7f, ' +
+                        '%.7f, %.7f, %d, %.7f, %.4f, %.2f, %.2f, %.2f, %.2f, %.2f\n') % p) for p in output_data if p])
         f.close()
         sys.exit(0)
 
@@ -139,6 +139,7 @@ def next_load_reduce_plot(fig=None):
     # First fit XX and YY data, and extract beam and baseline heights and refined scan count
     d.fit_beams_and_baselines(pol='XX')
     beam_height_XX = compscan.beam.height if compscan.beam else np.nan
+    beam_width_XX = katpoint.rad2deg(compscan.beam.width) if compscan.beam else np.nan
     baseline_height_XX = compscan.baseline_height()
     if baseline_height_XX is None:
         baseline_height_XX = np.nan
@@ -146,6 +147,7 @@ def next_load_reduce_plot(fig=None):
 
     d.fit_beams_and_baselines(pol='YY')
     beam_height_YY = compscan.beam.height if compscan.beam else np.nan
+    beam_width_YY = katpoint.rad2deg(compscan.beam.width) if compscan.beam else np.nan
     baseline_height_YY = compscan.baseline_height()
     if baseline_height_YY is None:
         baseline_height_YY = np.nan
@@ -155,6 +157,7 @@ def next_load_reduce_plot(fig=None):
     d.fit_beams_and_baselines(pol='I')
     # Calculate beam and baseline height and refined scan count
     beam_height_I = compscan.beam.height if compscan.beam else np.nan
+    beam_width_I = katpoint.rad2deg(compscan.beam.width) if compscan.beam else np.nan
     baseline_height_I = compscan.baseline_height()
     if baseline_height_I is None:
         baseline_height_I = np.nan
@@ -227,9 +230,9 @@ def next_load_reduce_plot(fig=None):
     else:
         output_data.append((name, compscan.target.name, katpoint.Timestamp(middle_time),
                             requested_azel[0], requested_azel[1], offset_azel[0], offset_azel[1],
-                            d.data_unit, beam_height_I, baseline_height_I, refined_I, beam_height_XX,
-                            baseline_height_XX, refined_XX, beam_height_YY, baseline_height_YY, refined_YY,
-                            d.freqs.mean(), average_flux,
+                            d.data_unit, beam_height_I, beam_width_I, baseline_height_I, refined_I,
+                            beam_height_XX, beam_width_XX, baseline_height_XX, refined_XX, beam_height_YY,
+                            beam_width_YY, baseline_height_YY, refined_YY, d.freqs.mean(), average_flux,
                             temperature, pressure, humidity, wind_speed, wind_direction))
 
 ### BATCH MODE ###
