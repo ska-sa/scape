@@ -91,11 +91,12 @@ def next_load_reduce_plot(fig=None):
     if index >= len(datasets):
         f = file(options.outfilebase + '.csv', 'w')
         f.write('# antenna = %s\n' % antenna.description)
-        f.write('dataset, target, timestamp_ut, azimuth, elevation, delta_azimuth, delta_elevation, ' +
-                'data_unit, beam_height, baseline_height, frequency, flux, ' +
+        f.write('dataset, target, timestamp_ut, azimuth, elevation, delta_azimuth, delta_elevation, data_unit, ' +
+                'beam_height_I, baseline_height_I, refined_I, beam_height_XX, baseline_height_XX, refined_XX, ' +
+                'beam_height_YY, baseline_height_YY, refined_YY, frequency, flux, ' +
                 'temperature, pressure, humidity, wind_speed, wind_direction\n')
-        f.writelines([(('%s, %s, %s, %.7f, %.7f, %.7f, %.7f, %s, %.7f, %.7f, %.7f, %.4f, ' +
-                        '%.2f, %.2f, %.2f, %.2f, %.2f\n') % p) for p in output_data if p])
+        f.writelines([(('%s, %s, %s, %.7f, %.7f, %.7f, %.7f, %s, %.7f, %.7f, %d, %.7f, %.7f, %d, %.7f, %.7f, %d, ' +
+                        '%.7f, %.4f, %.2f, %.2f, %.2f, %.2f, %.2f\n') % p) for p in output_data if p])
         f.close()
         sys.exit(0)
 
@@ -121,7 +122,6 @@ def next_load_reduce_plot(fig=None):
     # Save original channel frequencies before averaging
     channel_freqs = d.freqs
     d.average()
-    d.fit_beams_and_baselines()
 
     # Handle missing data gracefully
     if len(d.compscans) == 0:
@@ -133,9 +133,37 @@ def next_load_reduce_plot(fig=None):
             ax2.clear()
             plt.draw()
         return
+    # Only use the first compound scan in the data set (this should be expanded later)
+    compscan = d.compscans[0]
+
+    # First fit XX and YY data, and extract beam and baseline heights and refined scan count
+    d.fit_beams_and_baselines(pol='XX')
+    beam_height_XX = compscan.beam.height if compscan.beam else np.nan
+    baseline_height_XX = compscan.baseline_height()
+    if baseline_height_XX is None:
+        baseline_height_XX = np.nan
+    refined_XX = compscan.beam.refined if compscan.beam else 0
+
+    d.fit_beams_and_baselines(pol='YY')
+    beam_height_YY = compscan.beam.height if compscan.beam else np.nan
+    baseline_height_YY = compscan.baseline_height()
+    if baseline_height_YY is None:
+        baseline_height_YY = np.nan
+    refined_YY = compscan.beam.refined if compscan.beam else 0
+
+    # Now fit Stokes I, as this will be used for pointing and plots as well
+    d.fit_beams_and_baselines(pol='I')
+    # Calculate beam and baseline height and refined scan count
+    beam_height_I = compscan.beam.height if compscan.beam else np.nan
+    baseline_height_I = compscan.baseline_height()
+    if baseline_height_I is None:
+        baseline_height_I = np.nan
+    refined_I = compscan.beam.refined if compscan.beam else 0
+    # Calculate average target flux over entire band
+    flux_spectrum = [compscan.target.flux_density(freq) for freq in channel_freqs]
+    average_flux = np.mean([flux for flux in flux_spectrum if flux])
 
     # Obtain middle timestamp of compound scan, where all pointing calculations are done
-    compscan = d.compscans[0]
     middle_time = np.median([scan.timestamps for scan in compscan.scans], axis=None)
     # Obtain average environmental data
     temperature = np.mean([scan.environment['temperature'] for scan in d.scans]) \
@@ -173,14 +201,6 @@ def next_load_reduce_plot(fig=None):
     else:
         offset_azel = np.array([np.nan, np.nan])
 
-    # Calculate beam and baseline height, and target flux for band
-    beam_height = compscan.beam.height if compscan.beam else np.nan
-    baseline_height = compscan.baseline_height()
-    if baseline_height is None:
-        baseline_height = np.nan
-    flux_spectrum = [compscan.target.flux_density(freq) for freq in channel_freqs]
-    average_flux = np.mean([flux for flux in flux_spectrum if flux])
-
     # Display compound scan
     if not options.batch:
         (ax1, ax2), info = fig.axes[:2], fig.texts[0]
@@ -196,9 +216,9 @@ def next_load_reduce_plot(fig=None):
             info.set_text("Beamwidth = %.1f' (expected %.1f')\nBeam height = %.1f %s\nBaseline height = %.1f %s" %
                           (60. * katpoint.rad2deg(compscan.beam.width),
                            60. * katpoint.rad2deg(compscan.beam.expected_width),
-                           compscan.beam.height, d.data_unit, baseline_height, d.data_unit))
+                           beam_height_I, d.data_unit, baseline_height_I, d.data_unit))
         else:
-            info.set_text("No beam\nBaseline height = %.2f %s" % (baseline_height, d.data_unit))
+            info.set_text("No beam\nBaseline height = %.2f %s" % (baseline_height_I, d.data_unit))
         plt.draw()
 
     # If beam is marked as invalid, discard scan only if in batch mode (otherwise discard button has to do it)
@@ -207,7 +227,9 @@ def next_load_reduce_plot(fig=None):
     else:
         output_data.append((name, compscan.target.name, katpoint.Timestamp(middle_time),
                             requested_azel[0], requested_azel[1], offset_azel[0], offset_azel[1],
-                            d.data_unit, beam_height, baseline_height, d.freqs.mean(), average_flux,
+                            d.data_unit, beam_height_I, baseline_height_I, refined_I, beam_height_XX,
+                            baseline_height_XX, refined_XX, beam_height_YY, baseline_height_YY, refined_YY,
+                            d.freqs.mean(), average_flux,
                             temperature, pressure, humidity, wind_speed, wind_direction))
 
 ### BATCH MODE ###
