@@ -546,17 +546,21 @@ class DataSet(object):
         self.corrconf.merge(channels_per_band)
         return self
 
-    def fit_beams_and_baselines(self, band=0, **kwargs):
+    def fit_beams_and_baselines(self, pol='I', band=0, **kwargs):
         """Simultaneously fit beams and baselines to all compound scans.
 
         This fits a beam pattern and baseline to the total power data of all the
-        scans comprising each compound scan, and stores the resulting fitted function
-        in each CompoundScan object. Only one frequency band is used.
+        scans comprising each compound scan, and stores the resulting fitted
+        functions in each CompoundScan and Scan object. Only one frequency band
+        is used.
 
         Parameters
         ----------
+        pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
+            Coherency / Stokes parameter which will be fit. Beam fits are only
+            possible with 'I', 'XX' and 'YY', which exhibit Gaussian beams.
         band : int, optional
-            Frequency band in which to fit beam and baseline
+            Frequency band in which to fit beam and baseline(s)
         kwargs : dict, optional
             Extra keyword arguments are passed to underlying :mod:`beam_baseline`
             functions
@@ -573,11 +577,11 @@ class DataSet(object):
         # TODO: this factor needs to be associated with the antenna
         expected_width = 1.178 * katpoint.lightspeed / (self.freqs[band] * 1e6) / self.antenna.diameter
         # Degrees of freedom is time-bandwidth product (2 * BW * t_dump) of each sample
-        # The extra factor of 2 is because Stokes I is the sum of the independent XX and YY samples
-        dof = 4.0 * (self.bandwidths[band] * 1e6) / self.dump_rate
+        # Stokes I would have double this value, as it is the sum of the independent XX and YY samples
+        dof = 2.0 * (self.bandwidths[band] * 1e6) / self.dump_rate
         for compscan in self.compscans:
             compscan.beam, baselines, compscan.baseline = fit_beam_and_baselines(compscan, expected_width, dof,
-                                                                                 band=band, **kwargs)
+                                                                                 pol=pol, band=band, **kwargs)
             for scan, bl in zip(compscan.scans, baselines):
                 scan.baseline = bl
         return self

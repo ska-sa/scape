@@ -24,7 +24,7 @@ def ordinal_suffix(n):
 #--- FUNCTION :  plot_spectrum
 #--------------------------------------------------------------------------------------------------
 
-def plot_spectrum(dataset, scan=0, sigma=1.0, coherency=None, stokes='I', ax=None):
+def plot_spectrum(dataset, pol='I', scan=0, sigma=1.0, ax=None):
     """Spectrum plot of power data as a function of frequency.
 
     This plots the power spectrum of the given scan (either in Stokes or
@@ -36,14 +36,12 @@ def plot_spectrum(dataset, scan=0, sigma=1.0, coherency=None, stokes='I', ax=Non
     ----------
     dataset : :class:`scape.DataSet` object
         Data set to plot
+    pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
+        The coherency / Stokes parameter to display (must be real)
     scan : int, optional
         Index of scan in data set to plot
     sigma : float, optional
         The error bar is this factor of standard deviation above and below mean
-    coherency : {None, 'XX', 'YY'}, optional
-        The coherency to display (default is to display Stokes parameter instead)
-    stokes : {'I', 'Q', 'U', 'V'}, optional
-        The Stokes parameter to display
     ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
 
@@ -52,15 +50,17 @@ def plot_spectrum(dataset, scan=0, sigma=1.0, coherency=None, stokes='I', ax=Non
     ax : :class:`matplotlib.axes.Axes` object
         Matplotlib Axes object representing plot
 
+    Raises
+    ------
+    ValueError
+        If *pol* is not one of the allowed names
+
     """
+    if not pol in ('I', 'Q', 'U', 'V', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'XX' or 'YY' (i.e. real)")
     if ax is None:
         ax = plt.gca()
-    if coherency is None:
-        power = robust_mu_sigma(dataset.scans[scan].stokes(stokes))
-    elif coherency in ['XX', 'YY']:
-        power = robust_mu_sigma(dataset.scans[scan].coherency(coherency))
-    else:
-        raise ValueError('Cannot plot complex coherency %s - select XX or YY instead' % coherency)
+    power = robust_mu_sigma(dataset.scans[scan].pol(pol))
 
     # Form makeshift rectangular patches indicating power variation in each channel
     power_mean = np.repeat(power.mu, 3)
@@ -276,7 +276,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
 #--- FUNCTION :  plot_compacted_spectrogram
 #--------------------------------------------------------------------------------------------------
 
-def plot_compacted_spectrogram(dataset, stokes='I', add_scan_ids=True, ax=None):
+def plot_compacted_spectrogram(dataset, pol='I', add_scan_ids=True, ax=None):
     """Plot spectrogram of all scans in data set in compacted form.
 
     This plots the spectrogram of each scan in the data set on a single set of
@@ -289,8 +289,8 @@ def plot_compacted_spectrogram(dataset, stokes='I', add_scan_ids=True, ax=None):
     ----------
     dataset : :class:`scape.DataSet` object
         Data set to plot
-    stokes : {'I', 'Q', 'U', 'V'}, optional
-        The Stokes parameter to display
+    pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
+        The coherency / Stokes parameter to display (must be real)
     add_scan_ids : {True, False}, optional
         True if scan index numbers are to be added to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
@@ -305,7 +305,14 @@ def plot_compacted_spectrogram(dataset, stokes='I', add_scan_ids=True, ax=None):
     text_labels : list of :class:`matplotlib.text.Text` objects
         List of added text labels
 
+    Raises
+    ------
+    ValueError
+        If *pol* is not one of the allowed names
+
     """
+    if not pol in ('I', 'Q', 'U', 'V', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'XX' or 'YY' (i.e. real)")
     if ax is None:
         ax = plt.gca()
     labels = [str(n) for n in xrange(len(dataset.scans))] if add_scan_ids else []
@@ -315,11 +322,11 @@ def plot_compacted_spectrogram(dataset, stokes='I', add_scan_ids=True, ax=None):
     time_origin = start.min()
     p_lims = [np.double(np.inf), np.double(-np.inf)]
     for scan in dataset.scans:
-        smoothed_power = np.log10(np.abs(remove_spikes(scan.stokes(stokes))))
+        smoothed_power = np.log10(np.abs(remove_spikes(scan.pol(pol))))
         p_lims = [min(p_lims[0], smoothed_power.min()), max(p_lims[1], smoothed_power.max())]
     images = []
     for n, scan in enumerate(dataset.scans):
-        specgram = np.log10(np.abs(scan.stokes(stokes))).transpose()
+        specgram = np.log10(np.abs(scan.pol(pol))).transpose()
         colornorm = mpl.colors.Normalize(vmin=p_lims[0], vmax=p_lims[1])
         image_data = mpl.cm.jet(colornorm(specgram))
         image_data_rfi = mpl.cm.gray(colornorm(specgram))
@@ -437,7 +444,7 @@ def plot_compacted_segments(segments, labels=None, ax=None, **kwargs):
 #--------------------------------------------------------------------------------------------------
 
 def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=None, add_scan_ids=True, fig=None):
-    """"""
+    """Plot separate time series of data classified as RFI and non-RFI."""
     num_channels = len(dataset.freqs)
     if not channel_skip:
         channel_skip = max(num_channels // 32, 1)
@@ -492,19 +499,20 @@ def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=N
 #--- FUNCTION :  plot_compound_scan_in_time
 #--------------------------------------------------------------------------------------------------
 
-def plot_compound_scan_in_time(compscan, stokes='I', add_scan_ids=True, band=0, ax=None):
-    """Plot total power scans of compound scan with superimposed beam/baseline fit.
+def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, band=0, ax=None):
+    """Plot compound scan data in time with superimposed beam/baseline fit.
 
-    This plots time series plots of the total power in the scans comprising a
-    compound scan, with the beam and baseline fits superimposed. It highlights
-    the success of the beam and baseline fitting procedure.
+    This plots time series of the selected polarisation power in all the scans
+    comprising a compound scan, with the beam and baseline fits superimposed.
+    It highlights the success of the beam and baseline fitting procedure. It is
+    assumed that the beam and baseline was fit to the selected polarisation.
 
     Parameters
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to plot
-    stokes : {'I', 'Q', 'U', 'V'}, optional
-        The Stokes parameter to display
+    pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
+        The coherency / Stokes parameter to display (must be real)
     add_scan_ids : {True, False}, optional
         True if scan index numbers are to be added to plot
     band : int, optional
@@ -517,7 +525,14 @@ def plot_compound_scan_in_time(compscan, stokes='I', add_scan_ids=True, band=0, 
     axes_list : list of :class:`matplotlib.axes.Axes` objects
         List of matplotlib Axes objects, one per plot
 
+    Raises
+    ------
+    ValueError
+        If *pol* is not one of the allowed names
+
     """
+    if not pol in ('I', 'Q', 'U', 'V', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'XX' or 'YY' (i.e. real)")
     if ax is None:
         ax = plt.gca()
     time_origin = np.array([scan.timestamps.min() for scan in compscan.scans]).min()
@@ -527,7 +542,7 @@ def plot_compound_scan_in_time(compscan, stokes='I', add_scan_ids=True, band=0, 
     # Construct segments to be plotted
     for scan in compscan.scans:
         timeline = scan.timestamps - time_origin
-        measured_power = scan.stokes(stokes)[:, band]
+        measured_power = scan.pol(pol)[:, band]
         smooth_power = remove_spikes(measured_power)
         power_limits.extend([smooth_power.min(), smooth_power.max()])
         data_segments.append(np.column_stack((timeline, measured_power)))
@@ -567,7 +582,7 @@ def plot_compound_scan_in_time(compscan, stokes='I', add_scan_ids=True, band=0, 
         power_range = 1.0
     ax.set_ylim(min(power_limits) - 0.05 * power_range, max(power_limits) + 0.05 * power_range)
     ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
-    ax.set_ylabel('Stokes %s' % stokes)
+    ax.set_ylabel('Pol %s' % pol)
     return ax
 
 #---------------------------------------------------------------------------------------------------------
@@ -720,17 +735,20 @@ def gaussian_ellipses(mean, cov, contour=0.5, num_points=200):
 #--- FUNCTION :  plot_compound_scan_on_target
 #--------------------------------------------------------------------------------------------------
 
-def plot_compound_scan_on_target(compscan, subtract_baseline=True, levels=None, add_scan_ids=True, band=0, ax=None):
-    """Plot total power scans of compound scan in target space with beam fit.
+def plot_compound_scan_on_target(compscan, pol='I', subtract_baseline=True, levels=None,
+                                 add_scan_ids=True, band=0, ax=None):
+    """Plot compound scan data in target space with beam fit.
 
     This plots contour ellipses of a Gaussian beam function fitted to the scans
-    of a compound scan, as well as the total power of the scans as a pseudo-3D
+    of a compound scan, as well as the selected power of the scans as a pseudo-3D
     plot. It highlights the success of the beam fitting procedure.
 
     Parameters
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to plot
+    pol : {'I', 'XX', 'YY'}, optional
+        The coherency / Stokes parameter to display (must be real and positive)
     subtract_baseline : {True, False}, optional
         True to subtract baselines (only scans with baselines are then shown)
     levels : float, or real array-like, shape (K,), optional
@@ -748,7 +766,14 @@ def plot_compound_scan_on_target(compscan, subtract_baseline=True, levels=None, 
     ax : :class:`matplotlib.axes.Axes` object
         Matplotlib Axes object representing plot
 
+    Raises
+    ------
+    ValueError
+        If *pol* is not one of the allowed names
+
     """
+    if not pol in ('I', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'I', 'XX' or 'YY' (i.e. positive)")
     if ax is None:
         ax = plt.gca()
     if levels is None:
@@ -759,15 +784,15 @@ def plot_compound_scan_on_target(compscan, subtract_baseline=True, levels=None, 
         logger.warning('No scans were found with baselines - setting subtract_baseline to False')
     # Extract total power and target coordinates (in degrees) of all scans (or those with baselines)
     if subtract_baseline:
-        total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) - scan.baseline(scan.timestamps)
+        compscan_power = np.hstack([remove_spikes(scan.pol(pol)[:, band]) - scan.baseline(scan.timestamps)
                                  for scan in compscan.scans if scan.baseline])
         target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans if scan.baseline]))
     else:
-        total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
+        compscan_power = np.hstack([remove_spikes(scan.pol(pol)[:, band]) for scan in compscan.scans])
         target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans]))
 
     # Show the locations of the scan samples themselves, with marker sizes indicating power values
-    plot_marker_3d(target_coords[0], target_coords[1], total_power, ax=ax, color='b',  alpha=0.75)
+    plot_marker_3d(target_coords[0], target_coords[1], compscan_power, ax=ax, color='b',  alpha=0.75)
     # Plot the fitted Gaussian beam function as contours
     if compscan.beam:
         if compscan.beam.is_valid:
@@ -978,7 +1003,7 @@ def plot_db_contours(x, y, Z, levels=None, sin_coords=False, add_lines=True, ax=
 #--- FUNCTION :  plot_measured_beam_pattern
 #--------------------------------------------------------------------------------------------------
 
-def plot_measured_beam_pattern(compscan, stokes='I', subtract_baseline=True, add_samples=True, add_colorbar=True,
+def plot_measured_beam_pattern(compscan, pol='I', subtract_baseline=True, add_samples=True, add_colorbar=True,
                                band=0, ax=None, **kwargs):
     """Plot measured beam pattern contained in compound scan.
 
@@ -986,8 +1011,8 @@ def plot_measured_beam_pattern(compscan, stokes='I', subtract_baseline=True, add
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to plot
-    stokes : {'I', 'Q', 'U', 'V'}, optional
-        The Stokes parameter to display
+    pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
+        The coherency / Stokes parameter to display (must be real)
     subtract_baseline : {True, False}, optional
         True to subtract baselines (only scans with baselines are then shown)
     add_samples : {True, False}, optional
@@ -1009,7 +1034,14 @@ def plot_measured_beam_pattern(compscan, stokes='I', subtract_baseline=True, add
     cset : :class:`matplotlib.contour.ContourSet` object
         Set of filled contour regions (useful for setting up color bar)
 
+    Raises
+    ------
+    ValueError
+        If *pol* is not one of the allowed names
+
     """
+    if not pol in ('I', 'Q', 'U', 'V', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'XX' or 'YY' (i.e. real)")
     if ax is None:
         ax = plt.gca()
     # If there are no baselines in data set, don't subtract them
@@ -1017,11 +1049,11 @@ def plot_measured_beam_pattern(compscan, stokes='I', subtract_baseline=True, add
         subtract_baseline = False
     # Extract Stokes parameter and target coordinates of all scans (or those with baselines)
     if subtract_baseline:
-        power = np.hstack([remove_spikes(scan.stokes(stokes)[:, band]) - scan.baseline(scan.timestamps)
+        power = np.hstack([remove_spikes(scan.pol(pol)[:, band]) - scan.baseline(scan.timestamps)
                            for scan in compscan.scans if scan.baseline])
         x, y = np.hstack([scan.target_coords for scan in compscan.scans if scan.baseline])
     else:
-        power = np.hstack([remove_spikes(scan.stokes(stokes)[:, band]) for scan in compscan.scans])
+        power = np.hstack([remove_spikes(scan.pol(pol)[:, band]) for scan in compscan.scans])
         x, y = np.hstack([scan.target_coords for scan in compscan.scans])
     if compscan.beam:
         power /= compscan.beam.height
@@ -1041,5 +1073,5 @@ def plot_measured_beam_pattern(compscan, stokes='I', subtract_baseline=True, add
         ax.plot(rad2deg(x), rad2deg(y), '.k', ms=2)
     # Axis settings and labels
     ax.set_aspect('equal')
-    ax.set_title('Stokes %s' % stokes)
+    ax.set_title('Pol %s' % pol)
     return ax, cset

@@ -148,15 +148,17 @@ class BeamPatternFit(ScatterFit):
 #--- FUNCTION :  fit_beam_and_baselines
 #--------------------------------------------------------------------------------------------------
 
-def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), stokes='I', refine_beam=True, band=0):
+def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol='I', refine_beam=True, band=0):
     """Simultaneously fit beam and baselines to all scans in a compound scan.
 
-    This fits a beam pattern and baselines to the total power data in all the
+    This fits a beam pattern and baselines to the selected power data in all the
     scans comprising the compound scan. The beam pattern is a Gaussian function
-    of the two-dimensional target coordinates for the entire compound scan,
-    while the baselines are first-order polynomial functions of time per scan.
-    Only one frequency band is used. The power data is smoothed to remove spikes
-    before fitting.
+    of the two-dimensional target coordinates for the entire compound scan. The
+    initial baseline is a two-dimensional polynomial function of the target
+    coordinates, also for the entire compound scan. This baseline may be refined
+    to a set of separate baselines (one per scan) that are first-order
+    polynomial functions of time. Only one frequency band is used. The power
+    data is smoothed to remove spikes before fitting.
 
     Parameters
     ----------
@@ -165,11 +167,12 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), sto
     expected_width : float
         Expected beamwidth based on antenna diameter, expressed as FWHM in radians
     dof : float
-        Degrees of freedom of chi^2 distribution of total power samples
+        Degrees of freedom of chi^2 distribution of XX (and YY) power samples
     bl_degrees : sequence of 2 ints, optional
-        Degrees of initial polynomial baseline, along x and y coordinate
-    stokes : {'I', 'Q', 'U', 'V'}, optional
-        The Stokes parameter in which to fit beam and baselines
+        Degrees of initial polynomial baseline, along *x* and *y* coordinate
+    pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
+        The coherency / Stokes parameter which will be fit. Beam fits are only
+        possible with 'I', 'XX' and 'YY', which exhibit Gaussian beams.
     refine_beam : {True, False}, optional
         If true, baselines are refined per scan and beam is refitted to within
         FWHM region around peak. This is a good idea for linear scans, but not
@@ -202,41 +205,65 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), sto
     that do not contain beam nulls are ignored. The beam is finally refined by
     fitting it only to the inner region of the beam, as in [1]_.
 
+    No beam is fitted for Stokes parameters 'Q', 'U' and 'V', as these
+    parameters are not guaranteed to be positive and are not expected to have
+    Gaussian-shaped beam patterns anyway. Instead, a beam and baseline is fitted
+    to the total power ('I'), after which a baseline is fitted to the selected
+    parameter at the locations where the 'I' baseline was found.
+
     .. [1] Ronald J. Maddalena, "Reduction and Analysis Techniques," Single-Dish
        Radio Astronomy: Techniques and Applications, ASP Conference Series,
        vol. 278, 2002.
 
     """
-    # Clean up total power
-    scan_power = [remove_spikes(scan.stokes(stokes)[:, band]) for scan in compscan.scans]
-    total_power = np.hstack(scan_power)
+    # Fit beam and baselines directly to positive coherencies / Stokes params only, otherwise use I
+    underlying_pol = pol if pol in ('I', 'XX', 'YY') else 'I'
+    # Stokes I has double the degrees of freedom, as it is the sum of the independent XX and YY samples
+    dof = 2 * dof if underlying_pol == 'I' else dof
+    # Clean up power data by removing isolated spikes
+    scan_power = [remove_spikes(scan.pol(underlying_pol)[:, band]) for scan in compscan.scans]
+    compscan_power = np.hstack(scan_power)
     target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
 
-    # Do initial beam + baseline fitting, where baseline is fitted in target coord space
+    # Do initial beam + baseline fitting, where both are fitted in 2-D target coord space
     initial_baseline = Polynomial2DFit(bl_degrees)
     prev_err_power = np.inf
-    outer = np.tile(True, len(total_power))
-    logger.debug('Fitting beam and initial baseline of degree (%d, %d):' % bl_degrees)
+    # Initially, all data is considered to be in the "outer" region and therefore forms part of the baseline
+    outer = np.tile(True, len(compscan_power))
+    logger.debug("Fitting beam and initial baseline of degree (%d, %d) to pol '%s':" %
+                 (bl_degrees[0], bl_degrees[1], underlying_pol))
+    # Alternate between baseline and beam fitting for a few iterations
     for n in xrange(10):
-        initial_baseline.fit(target_coords[:, outer], total_power[outer])
-        bl_resid = total_power - initial_baseline(target_coords)
+        # Fit baseline to "outer" regions, away from where beam was found
+        initial_baseline.fit(target_coords[:, outer], compscan_power[outer])
+        # Subtract baseline
+        bl_resid = compscan_power - initial_baseline(target_coords)
+        # Fit beam to residual, with the initial beam center at the peak of the residual
         peak_ind = bl_resid.argmax()
         peak_pos = target_coords[:, peak_ind]
         peak_val = bl_resid[peak_ind]
         beam = BeamPatternFit(peak_pos, expected_width, peak_val)
         beam.fit(target_coords.transpose(), bl_resid)
-        resid = bl_resid - beam(target_coords.transpose())
+        # Calculate Euclidean distance from beam center and identify new "outer" region
         radius = np.sqrt(((target_coords - beam.center[:, np.newaxis]) ** 2).sum(axis=0))
         # This threshold should be close to first nulls of beam - too wide compromises baseline fit
         outer = radius > beam.radius_first_null
+        # Check if error remaining after baseline and beam fit has converged, and stop if it has
+        resid = bl_resid - beam(target_coords.transpose())
         err_power = np.dot(resid, resid)
-        logger.debug("Iteration %d: residual = %f, beam height = %f, width = %f" %
-                     (n, (prev_err_power - err_power) / err_power, beam.height, beam.width))
+        logger.debug("Iteration %d: residual = %f, beam height = %f, width = %f, region size = %d" %
+                     (n, (prev_err_power - err_power) / err_power, beam.height, beam.width, np.sum(~outer)))
         if (err_power == 0.0) or (prev_err_power - err_power) / err_power < 1e-5:
             break
         prev_err_power = err_power + 0.0
+    # For non-positive polarisation terms, refit baseline to outer region found in total power
+    if pol in ('Q', 'U', 'V'):
+        logger.debug("Refitting initial baseline to pol '%s'" % pol)
+        scan_pol = [remove_spikes(scan.pol(pol)[:, band]) for scan in compscan.scans]
+        compscan_pol = np.hstack(scan_pol)
+        initial_baseline.fit(target_coords[:, outer], compscan_pol[outer])
 
-    # Find first null, by moving outward from beam center in radius range where null is expected
+    # Find first beam null, by moving outward from beam center in radius range where null is expected
     for null in np.arange(1.2, 1.8, 0.01) * beam.width:
         inside_null = (radius > null - 0.2 * beam.width) & (radius <= null)
         outside_null = (radius > null) & (radius <= null + 0.2 * beam.width)
@@ -245,19 +272,21 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), sto
             break
         # Use median to ignore isolated RFI bumps in some scans
         # Stop when total power starts increasing again as a function of radius
-        if np.median(total_power[outside_null]) > np.median(total_power[inside_null]):
+        if np.median(compscan_power[outside_null]) > np.median(compscan_power[inside_null]):
             break
     # pylint: disable-msg=W0631
     beam.radius_first_null = null
 
-    # If requested, refine beam by redoing baseline fits on per-scan basis, fitted against time
+    # If requested, refine beam by redoing baseline fits on per-scan basis, this time fitted against time
     good_scan_coords, good_scan_resid, baselines = [], [], []
     if refine_beam:
         for n, scan in enumerate(compscan.scans):
+            # Identify regions close to first beam null within the current scan
             radius = np.sqrt(((scan.target_coords - beam.center[:, np.newaxis]) ** 2).sum(axis=0))
             around_null = np.abs(radius - beam.radius_first_null) < 0.2 * beam.width
             padded_selection = np.array([False] + around_null.tolist() + [False])
             borders = np.diff(padded_selection).nonzero()[0] + 1
+            # Discard scan if it doesn't contain two separate null regions (with beam area in between)
             if (padded_selection[borders].tolist() != [True, False, True, False]) or (borders[2] - borders[1] < 10):
                 baselines.append(None)
                 continue
@@ -269,24 +298,31 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), sto
             for iteration in range(7):
                 baseline.fit(scan.timestamps[around_null], scan_power[n][around_null])
                 bl_resid = scan_power[n] - baseline(scan.timestamps)
-                around_null = bl_resid < 1.0 * (upper - mean)
-                if not around_null.any():
+                next_around_null = bl_resid < 1.0 * (upper - mean)
+                if not next_around_null.any():
                     break
+                else:
+                    around_null = next_around_null
+            # For non-positive polarisation terms, refit baseline to regions around beam null found in total power
+            if pol in ('Q', 'U', 'V'):
+                baseline.fit(scan.timestamps[around_null], scan_pol[n][around_null])
             baselines.append(baseline)
+            # Identify inner region of beam (close to peak) within scan and add to list if any was found
             inner = radius < 0.6 * beam.width
             if inner.any():
                 good_scan_coords.append(scan.target_coords[:, inner])
                 good_scan_resid.append(bl_resid[inner])
         # Need at least 2 good scans, since fitting beam to single scan will introduce large errors in orthogonal dir
         if len(good_scan_coords) > 1:
+            # Refit beam to inner region across all good scans
             # Beam height is underestimated, as remove_spikes() flattens beam top - adjust it based on Gaussian beam
             beam.fit(np.hstack(good_scan_coords).transpose(), 1.0047 * np.hstack(good_scan_resid))
             logger.debug("Refinement: beam height = %f, width = %f, first null = %f, based on %d of %d scans" % \
                           (beam.height, beam.width, beam.radius_first_null, len(good_scan_resid), len(compscan.scans)))
             beam.is_refined = True
 
-    # Do final validation of beam fit
-    if np.isnan(beam.center).any() or np.isnan(beam.width).any() or np.isnan(beam.height):
+    # Do final validation of beam fit (also discard beam for non-positive pols)
+    if (pol in ('Q', 'U', 'V')) or np.isnan(beam.center).any() or np.isnan(beam.width).any() or np.isnan(beam.height):
         beam = None
     else:
         # If beam center is outside the box scanned out by the telescope, mark it as invalid (good idea to redo scans)
