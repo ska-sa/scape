@@ -349,6 +349,32 @@ class Scan(object):
             else:
                 raise KeyError("Stokes key should be one of 'I', 'Q', 'U' or 'V'")
 
+    def pol(self, key):
+        """Convenience function to return desired coherency or Stokes parameter.
+
+        Parameters
+        ----------
+        key : {'I', 'Q', 'U', 'V', 'XX', 'XY', 'YX', 'YY'}
+
+        Returns
+        -------
+        pol : real/complex array, shape (*T*, *F*)
+            Coherency / Stokes parameter as a function of time and frequency.
+            It is complex for XY and YX and real for the rest.
+
+        Raises
+        ------
+        KeyError
+            If *key* is not one of the allowed coherency / Stokes parameter names
+
+        """
+        if key in ('I', 'Q', 'U', 'V'):
+            return self.stokes(key)
+        elif key in ('XX', 'XY', 'YX', 'YY'):
+            return self.coherency(key)
+        else:
+            raise KeyError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'XX', 'XY', 'YX' or 'YY'")
+
     def convert_to_coherency(self):
         """Convert data to coherency form (idempotent).
 
