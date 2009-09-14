@@ -546,7 +546,7 @@ class DataSet(object):
         self.corrconf.merge(channels_per_band)
         return self
 
-    def fit_beams_and_baselines(self, pol='I', band=0, **kwargs):
+    def fit_beams_and_baselines(self, pol='I', band=0, circular_beam=True, **kwargs):
         """Simultaneously fit beams and baselines to all compound scans.
 
         This fits a beam pattern and baseline to the total power data of all the
@@ -561,6 +561,8 @@ class DataSet(object):
             possible with 'I', 'XX' and 'YY', which exhibit Gaussian beams.
         band : int, optional
             Frequency band in which to fit beam and baseline(s)
+        circular_beam : {True, False}, optional
+            True forces beam to be circular; False allows for elliptical beam
         kwargs : dict, optional
             Extra keyword arguments are passed to underlying :mod:`beam_baseline`
             functions
@@ -576,6 +578,8 @@ class DataSet(object):
         # We are somewhere in between (the factor 1.178 is based on measurements of XDM)
         # TODO: this factor needs to be associated with the antenna
         expected_width = 1.178 * katpoint.lightspeed / (self.freqs[band] * 1e6) / self.antenna.diameter
+        if not circular_beam:
+            expected_width = [expected_width, expected_width]
         # Degrees of freedom is time-bandwidth product (2 * BW * t_dump) of each sample
         # Stokes I would have double this value, as it is the sum of the independent XX and YY samples
         dof = 2.0 * (self.bandwidths[band] * 1e6) / self.dump_rate

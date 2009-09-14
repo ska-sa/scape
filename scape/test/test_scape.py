@@ -90,5 +90,6 @@ class PointSourceScanTestCases(unittest.TestCase):
         compscan = self.dataset.compscans[0]
         self.assertAlmostEqual(compscan.beam.center[0], 0.0, places=8)
         self.assertAlmostEqual(compscan.beam.center[1], 0.0, places=8)
-        self.assertAlmostEqual(compscan.beam.height, self.peak_flux, places=0)
+        # Beam height is underestimated, as remove_spikes() flattens beam top - adjust it based on Gaussian beam
+        self.assertAlmostEqual(1.0047 * compscan.beam.height, self.peak_flux, places=0)
         self.assertAlmostEqual(compscan.beam.width, self.expected_width, places=4)
