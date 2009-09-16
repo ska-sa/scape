@@ -88,6 +88,8 @@ class CorrelatorConfig(object):
             return self
         elif np.asarray(freqkeep).dtype == 'bool':
             freqkeep = np.asarray(freqkeep).nonzero()[0]
+        # Make sure freqkeep is a list, as we need to call its .index method
+        freqkeep = np.asarray(freqkeep).tolist()
         return CorrelatorConfig(self.freqs[freqkeep], self.bandwidths[freqkeep],
                                 [freqkeep.index(n) for n in (set(self.rfi_channels) & set(freqkeep))],
                                 self.dump_rate)
