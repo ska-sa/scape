@@ -163,8 +163,10 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
     initial baseline is a two-dimensional polynomial function of the target
     coordinates, also for the entire compound scan. This baseline may be refined
     to a set of separate baselines (one per scan) that are first-order
-    polynomial functions of time. Only one frequency band is used. The power
-    data is smoothed to remove spikes before fitting.
+    polynomial functions of time, while the beam is refined by refitting it in
+    the inner region close to the peak that is typically a better fit to a
+    Gaussian function than in the tails. Only one frequency band is used.
+    The power data is smoothed to remove spikes before fitting.
 
     Parameters
     ----------
@@ -181,7 +183,7 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
         Degrees of initial polynomial baseline, along *x* and *y* coordinate
     pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
         The coherency / Stokes parameter which will be fit. Beam fits are only
-        possible with 'I', 'XX' and 'YY', which exhibit Gaussian beams.
+        advised for 'I', 'XX' and 'YY', which typically exhibit Gaussian beams.
     refine_beam : {True, False}, optional
         If true, baselines are refined per scan and beam is refitted to within
         FWHM region around peak. This is a good idea for linear scans, but not
@@ -214,11 +216,14 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
     that do not contain beam nulls are ignored. The beam is finally refined by
     fitting it only to the inner region of the beam, as in [1]_.
 
-    No beam is fitted for Stokes parameters 'Q', 'U' and 'V', as these
+    No beam is initially fitted for Stokes parameters 'Q', 'U' and 'V', as these
     parameters are not guaranteed to be positive and are not expected to have
     Gaussian-shaped beam patterns anyway. Instead, a beam and baseline is fitted
     to the total power ('I'), after which a baseline is fitted to the selected
-    parameter at the locations where the 'I' baseline was found.
+    parameter at the locations where the 'I' baseline was found. Afterwards,
+    a beam is fit to the requested Stokes parameter, which is sometimes useful
+    (e.g. to get the parameter value at the beam center). Most of the time it
+    may be safely ignored.
 
     .. [1] Ronald J. Maddalena, "Reduction and Analysis Techniques," Single-Dish
        Radio Astronomy: Techniques and Applications, ASP Conference Series,
@@ -314,8 +319,10 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
                 else:
                     around_null = next_around_null
             # For non-positive polarisation terms, refit baseline to regions around beam null found in total power
+            # Also recalculate residuals, so that beam will be fit to requested pol instead of total power
             if pol in ('Q', 'U', 'V'):
                 baseline.fit(scan.timestamps[around_null], scan_pol[n][around_null])
+                bl_resid = scan_pol[n] - baseline(scan.timestamps)
             baselines.append(baseline)
             # Identify inner region of beam (close to peak) within scan and add to list if any was found
             inner = radius < 0.6 * mean_beamwidth
@@ -330,8 +337,13 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
                           (beam.height, beam.width, beam.radius_first_null, len(good_scan_resid), len(compscan.scans)))
             beam.refined = len(good_scan_resid)
 
-    # Do final validation of beam fit (also discard beam for non-positive pols)
-    if (pol in ('Q', 'U', 'V')) or np.isnan(beam.center).any() or np.isnan(beam.width).any() or np.isnan(beam.height):
+    # Attempt to fit initial beam in non-positive pol term (might be a silly idea)
+    if pol in ('Q', 'U', 'V') and not refine_beam:
+        bl_resid = compscan_pol - initial_baseline(target_coords)
+        beam.fit(target_coords.transpose(), bl_resid)
+
+    # Do final validation of beam fit
+    if np.isnan(beam.center).any() or np.isnan(beam.width).any() or np.isnan(beam.height):
         beam = None
     else:
         if np.isscalar(expected_width):
