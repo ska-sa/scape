@@ -234,7 +234,7 @@ def load_scan(filename):
            data_unit, corrconf, target, antenna, exp_seq_num, feed_id
 
 # pylint: disable-msg=W0613
-def load_dataset(data_filename, nd_filename=None, catalogue=None, **kwargs):
+def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_xy=False, **kwargs):
     """Load data set from XDM FITS file series.
 
     This loads the XDM data set starting at the given filename and consisting of
@@ -252,6 +252,8 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, **kwargs):
         Name of FITS file containing alternative noise diode model
     catalogue : :class:`katpoint.Catalogue` object or string, optional
         Catalogue used to refine ACSM target objects in data set (or filename)
+    swap_xy : {False, True}, optional
+        True if X and Y polarisations are to be swapped from their FITS definitions
     kwargs : dict, optional
         Extra keyword arguments are ignored, as they usually apply to other formats
 
@@ -275,6 +277,14 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, **kwargs):
     IOError
         If data file does not exist, could not be opened or is invalid FITS file
 
+    Notes
+    -----
+    The X and Y polarisations may be swapped, since the XDM DBE / correlator
+    works in H and V, and took X = H and Y = V (e.g. producing Q = HH - VV),
+    while the standard polarisation definitions take X = V and Y = H (the noise
+    diode data follows the standard, though). Since the cables to the DBE may
+    also be swapped, the default is currently set to False.
+
     """
     match = re.match(r'(.+)_(\d\d\d\d).fits$', data_filename)
     if not match:
@@ -292,6 +302,8 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, **kwargs):
     nd_data = None
     for fits_file in filelist:
         scan, data_unit, corrconf, target, antenna, exp_seq_num, feed_id = load_scan(fits_file)
+        if swap_xy:
+            scan.swap_x_and_y()
         if scanlists.has_key(exp_seq_num):
             scanlists[exp_seq_num].append(scan)
         else:

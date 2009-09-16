@@ -401,6 +401,20 @@ class Scan(object):
             self.is_stokes = True
         return self
 
+    def swap_x_and_y(self):
+        """Swap the X and Y polarisations around."""
+        if self.is_stokes:
+            # The sign of Q changes, as XX - YY => YY - XX
+            self.data[:, :, 1] *= -1.0
+        else:
+            # Swap XX and YY
+            temp = self.data[:, :, 0].copy()
+            self.data[:, :, 0] = self.data[:, :, 1]
+            self.data[:, :, 1] = temp
+        # The sign of V changes, as Im(XY) => Im(YX), and YX is conjugate of XY
+        self.data[:, :, 3] *= -1.0
+        return self
+
     def select(self, timekeep=None, freqkeep=None, copy=False):
         """Select a subset of time and frequency indices in data matrix.
 
