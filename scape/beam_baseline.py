@@ -416,3 +416,59 @@ def interpolate_measured_beam(x, y, z, num_grid_rows=201):
     smooth_z = interp(mesh).reshape(grid_y.size, grid_x.size)
 
     return grid_x, grid_y, smooth_z
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  extract_measured_beam
+#--------------------------------------------------------------------------------------------------
+
+def extract_measured_beam(compscan, pol='I', band=0, subtract_baseline=True):
+    """Extract measured beam pattern from power data in compound scan.
+
+    This interprets the compound scan as a raster scan and extracts the selected
+    power data as a measured beam pattern, which is a function of the target
+    coordinates. Spikes in the data are removed, but it is not interpolated onto
+    a grid yet. If a Gaussian beam was fitted to the compound scan, the measured
+    beam pattern is centred on the fitted beam, and normalised by its height.
+
+    Parameters
+    ----------
+    compscan : :class:`compoundscan.CompoundScan` object
+        Compound scan object to provide beam pattern
+    pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
+        The coherency / Stokes parameter that will be mapped (must be real)
+    band : int, optional
+        Frequency band of measured beam pattern
+    subtract_baseline : {True, False}, optional
+        True to subtract baselines (only scans with baselines are then mapped)
+
+    Returns
+    -------
+    x : array of float, shape (N,)
+        Sequence of *x* target coordinates, in radians
+    y : array of float, shape (N,)
+        Sequence of *y* target coordinates, in radians
+    power : array of float, shape (N,)
+        Sequence of normalised power measurements
+
+    """
+    if not pol in ('I', 'Q', 'U', 'V', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'XX' or 'YY' (i.e. real)")
+    # If there are no baselines in data set, don't subtract them
+    if np.array([scan.baseline is None for scan in compscan.scans]).all():
+        subtract_baseline = False
+    # Extract power parameter and target coordinates of all scans (or those with baselines)
+    if subtract_baseline:
+        power = np.hstack([remove_spikes(scan.pol(pol)[:, band]) - scan.baseline(scan.timestamps)
+                           for scan in compscan.scans if scan.baseline])
+        x, y = np.hstack([scan.target_coords for scan in compscan.scans if scan.baseline])
+    else:
+        power = np.hstack([remove_spikes(scan.pol(pol)[:, band]) for scan in compscan.scans])
+        x, y = np.hstack([scan.target_coords for scan in compscan.scans])
+    # Align with beam center and normalise by beam height, if beam is available
+    if compscan.beam:
+        power /= compscan.beam.height
+        x -= compscan.beam.center[0]
+        y -= compscan.beam.center[1]
+    else:
+        power /= power.max()
+    return x, y, power

@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 from katpoint import rad2deg
 from .stats import robust_mu_sigma, remove_spikes, minimise_angle_wrap
-from .beam_baseline import fwhm_to_sigma, interpolate_measured_beam
+from .beam_baseline import fwhm_to_sigma, extract_measured_beam, interpolate_measured_beam
 
 logger = logging.getLogger("scape.plots")
 
@@ -1003,8 +1003,8 @@ def plot_db_contours(x, y, Z, levels=None, sin_coords=False, add_lines=True, ax=
 #--- FUNCTION :  plot_measured_beam_pattern
 #--------------------------------------------------------------------------------------------------
 
-def plot_measured_beam_pattern(compscan, pol='I', subtract_baseline=True, add_samples=True, add_colorbar=True,
-                               band=0, ax=None, **kwargs):
+def plot_measured_beam_pattern(compscan, pol='I', band=0, subtract_baseline=True,
+                               add_samples=True, add_colorbar=True, ax=None, **kwargs):
     """Plot measured beam pattern contained in compound scan.
 
     Parameters
@@ -1013,14 +1013,14 @@ def plot_measured_beam_pattern(compscan, pol='I', subtract_baseline=True, add_sa
         Compound scan object to plot
     pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
         The coherency / Stokes parameter to display (must be real)
+    band : int, optional
+        Frequency band to plot
     subtract_baseline : {True, False}, optional
         True to subtract baselines (only scans with baselines are then shown)
     add_samples : {True, False}, optional
         True if scan sample locations are to be added
     add_colorbar : {True, False}, optional
         True if color bar indicating contour levels is to be added
-    band : int, optional
-        Frequency band to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
     kwargs : dict, optional
@@ -1040,27 +1040,10 @@ def plot_measured_beam_pattern(compscan, pol='I', subtract_baseline=True, add_sa
         If *pol* is not one of the allowed names
 
     """
-    if not pol in ('I', 'Q', 'U', 'V', 'XX', 'YY'):
-        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'XX' or 'YY' (i.e. real)")
     if ax is None:
         ax = plt.gca()
-    # If there are no baselines in data set, don't subtract them
-    if np.array([scan.baseline is None for scan in compscan.scans]).all():
-        subtract_baseline = False
-    # Extract Stokes parameter and target coordinates of all scans (or those with baselines)
-    if subtract_baseline:
-        power = np.hstack([remove_spikes(scan.pol(pol)[:, band]) - scan.baseline(scan.timestamps)
-                           for scan in compscan.scans if scan.baseline])
-        x, y = np.hstack([scan.target_coords for scan in compscan.scans if scan.baseline])
-    else:
-        power = np.hstack([remove_spikes(scan.pol(pol)[:, band]) for scan in compscan.scans])
-        x, y = np.hstack([scan.target_coords for scan in compscan.scans])
-    if compscan.beam:
-        power /= compscan.beam.height
-        x -= compscan.beam.center[0]
-        y -= compscan.beam.center[1]
-    else:
-        power /= power.max()
+    # Extract beam pattern as smoothed data on a regular grid
+    x, y, power = extract_measured_beam(compscan, pol, band, subtract_baseline)
     # Interpolate scattered data onto regular grid
     grid_x, grid_y, smooth_power = interpolate_measured_beam(x, y, power)
     # Plot contours and associated color bar (if requested)
