@@ -137,17 +137,17 @@ def next_load_reduce_plot(fig=None):
     compscan = d.compscans[0]
 
     # First fit XX and YY data, and extract beam and baseline heights and refined scan count
-    d.fit_beams_and_baselines(pol='XX')
+    d.fit_beams_and_baselines(pol='XX', circular_beam=False)
     beam_height_XX = compscan.beam.height if compscan.beam else np.nan
-    beam_width_XX = katpoint.rad2deg(compscan.beam.width) if compscan.beam else np.nan
+    beam_width_XX = katpoint.rad2deg(np.mean(compscan.beam.width)) if compscan.beam else np.nan
     baseline_height_XX = compscan.baseline_height()
     if baseline_height_XX is None:
         baseline_height_XX = np.nan
     refined_XX = compscan.beam.refined if compscan.beam else 0
 
-    d.fit_beams_and_baselines(pol='YY')
+    d.fit_beams_and_baselines(pol='YY', circular_beam=False)
     beam_height_YY = compscan.beam.height if compscan.beam else np.nan
-    beam_width_YY = katpoint.rad2deg(compscan.beam.width) if compscan.beam else np.nan
+    beam_width_YY = katpoint.rad2deg(np.mean(compscan.beam.width)) if compscan.beam else np.nan
     baseline_height_YY = compscan.baseline_height()
     if baseline_height_YY is None:
         baseline_height_YY = np.nan
