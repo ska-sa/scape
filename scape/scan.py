@@ -175,10 +175,14 @@ class Scan(object):
     flags : bool record array, shape (*T*,)
         Flags, with one record per integration. The field names correspond to
         the flag names.
-    environment : record array, shape (*T2*,)
-        Environmental measurements, containing *T2* records. The first field
-        ('timestamp') is a timestamp in UTC seconds since epoch, and the rest
-        of the field names correspond to environmental variables.
+    enviro_ambient : record array, shape (*Ta*,)
+        Slowly-varying environmental measurements, containing *Ta* records.
+        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
+        and the rest of the field names correspond to ambient variables.
+    enviro_wind : record array, shape (*Tw*,)
+        Wind speed and direction measurements, containing *Tw* records.
+        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
+        and the rest of the field names correspond to wind variables.
     label : string
         Scan label, used to distinguish e.g. normal and cal scans
     path : string
@@ -189,14 +193,15 @@ class Scan(object):
         Object that describes fitted baseline
 
     """
-    def __init__(self, data, is_stokes, timestamps, pointing, flags, environment,
-                 label, path, target_coords=None, baseline=None):
+    def __init__(self, data, is_stokes, timestamps, pointing, flags, enviro_ambient,
+                 enviro_wind, label, path, target_coords=None, baseline=None):
         self.data = data
         self.is_stokes = is_stokes
         self.timestamps = timestamps
         self.pointing = pointing
         self.flags = flags
-        self.environment = environment
+        self.enviro_ambient = enviro_ambient
+        self.enviro_wind = enviro_wind
         self.label = label
         self.path = path
         self.target_coords = target_coords
@@ -228,7 +233,8 @@ class Scan(object):
         # which causes extra approximateness... (pointing now only accurate to arcminutes, but time
         # should be OK up to microseconds)
         return np.all(self.flags == other.flags) and (self.label == other.label) and \
-               np.all(self.environment == other.environment) and \
+               np.all(self.enviro_ambient == other.enviro_ambient) and \
+               np.all(self.enviro_wind == other.enviro_wind) and \
                np.allclose(self.timestamps, other.timestamps, atol=1e-6) and \
                np.allclose(self.pointing.view(np.float32), other.pointing.view(np.float32), 1e-4) and \
                np.allclose(self.target_coords, other.target_coords, atol=1e-6)
@@ -466,7 +472,8 @@ class Scan(object):
             if not target_coords is None:
                 target_coords = target_coords[:, timekeep]
             return Scan(selected_data, self.is_stokes, self.timestamps[timekeep], self.pointing[timekeep],
-                        self.flags[timekeep], self.environment, self.label, self.path, target_coords, self.baseline)
+                        self.flags[timekeep], self.enviro_ambient, self.enviro_wind,
+                        self.label, self.path, target_coords, self.baseline)
         # Create a shallow view of data matrix via a masked array or view
         else:
             # If data matrix is kept intact, rather just return a view instead of masked array
@@ -491,4 +498,5 @@ class Scan(object):
                 keep3d = np.kron(timekeep3d, np.kron(freqkeep3d, polkeep3d))
                 selected_data = np.ma.array(self.data, mask=~keep3d)
             return Scan(selected_data, self.is_stokes, self.timestamps, self.pointing, self.flags,
-                        self.environment, self.label, self.path, self.target_coords, self.baseline)
+                        self.enviro_ambient, self.enviro_wind, self.label, self.path,
+                        self.target_coords, self.baseline)

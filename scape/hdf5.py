@@ -60,6 +60,7 @@ def load_dataset(filename, **kwargs):
             raise ValueError('HDF5 file not augmented - please run k7augment/augment.py on this file')
         pointing_model = f['pointing_model'].value
         data_unit = f.attrs['data_unit']
+        data_timestamps_at_sample_centers = f.attrs['data_timestamps_at_sample_centers']
         antenna = f.attrs['antenna']
         comment = f.attrs['comment'] # TODO return this as well
 
@@ -115,12 +116,13 @@ def load_dataset(filename, **kwargs):
                 # Move timestamps and pointing from start of each sample to the middle
                 scan_timestamps, scan_pointing = move_start_to_center(scan_timestamps, scan_pointing, sample_period)
                 scan_flags = f['Scans'][compscan][scan]['flags'].value
-                scan_environment = f['Scans'][compscan][scan]['environment'].value
+                scan_enviro_ambient = f['Scans'][compscan][scan]['enviro_ambient'].value
+                scan_enviro_wind = f['Scans'][compscan][scan]['enviro_wind'].value
                 scan_label = f['Scans'][compscan][scan].attrs['label']
                 scan_comment = f['Scans'][compscan][scan].attrs['comment'] # TODO: do something with this
 
-                scanlist.append(Scan(scan_data, False, scan_timestamps, scan_pointing, scan_flags,
-                                     scan_environment, scan_label, filename + '/Scans/%s/%s' % (compscan, scan)))
+                scanlist.append(Scan(scan_data, False, scan_timestamps, scan_pointing, scan_flags, scan_enviro_ambient,
+                                     scan_enviro_wind, scan_label, filename + '/Scans/%s/%s' % (compscan, scan)))
 
             # Sort scans chronologically, as h5py seems to scramble them based on group name
             scanlist.sort(key=lambda scan: scan.timestamps[0])
@@ -192,7 +194,8 @@ def save_dataset(dataset, filename):
                 pointing_view *= 180.0 / np.pi
                 scan_group.create_dataset('pointing', data=pointing, compression='gzip')
                 scan_group.create_dataset('flags', data=scan.flags, compression='gzip')
-                scan_group.create_dataset('environment', data=scan.environment, compression='gzip')
+                scan_group.create_dataset('enviro_ambient', data=scan.enviro_ambient, compression='gzip')
+                scan_group.create_dataset('enviro_wind', data=scan.enviro_wind, compression='gzip')
 
                 scan_group.attrs['label'] = scan.label
                 scan_group.attrs['comment'] = ''

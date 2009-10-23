@@ -210,10 +210,11 @@ def load_scan(filename):
                               names=['valid', 'nd_on', 'rx_on'])
     # The environmental variables are sampled when the FITS file is written to disk,
     # so it is more appropriate to associate the last timestamp with them
-    environment = np.rec.array([(timestamps[-1], np.float32(header['Temp']),
-                                 np.float32(header['Pressure']), np.float32(header['Humidity']),
-                                 np.float32(header['WindSpd']), np.float32(header['WindDir']))],
-                                 names='timestamp,temperature,pressure,humidity,wind_speed,wind_direction')
+    enviro_ambient = np.rec.array([(timestamps[-1], np.float32(header['Temp']),
+                                    np.float32(header['Pressure']), np.float32(header['Humidity']))],
+                                  names='timestamp,temperature,pressure,humidity')
+    enviro_wind = np.rec.array([(timestamps[-1], np.float32(header['WindSpd']), np.float32(header['WindDir']))],
+                               names='timestamp,wind_speed,wind_direction')
     data_header = hdu['MSDATA'].header
     label = str(data_header['ID'+str(data_header['DATAID'])])
     path = filename
@@ -230,7 +231,7 @@ def load_scan(filename):
     target = acsm_target_description(cPickle.loads(hdu['OBJECTS'].data.field('Target')[0]))
     antenna = acsm_antenna_description(cPickle.loads(hdu['OBJECTS'].data.field('Mount')[0]))
 
-    return Scan(data, is_stokes, timestamps, pointing, flags, environment, label, path), \
+    return Scan(data, is_stokes, timestamps, pointing, flags, enviro_ambient, enviro_wind, label, path), \
            data_unit, corrconf, target, antenna, exp_seq_num, feed_id
 
 # pylint: disable-msg=W0613
