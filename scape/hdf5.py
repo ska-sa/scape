@@ -152,6 +152,7 @@ def save_dataset(dataset, filename):
     with h5py.File(filename, 'w') as f:
         f['/'].create_dataset('pointing_model', data=dataset.pointing_model.params)
         f['/'].attrs['data_unit'] = dataset.data_unit
+        f['/'].attrs['data_timestamps_at_sample_centers'] = True
         f['/'].attrs['antenna'] = dataset.antenna.description
         f['/'].attrs['comment'] = ''
         f['/'].attrs['augment'] = 'File created by scape'
