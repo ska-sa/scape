@@ -114,7 +114,7 @@ class MuSigmaArray(np.ndarray):
         def fget(self):
             return self._sigma
         def fset(self, value):
-            if value != None:
+            if not value is None:
                 value = np.asarray(value)
                 if value.shape != self.shape:
                     raise TypeError("X.sigma should have the same shape as X (i.e. %s instead of %s )" %
@@ -139,14 +139,14 @@ class MuSigmaArray(np.ndarray):
 
     def __getitem__(self, value):
         """Index both arrays at the same time."""
-        if self.sigma == None:
+        if self.sigma is None:
             return MuSigmaArray(self.mu[value], None)
         else:
             return MuSigmaArray(self.mu[value], self.sigma[value])
 
     def __getslice__(self, first, last):
         """Index both arrays at the same time."""
-        if self.sigma == None:
+        if self.sigma is None:
             return MuSigmaArray(self.mu[first:last], None)
         else:
             return MuSigmaArray(self.mu[first:last], self.sigma[first:last])
