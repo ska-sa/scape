@@ -23,115 +23,6 @@ from .stats import minimise_angle_wrap
 from katpoint import rad2deg
 
 #--------------------------------------------------------------------------------------------------
-#--- Helper functions
-#--------------------------------------------------------------------------------------------------
-
-def move_start_to_center(start_times, pointing_at_start, sample_period):
-    """Move timestamps and pointing from start to center of each sample.
-
-    The :mod:`scape` data files contain timestamps and associated pointing info
-    for the start of each integration sample. The power data is most naturally
-    associated with the center of the sample, though. For long integration
-    periods these two positions will differ significantly, resulting in skewed
-    plots, etc. This function moves the timestamps and pointing info to coincide
-    with the power data at the center of each sample, which is more natural for
-    processing and plots. It returns copies of the data.
-
-    Parameters
-    ----------
-    start_times : real array, shape (*T*,)
-        Sequence of timestamps, one per integration (in UTC seconds since epoch).
-        These timestamps should be at the *start* of each integration.
-    pointing_at_start : real record array, shape (*T*,)
-        Pointing coordinates, with one record per integration. Each record is
-        time-aligned with *start_times*, at the start of each integration.
-    sample_period : float
-        Sample period (length of integration), in seconds
-
-    Returns
-    -------
-    center_times : real array, shape (*T*,)
-        Sequence of timestamps, one per integration (in UTC seconds since epoch).
-        These timestamps should be in the *middle* of each integration.
-    pointing_at_center : real record array, shape (*T*,)
-        Pointing coordinates, with one record per integration. Each record is
-        time-aligned with *center_times*, in the middle of each integration.
-
-    """
-    center_times = start_times + 0.5 * sample_period
-    if len(start_times) > 1:
-        next_start_times = np.hstack((start_times[1:], [2.0 * start_times[-1] - start_times[-2]]))
-    else:
-        # If there is only one sample, assume next sample would have been a sample period later
-        next_start_times = start_times + sample_period
-    weights = (next_start_times - center_times) / (next_start_times - start_times)
-    pointing_at_center = pointing_at_start.copy()
-    for name in pointing_at_start.dtype.names:
-        x_at_start = pointing_at_start[name]
-        if len(x_at_start) > 1:
-            x_at_next_start = np.hstack((x_at_start[1:], [2.0 * x_at_start[-1] - x_at_start[-2]]))
-        else:
-            # Not much you can interpolate with only one sample... Assume it stays constant
-            x_at_next_start = x_at_start
-        x_at_center = weights * x_at_start + (1.0 - weights) * x_at_next_start
-        pointing_at_center[name] = x_at_center
-    return center_times, pointing_at_center
-
-def move_center_to_start(center_times, pointing_at_center, sample_period):
-    """Move timestamps and pointing from center to start of each sample.
-
-    The :mod:`scape` data files contain timestamps and associated pointing info
-    for the start of each integration sample. The power data is most naturally
-    associated with the center of the sample, though. For long integration
-    periods these two positions will differ significantly, resulting in skewed
-    plots, etc. This function moves the timestamps and pointing info from the
-    center of each sample to the start, which is how it will be stored on disk.
-    It returns copies of the data.
-
-    Parameters
-    ----------
-    center_times : real array, shape (*T*,)
-        Sequence of timestamps, one per integration (in UTC seconds since epoch).
-        These timestamps should be in the *middle* of each integration.
-    pointing_at_center : real record array, shape (*T*,)
-        Pointing coordinates, with one record per integration. Each record is
-        time-aligned with *center_times*, in the middle of each integration.
-    sample_period : float
-        Sample period (length of integration), in seconds
-
-    Returns
-    -------
-    start_times : real array, shape (*T*,)
-        Sequence of timestamps, one per integration (in UTC seconds since epoch).
-        These timestamps should be at the *start* of each integration.
-    pointing_at_start : real record array, shape (*T*,)
-        Pointing coordinates, with one record per integration. Each record is
-        time-aligned with *start_times*, at the start of each integration.
-
-    """
-    start_times = center_times - 0.5 * sample_period
-    if len(start_times) > 1:
-        next_start_times = np.hstack((start_times[1:], [2.0 * start_times[-1] - start_times[-2]]))
-    else:
-        # If there is only one sample, assume next sample would have been a sample period later
-        next_start_times = start_times + sample_period
-    weights = (next_start_times - center_times) / (next_start_times - start_times)
-    pointing_at_start = pointing_at_center.copy()
-    for name in pointing_at_center.dtype.names:
-        x_at_center = pointing_at_center[name]
-        x_at_start = np.zeros(x_at_center.shape)
-        if len(x_at_center) > 1:
-            x_at_start[-1] = (weights[-2] * x_at_center[-1] + (1.0 - weights[-1]) * x_at_center[-2]) / \
-                             (weights[-2] + 1.0 - weights[-1])
-            for n in xrange(len(x_at_start) - 2, -1, -1):
-                x_at_start[n] = (x_at_center[n] - (1.0 - weights[n]) * x_at_start[n + 1]) / weights[n]
-        else:
-            # Not much you can interpolate with only one sample... Assume it stays constant
-            x_at_start = x_at_center
-        pointing_at_start[name] = x_at_start
-    return start_times, pointing_at_start
-
-#--------------------------------------------------------------------------------------------------
 #--- CLASS :  Scan
 #--------------------------------------------------------------------------------------------------
 
@@ -175,11 +66,11 @@ class Scan(object):
     flags : bool record array, shape (*T*,)
         Flags, with one record per integration. The field names correspond to
         the flag names.
-    enviro_ambient : record array, shape (*Ta*,)
+    enviro_ambient : record array, shape (*Ta*,) or None
         Slowly-varying environmental measurements, containing *Ta* records.
         The first field ('timestamp') is a timestamp in UTC seconds since epoch,
         and the rest of the field names correspond to ambient variables.
-    enviro_wind : record array, shape (*Tw*,)
+    enviro_wind : record array, shape (*Tw*,) or None
         Wind speed and direction measurements, containing *Tw* records.
         The first field ('timestamp') is a timestamp in UTC seconds since epoch,
         and the rest of the field names correspond to wind variables.

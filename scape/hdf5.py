@@ -8,8 +8,9 @@ import h5py
 import numpy as np
 
 from .gaincal import NoiseDiodeModel
-from .scan import Scan, move_start_to_center, move_center_to_start
+from .scan import Scan
 from .compoundscan import CorrelatorConfig, CompoundScan
+from .fitting import PiecewisePolynomial1DFit, Independent1DFit
 
 logger = logging.getLogger("scape.hdf5")
 
@@ -18,7 +19,7 @@ logger = logging.getLogger("scape.hdf5")
 #--------------------------------------------------------------------------------------------------
 
 # pylint: disable-msg=W0613
-def load_dataset(filename, **kwargs):
+def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
     """Load data set from HDF5 file.
 
     This loads a data set from an HDF5 file.
@@ -27,8 +28,13 @@ def load_dataset(filename, **kwargs):
     ----------
     filename : string
         Name of input HDF5 file
+    selected_pointing : string, optional
+        Identifier of (az, el) sensors that will provide all the pointing data
+        of the data set. The actual sensor names are formed by appending '_azim'
+        and '_elev' to *selected_pointing*. This is ignored if the data set has
+        already been processed to contain a single source of pointing data.
     kwargs : dict, optional
-        Extra keyword arguments are ignored, as they usually apply to other formats
+        Extra keyword arguments are ignored, as they typically apply to other formats
 
     Returns
     -------
@@ -48,7 +54,8 @@ def load_dataset(filename, **kwargs):
     Raises
     ------
     ValueError
-        If file has not been augmented to contain all data fields
+        If file has not been augmented to contain all data fields, or some fields
+        are missing
     h5py.H5Error
         If HDF5 error occurred
 
@@ -56,44 +63,51 @@ def load_dataset(filename, **kwargs):
     # pylint: disable-msg=R0914
     with h5py.File(filename, 'r') as f:
         # Only continue if file has been properly augmented
-        if not 'augment' in f.attrs.listnames():
-            raise ValueError('HDF5 file not augmented - please run k7augment/augment.py on this file')
+        if not 'augment' in f.attrs:
+            raise ValueError('HDF5 file not augmented - please run k7augment/augment2.py on this file')
         pointing_model = f['pointing_model'].value
         data_unit = f.attrs['data_unit']
-        data_timestamps_at_sample_centers = f.attrs['data_timestamps_at_sample_centers']
+        data_timestamps_at_sample_centers = f.attrs.get('data_timestamps_at_sample_centers', False)
         antenna = f.attrs['antenna']
         comment = f.attrs['comment'] # TODO return this as well
 
+        # Load correlator configuration group
+        corrconf_group = f['CorrelatorConfig']
         # If center_freqs dataset is available, use it - otherwise, reconstruct it from DBE attributes
-        center_freqs = f['CorrelatorConfig'].get('center_freqs', None)
+        center_freqs = corrconf_group.get('center_freqs', None)
         if center_freqs:
             center_freqs = center_freqs.value / 1e6
-            bandwidths = f['CorrelatorConfig']['bandwidths'].value / 1e6
+            bandwidths = corrconf_group['bandwidths'].value / 1e6
         else:
-            band_center = f['CorrelatorConfig'].attrs['center_frequency_hz'] / 1e6
-            channel_bw = f['CorrelatorConfig'].attrs['bandwidth_hz'] / 1e6
-            num_chans = f['CorrelatorConfig'].attrs['num_freq_channels']
+            band_center = corrconf_group.attrs['center_frequency_hz'] / 1e6
+            channel_bw = corrconf_group.attrs['bandwidth_hz'] / 1e6
+            num_chans = corrconf_group.attrs['num_freq_channels']
             center_freqs = np.arange(band_center - (channel_bw * num_chans / 2.0) + channel_bw / 2.0,
                                      band_center + (channel_bw * num_chans / 2.0) + channel_bw / 2.0,
                                      channel_bw, dtype=np.float64)
             bandwidths = np.tile(channel_bw, num_chans, dtype=np.float64)
-        rfi_channels = f['CorrelatorConfig']['rfi_channels'].value.nonzero()[0].tolist()
-        dump_rate = f['CorrelatorConfig'].attrs['dump_rate']
+        rfi_channels = corrconf_group['rfi_channels'].value.nonzero()[0].tolist()
+        dump_rate = corrconf_group.attrs['dump_rate']
         sample_period = 1.0 / dump_rate
         corrconf = CorrelatorConfig(center_freqs, bandwidths, rfi_channels, dump_rate)
 
+        # Load noise diode model group
         temperature_x = f['NoiseDiodeModel']['temperature_x'].value
         temperature_y = f['NoiseDiodeModel']['temperature_y'].value
         nd_data = NoiseDiodeModel(temperature_x, temperature_y)
 
+        # Load each compound scan group
         compscanlist = []
         for compscan in f['Scans']:
-            compscan_target = f['Scans'][compscan].attrs['target']
-            compscan_comment = f['Scans'][compscan].attrs['comment'] # TODO: do something with this
+            compscan_group = f['Scans'][compscan]
+            compscan_target = compscan_group.attrs['target']
+            compscan_comment = compscan_group.attrs['comment'] # TODO: do something with this
 
+            # Load each scan group within compound scan
             scanlist = []
-            for scan in f['Scans'][compscan]:
-                complex_data = f['Scans'][compscan][scan]['data'].value
+            for scan in compscan_group:
+                scan_group = compscan_group[scan]
+                complex_data = scan_group['data'].value
                 assert complex_data.dtype.fields.has_key('XX'), "Power data is not in coherency form"
                 # Load power data either in complex64 form or uint32 form
                 if complex_data.dtype.fields['XX'][0] == np.complex64:
@@ -107,21 +121,40 @@ def load_dataset(filename, **kwargs):
                                            2.0 * complex_data['XY']['r'].astype(np.float32),
                                            2.0 * complex_data['XY']['i'].astype(np.float32)])
                 # Convert from millisecs to secs since Unix epoch, and be sure to use float64 to preserve digits
-                scan_timestamps = f['Scans'][compscan][scan]['timestamps'].value.astype(np.float64) / 1000.0
-                scan_pointing = f['Scans'][compscan][scan]['pointing'].value
+                data_timestamps = scan_group['timestamps'].value.astype(np.float64) / 1000.0
+                # Move correlator data timestamps from start of each sample to the middle
+                if not data_timestamps_at_sample_centers:
+                    data_timestamps += 0.5 * sample_period
+                # If reduced pointing dataset is available, use it - otherwise, select and interpolate original data
+                scan_pointing = scan_group['pointing'].value if 'pointing' in scan_group else None
+                if scan_pointing is None:
+                    # Select appropriate sensor to use for (az, el) data
+                    if selected_pointing.startswith('request_'):
+                        scan_pointing = scan_group['requested_pointing'].value
+                    else:
+                        scan_pointing = scan_group['actual_pointing'].value
+                    azel_timestamps = scan_pointing['timestamp']
+                    try:
+                        original_az = scan_pointing[selected_pointing + '_azim']
+                        original_el = scan_pointing[selected_pointing + '_elev']
+                    except ValueError:
+                        raise ValueError("The selected pointing sensor '%s_{azim,elev}' was not found in HDF5 file" %
+                                         (selected_pointing))
+                    # Linearly interpolate (az, el) coordinates to correlator data timestamps
+                    interp = Independent1DFit(PiecewisePolynomial1DFit(max_degree=1), axis=1)
+                    interp.fit(azel_timestamps, [original_az, original_el])
+                    scan_pointing = np.rec.fromarrays(interp(data_timestamps).astype(np.float32), names=('az', 'el'))
                 # Convert contents of pointing from degrees to radians
                 # pylint: disable-msg=W0612
                 pointing_view = scan_pointing.view(np.float32)
-                pointing_view *= np.pi / 180.0
-                # Move timestamps and pointing from start of each sample to the middle
-                scan_timestamps, scan_pointing = move_start_to_center(scan_timestamps, scan_pointing, sample_period)
-                scan_flags = f['Scans'][compscan][scan]['flags'].value
-                scan_enviro_ambient = f['Scans'][compscan][scan]['enviro_ambient'].value
-                scan_enviro_wind = f['Scans'][compscan][scan]['enviro_wind'].value
-                scan_label = f['Scans'][compscan][scan].attrs['label']
-                scan_comment = f['Scans'][compscan][scan].attrs['comment'] # TODO: do something with this
+                pointing_view *= np.float32(np.pi / 180.0)
+                scan_flags = scan_group['flags'].value
+                scan_enviro_ambient = scan_group['enviro_ambient'].value if 'enviro_ambient' in scan_group else None
+                scan_enviro_wind = scan_group['enviro_wind'].value if 'enviro_wind' in scan_group else None
+                scan_label = scan_group.attrs['label']
+                scan_comment = scan_group.attrs['comment'] # TODO: do something with this
 
-                scanlist.append(Scan(scan_data, False, scan_timestamps, scan_pointing, scan_flags, scan_enviro_ambient,
+                scanlist.append(Scan(scan_data, False, data_timestamps, scan_pointing, scan_flags, scan_enviro_ambient,
                                      scan_enviro_wind, scan_label, filename + '/Scans/%s/%s' % (compscan, scan)))
 
             # Sort scans chronologically, as h5py seems to scramble them based on group name
@@ -184,19 +217,19 @@ def save_dataset(dataset, filename):
                 complex_data = np.rec.fromarrays([scan.coherency(key) for key in coherency_order],
                                                  names=coherency_order, formats=['complex64'] * 4)
                 scan_group.create_dataset('data', data=complex_data, compression='gzip')
-                # Move timestamps and pointing from middle of each sample back to the start (returns copies)
-                timestamps, pointing = move_center_to_start(scan.timestamps, scan.pointing, sample_period)
-                # Convert from float64 seconds to uint64 milliseconds
-                timestamps = np.round(1000.0 * timestamps).astype(np.uint64)
-                scan_group.create_dataset('timestamps', data=timestamps, compression='gzip')
+                # Save data timestamps in milliseconds
+                scan_group.create_dataset('timestamps', data=1000.0 * scan.timestamps, compression='gzip')
                 # Convert contents of pointing from radians to degrees, without disturbing original
                 # pylint: disable-msg=W0612
+                pointing = scan.pointing.copy()
                 pointing_view = pointing.view(np.float32)
-                pointing_view *= 180.0 / np.pi
+                pointing_view *= np.float32(180.0 / np.pi)
                 scan_group.create_dataset('pointing', data=pointing, compression='gzip')
                 scan_group.create_dataset('flags', data=scan.flags, compression='gzip')
-                scan_group.create_dataset('enviro_ambient', data=scan.enviro_ambient, compression='gzip')
-                scan_group.create_dataset('enviro_wind', data=scan.enviro_wind, compression='gzip')
+                if scan.enviro_ambient:
+                    scan_group.create_dataset('enviro_ambient', data=scan.enviro_ambient, compression='gzip')
+                if scan.enviro_wind:
+                    scan_group.create_dataset('enviro_wind', data=scan.enviro_wind, compression='gzip')
 
                 scan_group.attrs['label'] = scan.label
                 scan_group.attrs['comment'] = ''
