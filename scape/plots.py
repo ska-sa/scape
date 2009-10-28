@@ -557,7 +557,7 @@ def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, band=0, ax=
         beam_power, inner_beam_power = np.tile(np.nan, len(timeline)), np.tile(np.nan, len(timeline))
         if compscan.beam:
             if (compscan.beam.refined and scan.baseline) or (not compscan.beam.refined and compscan.baseline):
-                beam_power = compscan.beam(scan.target_coords.transpose()) + baseline_power
+                beam_power = compscan.beam(scan.target_coords) + baseline_power
             if scan.baseline:
                 radius = np.sqrt(((scan.target_coords - compscan.beam.center[:, np.newaxis]) ** 2).sum(axis=0))
                 inner = radius < 0.6 * np.mean(compscan.beam.width)
