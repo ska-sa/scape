@@ -24,7 +24,7 @@ def ordinal_suffix(n):
 #--- FUNCTION :  plot_spectrum
 #--------------------------------------------------------------------------------------------------
 
-def plot_spectrum(dataset, pol='I', scan=0, sigma=1.0, ax=None):
+def plot_spectrum(dataset, pol='I', scan=-1, sigma=1.0, vertical=True, dB=True, ax=None):
     """Spectrum plot of power data as a function of frequency.
 
     This plots the power spectrum of the given scan (either in Stokes or
@@ -39,9 +39,14 @@ def plot_spectrum(dataset, pol='I', scan=0, sigma=1.0, ax=None):
     pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
         The coherency / Stokes parameter to display (must be real)
     scan : int, optional
-        Index of scan in data set to plot
+        Index of scan in data set to plot (-1 to plot all scans together)
     sigma : float, optional
         The error bar is this factor of standard deviation above and below mean
+    vertical : {True, False}, optional
+        True if frequency is on the x-axis and power is on the y-axis, and False
+        if it is the other way around
+    dB : {True, False}, optional
+        True to plot power logarithmically in dB of the underlying unit
     ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
 
@@ -49,6 +54,8 @@ def plot_spectrum(dataset, pol='I', scan=0, sigma=1.0, ax=None):
     -------
     ax : :class:`matplotlib.axes.Axes` object
         Matplotlib Axes object representing plot
+    power_lim : list of 2 floats
+        Overall minimum and maximum value of data, useful for setting plot limits
 
     Raises
     ------
@@ -60,30 +67,55 @@ def plot_spectrum(dataset, pol='I', scan=0, sigma=1.0, ax=None):
         raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'XX' or 'YY' (i.e. real)")
     if ax is None:
         ax = plt.gca()
-    power = robust_mu_sigma(dataset.scans[scan].pol(pol))
+    if scan >= 0:
+        data = dataset.scans[scan].pol(pol)
+    else:
+        data = np.vstack([s.pol(pol) for s in dataset.scans])
+    power = robust_mu_sigma(data)
+    power_min, power_max = data.min(axis=0), data.max(axis=0)
+    del data
 
     # Form makeshift rectangular patches indicating power variation in each channel
     power_mean = np.repeat(power.mu, 3)
-    power_upper = np.repeat(power.mu + sigma * power.sigma, 3)
-    power_lower = np.repeat(power.mu - sigma * power.sigma, 3)
+    power_upper = np.repeat(np.clip(power.mu + sigma * power.sigma, -np.inf, power_max), 3)
+    power_lower = np.repeat(np.clip(power.mu - sigma * power.sigma, power_min, np.inf), 3)
+    power_min, power_max = np.repeat(power_min, 3), np.repeat(power_max, 3)
+    if dB:
+        power_mean = 10 * np.log10(power_mean)
+        power_min, power_max = 10 * np.log10(power_min), 10 * np.log10(power_max)
+        power_upper, power_lower = 10 * np.log10(power_upper), 10 * np.log10(power_lower)
     freqs = np.array([dataset.freqs - 0.999 * dataset.bandwidths / 2.0,
                       dataset.freqs + 0.999 * dataset.bandwidths / 2.0,
                       dataset.freqs + dataset.bandwidths / 2.0]).transpose().ravel()
     mask = np.arange(len(power_mean)) % 3 == 2
+
     # Fill_between (which uses poly path) is much faster than a Rectangle patch collection
-    ax.fill_between(freqs, power_lower, power_upper, where=~mask, facecolors='0.7', edgecolors='0.7')
-    ax.plot(freqs, np.ma.masked_array(power_mean, mask), color='b', lw=2)
-    ax.plot(dataset.freqs, power.mu, 'ob')
-    ax.set_xlim(dataset.freqs[0]  - dataset.bandwidths[0] / 2.0,
-                dataset.freqs[-1] + dataset.bandwidths[-1] / 2.0)
-    ax.set_xlabel('Frequency (MHz)')
-    if dataset.data_unit == 'Jy':
-        ax.set_ylabel('Flux density (Jy)')
-    elif dataset.data_unit == 'K':
-        ax.set_ylabel('Temperature (K)')
+    if vertical:
+        ax.fill_between(freqs, power_min, power_max, where=~mask, facecolors='0.8', edgecolors='0.8')
+        ax.fill_between(freqs, power_lower, power_upper, where=~mask, facecolors='0.6', edgecolors='0.6')
+        ax.plot(freqs, np.ma.masked_array(power_mean, mask), color='b', lw=2)
+        ax.plot(dataset.freqs, power_mean[::3], 'ob')
+        ax.set_xlim(dataset.freqs[0]  - dataset.bandwidths[0] / 2.0,
+                    dataset.freqs[-1] + dataset.bandwidths[-1] / 2.0)
+        freq_label, power_label = ax.set_xlabel, ax.set_ylabel
     else:
-        ax.set_ylabel('Raw power')
-    return ax
+        ax.fill_betweenx(freqs, power_min, power_max, where=~mask, facecolors='0.8', edgecolors='0.8')
+        ax.fill_betweenx(freqs, power_lower, power_upper, where=~mask, facecolors='0.6', edgecolors='0.6')
+#        ax.plot(np.ma.masked_array(power_mean, mask), freqs, color='b', lw=2)
+        ax.plot(power_mean, np.ma.masked_array(freqs, mask), color='b', lw=2)
+        ax.plot(power_mean[::3], dataset.freqs, 'ob')
+        ax.set_ylim(dataset.freqs[0]  - dataset.bandwidths[0] / 2.0,
+                    dataset.freqs[-1] + dataset.bandwidths[-1] / 2.0)
+        freq_label, power_label = ax.set_ylabel, ax.set_xlabel
+    freq_label('Frequency (MHz)')
+    db_str = 'dB ' if dB else ''
+    if dataset.data_unit == 'Jy':
+        power_label('Flux density (%sJy)' % db_str)
+    elif dataset.data_unit == 'K':
+        power_label('Temperature (%sK)' % db_str)
+    else:
+        power_label('Raw power (%scounts)' % db_str)
+    return ax, [power_min.min(), power_max.max()]
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_waterfall
@@ -128,10 +160,10 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
     if not scans:
         logger.error('Data set is empty')
         return
-    channel_freqs_GHz = dataset.freqs / 1e3
-    channel_bandwidths_GHz = dataset.bandwidths / 1e3
+    channel_freqs_MHz = dataset.freqs
+    channel_bandwidths_MHz = dataset.bandwidths
     rfi_channels = dataset.rfi_channels
-    num_channels = len(channel_freqs_GHz)
+    num_channels = len(channel_freqs_MHz)
     data_min = {'XX': np.tile(np.inf, (len(scans), num_channels)),
                 'YY': np.tile(np.inf, (len(scans), num_channels))}
     data_max = {'XX': np.zeros((len(scans), num_channels)),
@@ -150,7 +182,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
         data_min[pol] = data_min[pol].min(axis=0)
         data_max[pol] = data_max[pol].max(axis=0)
     channel_list = np.arange(0, num_channels, channel_skip, dtype='int')
-    offsets = np.column_stack((np.zeros(len(channel_list), dtype='float'), channel_freqs_GHz[channel_list]))
+    offsets = np.column_stack((np.zeros(len(channel_list), dtype='float'), channel_freqs_MHz[channel_list]))
     scale = 0.08 * num_channels
 
     # Plot of raw XX and YY power in all channels
@@ -168,7 +200,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
                     colors = [(0.0, 0.0, 0.0, 1.0 - 0.6 * (chan in dataset.rfi_channels)) for chan in channel_list]
                 time_line = scan.timestamps - time_origin
                 # Normalise the data in each channel to lie between 0 and (channel bandwidth * scale)
-                norm_power = scale * channel_bandwidths_GHz[np.newaxis, :] * \
+                norm_power = scale * channel_bandwidths_MHz[np.newaxis, :] * \
                             (scan.coherency(pol) - data_min[pol][np.newaxis, :]) / \
                             (data_max[pol][np.newaxis, :] - data_min[pol][np.newaxis, :])
                 segments = [np.vstack((time_line, norm_power[:, chan])).transpose() for chan in channel_list]
@@ -186,9 +218,9 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
                 start_time_ind = len(t_limits) - 2 * len(compscan.scans)
                 if compscan_ind >= 1:
                     border_time = (t_limits[start_time_ind - 1] + t_limits[start_time_ind]) / 2.0
-                    ax.plot([border_time, border_time], [0.0, 10.0 * channel_freqs_GHz.max()], '--k')
+                    ax.plot([border_time, border_time], [0.0, 10.0 * channel_freqs_MHz.max()], '--k')
                 ax.text((t_limits[start_time_ind] + t_limits[-1]) / 2.0,
-                        offsets[0, 1] - scale * channel_bandwidths_GHz[0], compscan.target.name,
+                        offsets[0, 1] - scale * channel_bandwidths_MHz[0], compscan.target.name,
                         ha='center', va='bottom', clip_on=True)
         # Set up title and axis labels
         nth_str = ''
@@ -215,57 +247,35 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
         # Shrink the font of the second line of the title to make it fit
         title_pos = title_obj.get_position()
         ax.text(title_pos[0], title_pos[1], extra_title, fontsize='smaller', transform=ax.transAxes, ha='center')
-        ax.set_ylabel('Frequency (GHz)')
-        # Power spectrum box plots, with bar plot behind it indicating min-to-max data range
+        ax.set_ylabel('Frequency (MHz)')
+        # Power spectrum box plots
         ax = axes_list[ax_ind + 2]
-        all_scans = np.concatenate(all_scans, axis=0)
-        rfi_channel_list = list(set(channel_list) & set(rfi_channels))
-        non_rfi_channel_list = list(set(channel_list) - set(rfi_channel_list))
-        # Do RFI and non-RFI channels separately, in order to grey out the RFI channels (boxplot constraint)
-        for rfi_flag, channels in enumerate([non_rfi_channel_list, rfi_channel_list]):
-            if len(channels) == 0:
-                continue
-            chan_data = all_scans[:, channels]
-            ax.bar(chan_data.min(axis=0), channel_skip * channel_bandwidths_GHz[channels],
-                   chan_data.max(axis=0) - chan_data.min(axis=0), channel_freqs_GHz[channels],
-                   color='b', alpha=(0.5 - 0.2 * rfi_flag), linewidth=0, align='center', orientation='horizontal')
-            handles = ax.boxplot(chan_data, vert=0, positions=channel_freqs_GHz[channels], sym='',
-                                 widths=channel_skip * channel_bandwidths_GHz[channels])
-            plt.setp(handles['whiskers'], linestyle='-')
-            if rfi_flag:
-                plt.setp([h for h in mpl.cbook.flatten(handles.itervalues())], alpha=0.4)
-            # Restore yticks corrupted by boxplot
-            ax.yaxis.set_major_locator(mpl.ticker.AutoLocator())
-        ax.set_xscale('log')
+        ax, power_lim = plot_spectrum(dataset, pol=pol, scan=-1, vertical=False, ax=ax)
         # Add extra ticks on the right to indicate channel numbers
         # second_axis = ax.twinx()
         # second_axis.yaxis.tick_right()
         # second_axis.yaxis.set_label_position('right')
         # second_axis.set_ylabel('Channel number')
-        # second_axis.set_yticks(channel_freqs_GHz[channel_list])
+        # second_axis.set_yticks(channel_freqs_MHz[channel_list])
         # second_axis.set_yticklabels([str(chan) for chan in channel_list])
-        p_limits += [all_scans.min(), all_scans.max()]
+        p_limits += power_lim
+        ax.set_ylabel('')
         ax.set_title('%s power spectrum' % pol)
         if pol == 'XX':
             # This is more elaborate because the subplot axes are shared
             plt.setp(ax.get_xticklabels(), visible=False)
             plt.setp(ax.get_yticklabels(), visible=False)
+            ax.set_xlabel('')
         else:
             plt.setp(ax.get_yticklabels(), visible=False)
-            if dataset.data_unit == 'Jy':
-                ax.set_xlabel('Flux density (Jy)')
-            elif dataset.data_unit == 'K':
-                ax.set_xlabel('Temperature (K)')
-            else:
-                ax.set_xlabel('Raw power')
     # Fix limits globally
     t_limits = np.array(t_limits)
-    y_range = channel_freqs_GHz.max() - channel_freqs_GHz.min()
-    if y_range < channel_bandwidths_GHz[0]:
-        y_range = 10.0 * channel_bandwidths_GHz[0]
+    y_range = channel_freqs_MHz.max() - channel_freqs_MHz.min()
+    if y_range < channel_bandwidths_MHz[0]:
+        y_range = 10.0 * channel_bandwidths_MHz[0]
     for ax in axes_list[:2]:
         ax.set_xlim(t_limits.min(), t_limits.max())
-        ax.set_ylim(channel_freqs_GHz.min() - 0.1 * y_range, channel_freqs_GHz.max() + 0.1 * y_range)
+        ax.set_ylim(channel_freqs_MHz.min() - 0.1 * y_range, channel_freqs_MHz.max() + 0.1 * y_range)
     p_limits = np.array(p_limits)
     for ax in axes_list[2:]:
         ax.set_xlim(p_limits.min(), p_limits.max())
