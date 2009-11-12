@@ -11,6 +11,7 @@
 import sys
 import optparse
 import logging
+import time
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -27,14 +28,14 @@ def angle_wrap(angle, period=2.0 * np.pi):
 # These fields contain strings, while the rest of the fields are assumed to contain floats
 string_fields = ['dataset', 'target', 'timestamp_ut', 'data_unit']
 # Create a date/time string for current time
-now = 'T'.join(katpoint.Timestamp().to_string().split())
+now = time.strftime('%Y-%m-%d_%Hh%M')
 
 # Parse command-line options and arguments
 parser = optparse.OptionParser(usage="%prog [options] <data file>",
                                description="This fits a pointing model to the given data file. \
                                             It runs interactively by default, which allows the user \
                                             to select which parameters to fit and to inspect results.")
-parser.set_defaults(pmfilename='pointing_model.csv', outfilename='pointing_model_%s' % (now,))
+parser.set_defaults(pmfilename='pointing_model.csv', outfilename='pointing_model_%s.csv' % (now,))
 parser.add_option("-b", "--batch", dest="batch", action="store_true",
                   help="True if processing is to be done in batch mode without user interaction")
 parser.add_option("-p", "--pointing_model", dest="pmfilename", type="string",
@@ -55,11 +56,8 @@ logger.setLevel(logging.DEBUG)
 
 # Load old pointing model
 try:
-    old_model = deg2rad(np.loadtxt(options.pmfilename, delimiter=','))
-    # These scale factors are unitless, and should not be converted to radians
-    old_model[8] = rad2deg(old_model[8])
-    old_model[11] = rad2deg(old_model[11])
-    logger.debug("Loaded %d-parameter pointing model from '%s'" % (len(old_model), options.pmfilename))
+    old_model = file(options.pmfilename).readline().strip()
+    logger.debug("Loaded %d-parameter pointing model from '%s'" % (len(old_model.split(',')), options.pmfilename))
     old_model = katpoint.PointingModel(old_model, strict=False)
 except IOError:
     old_model = None
@@ -272,6 +270,18 @@ plt.title('AFTER')
 plt.figtext(0.875, 0.07, "all sky rms = %.3f'" % (old_sky_rms,), ha='center', va='bottom')
 plt.figtext(0.875, 0.04, "target sky rms = %.3f'" % (old_sky_rms,), ha='center', va='bottom')
 
+# Create save button
+save_button = mpl.widgets.Button(plt.axes([0.495, 0.8, 0.05, 0.04]), 'SAVE',
+                                 color=(0.85, 0, 0), hovercolor=(0.95, 0, 0))
+def save_callback(event):
+    outfile = file(options.outfilename, 'w')
+    outfile.write(new_model.description)
+    outfile.close()
+    logger.debug("Saved %d-parameter pointing model to '%s'" % (len(new_model.params), options.outfilename))
+    save_button.color = '0.85'
+    save_button.hovercolor = '0.95'
+save_button.on_clicked(save_callback)
+
 # Create buttons to toggle parameter selection
 param_button_color = ['0.65', '0.0']
 param_button_weight = ['normal', 'bold']
@@ -288,6 +298,8 @@ def setup_param_button(p):
         enabled_params[p] = state
         param_button.label.set_color(param_button_color[state])
         param_button.label.set_weight(param_button_weight[state])
+        save_button.color = (0.85, 0, 0)
+        save_button.hovercolor = (0.95, 0, 0)
         update(fig)
     param_button.on_clicked(toggle_param_callback)
 param_buttons = [setup_param_button(p) for p in xrange(num_params)]

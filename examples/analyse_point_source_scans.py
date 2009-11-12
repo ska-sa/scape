@@ -59,11 +59,8 @@ except IOError:
     cat = None
 # Load old pointing model parameters (useful if it is not in data file, like on XDM)
 try:
-    pm = katpoint.deg2rad(np.loadtxt(options.pmfilename, delimiter=','))
-    # These scale factors are unitless, and should not be converted to radians
-    pm[8] = katpoint.rad2deg(pm[8])
-    pm[11] = katpoint.rad2deg(pm[11])
-    logger.debug("Loaded %d-parameter pointing model from '%s'" % (len(pm), options.pmfilename))
+    pm = file(options.pmfilename).readline().strip()
+    logger.debug("Loaded %d-parameter pointing model from '%s'" % (len(pm.split(',')), options.pmfilename))
 except IOError:
     pm = None
 
@@ -108,6 +105,8 @@ def next_load_reduce_plot(fig=None):
     antenna = d.antenna
     if filename.endswith('.fits'):
         dirs = filename.split(os.path.sep)
+        if dirs[0] == '.':
+            dirs.pop(0)
         if len(dirs) > 2:
             name = '%s_%s' % tuple(dirs[-3:-1])
         else:
