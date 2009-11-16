@@ -50,7 +50,7 @@ if len(args) < 1:
 filename = args[0]
 
 # Set up logging: logging everything (DEBUG & above)
-logging.basicConfig()
+logging.basicConfig(level=logging.DEBUG, stream=sys.stdout, format="%(levelname)s: %(message)s")
 logger = logging.root
 logger.setLevel(logging.DEBUG)
 
