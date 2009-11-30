@@ -80,7 +80,7 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
             bandwidths = corrconf_group['bandwidths'].value / 1e6
         else:
             band_center = corrconf_group.attrs['center_frequency_hz'] / 1e6
-            channel_bw = corrconf_group.attrs['bandwidth_hz'] / 1e6
+            channel_bw = corrconf_group.attrs['channel_bandwidth_hz'] / 1e6
             num_chans = corrconf_group.attrs['num_freq_channels']
             center_freqs = np.arange(band_center - (channel_bw * num_chans / 2.0) + channel_bw / 2.0,
                                      band_center + (channel_bw * num_chans / 2.0) + channel_bw / 2.0,
