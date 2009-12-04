@@ -85,10 +85,11 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
             center_freqs = np.arange(band_center - (channel_bw * num_chans / 2.0) + channel_bw / 2.0,
                                      band_center + (channel_bw * num_chans / 2.0) + channel_bw / 2.0,
                                      channel_bw, dtype=np.float64)
-            bandwidths = np.tile(channel_bw, num_chans, dtype=np.float64)
+            bandwidths = np.tile(np.float64(channel_bw), num_chans)
         rfi_channels = corrconf_group['rfi_channels'].value.nonzero()[0].tolist()
         dump_rate = corrconf_group.attrs['dump_rate']
         sample_period = 1.0 / dump_rate
+        accum_per_int = corrconf_group.attrs['accum_per_int']
         corrconf = CorrelatorConfig(center_freqs, bandwidths, rfi_channels, dump_rate)
 
         # Load noise diode model group
@@ -109,17 +110,19 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
                 scan_group = compscan_group[scan]
                 complex_data = scan_group['data'].value
                 assert complex_data.dtype.fields.has_key('XX'), "Power data is not in coherency form"
-                # Load power data either in complex64 form or uint32 form
+                # Load power data either in complex64 (intermediate scape) form or int32 (correlator) form
                 if complex_data.dtype.fields['XX'][0] == np.complex64:
                     scan_data = np.dstack([complex_data['XX'].real, complex_data['YY'].real,
                                            2.0 * complex_data['XY'].real, 2.0 * complex_data['XY'].imag])
                 else:
-                    if complex_data.view(np.uint32).max() > 2 ** 24:
-                        logger.warning('Uint32 data too large to be accurately represented as 32-bit floats')
-                    scan_data = np.dstack([complex_data['XX']['r'].astype(np.float32),
-                                           complex_data['YY']['r'].astype(np.float32),
-                                           2.0 * complex_data['XY']['r'].astype(np.float32),
-                                           2.0 * complex_data['XY']['i'].astype(np.float32)])
+                    # Load data as 64-bit floats initially, to preserve resolution before scaling
+                    scan_data = np.dstack([complex_data['XX']['r'].astype(np.float64),
+                                           complex_data['YY']['r'].astype(np.float64),
+                                           2.0 * complex_data['XY']['r'].astype(np.float64),
+                                           2.0 * complex_data['XY']['i'].astype(np.float64)])
+                    # Normalise data by the number of correlator samples per integration
+                    # and convert to 32-bit floats to save memory
+                    scan_data = np.float32(scan_data / accum_per_int)
                 # Convert from millisecs to secs since Unix epoch, and be sure to use float64 to preserve digits
                 data_timestamps = scan_group['timestamps'].value.astype(np.float64) / 1000.0
                 # Move correlator data timestamps from start of each sample to the middle
