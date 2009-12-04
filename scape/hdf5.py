@@ -89,7 +89,7 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
         rfi_channels = corrconf_group['rfi_channels'].value.nonzero()[0].tolist()
         dump_rate = corrconf_group.attrs['dump_rate']
         sample_period = 1.0 / dump_rate
-        accum_per_int = corrconf_group.attrs['accum_per_int']
+        accum_per_int = corrconf_group.attrs.get('accum_per_int', 1)
         corrconf = CorrelatorConfig(center_freqs, bandwidths, rfi_channels, dump_rate)
 
         # Load noise diode model group
@@ -122,7 +122,7 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
                                            2.0 * complex_data['XY']['i'].astype(np.float64)])
                     # Normalise data by the number of correlator samples per integration
                     # and convert to 32-bit floats to save memory
-                    scan_data = np.float32(scan_data / accum_per_int)
+                    scan_data = np.float32(scan_data / np.float64(accum_per_int))
                 # Convert from millisecs to secs since Unix epoch, and be sure to use float64 to preserve digits
                 data_timestamps = scan_group['timestamps'].value.astype(np.float64) / 1000.0
                 # Move correlator data timestamps from start of each sample to the middle
