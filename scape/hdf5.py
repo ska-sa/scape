@@ -82,9 +82,9 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
             band_center = corrconf_group.attrs['center_frequency_hz'] / 1e6
             channel_bw = corrconf_group.attrs['channel_bandwidth_hz'] / 1e6
             num_chans = corrconf_group.attrs['num_freq_channels']
-            center_freqs = np.arange(band_center - (channel_bw * num_chans / 2.0) + channel_bw / 2.0,
-                                     band_center + (channel_bw * num_chans / 2.0) + channel_bw / 2.0,
-                                     channel_bw, dtype=np.float64)
+            # Assume that lower-sideband downconversion has been used, which flips frequency axis
+            # Also subtract half a channel width to get frequencies at center of each channel
+            center_freqs = band_center - channel_bw * (np.arange(num_chans) - num_chans / 2 + 0.5)
             bandwidths = np.tile(np.float64(channel_bw), num_chans)
         rfi_channels = corrconf_group['rfi_channels'].value.nonzero()[0].tolist()
         dump_rate = corrconf_group.attrs['dump_rate']
