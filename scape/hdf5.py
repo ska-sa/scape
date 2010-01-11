@@ -45,7 +45,9 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
     corrconf : :class:`compoundscan.CorrelatorConfig` object
         Correlator configuration object
     antenna : string
-        Description string of antenna that produced the data set
+        Description string of single-dish antenna or first antenna of baseline pair
+    antenna2 : string or None
+        Description string of second antenna of baseline pair (None for single-dish)
     nd_data : :class:`NoiseDiodeModel` object
         Noise diode model
     pointing_model : array of float
@@ -69,6 +71,7 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
         data_unit = f.attrs['data_unit']
         data_timestamps_at_sample_centers = f.attrs.get('data_timestamps_at_sample_centers', False)
         antenna = f.attrs['antenna']
+        antenna2 = f.attrs.get('antenna2', None)
         comment = f.attrs['comment'] # TODO return this as well
 
         # Load correlator configuration group
@@ -166,7 +169,7 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
 
         # Sort compound scans chronologically too
         compscanlist.sort(key=lambda compscan: compscan.scans[0].timestamps[0])
-        return compscanlist, data_unit, corrconf, antenna, nd_data, pointing_model
+        return compscanlist, data_unit, corrconf, antenna, antenna2, nd_data, pointing_model
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  save_dataset
@@ -190,6 +193,8 @@ def save_dataset(dataset, filename):
         f['/'].attrs['data_unit'] = dataset.data_unit
         f['/'].attrs['data_timestamps_at_sample_centers'] = True
         f['/'].attrs['antenna'] = dataset.antenna.description
+        if dataset.antenna2 is not None:
+            f['/'].attrs['antenna2'] = dataset.antenna2.description
         f['/'].attrs['comment'] = ''
         f['/'].attrs['augment'] = 'File created by scape'
 

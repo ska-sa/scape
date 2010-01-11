@@ -31,9 +31,12 @@ logger = logging.getLogger("scape.dataset")
 #--------------------------------------------------------------------------------------------------
 
 class DataSet(object):
-    """Container for the data of a single-dish experiment.
+    """Container for the data of an experiment (single-dish or a single baseline).
 
-    This is the top-level container for the data of a single-dish experiment.
+    This is the top-level container for experimental data, which is either
+    autocorrelation data for a single dish or cross-correlation data for a single
+    interferometer baseline, combined with the appropriate metadata.
+
     Given a data filename, the initialiser determines the appropriate file format
     to use, based on the file extension. If the filename is blank, the
     :class:`DataSet` can also be directly initialised from its constituent
@@ -53,11 +56,15 @@ class DataSet(object):
     corrconf : :class:`compoundscan.CorrelatorConfig` object, optional
         Correlator configuration object
     antenna : :class:`katpoint.Antenna` object or string, optional
-        Antenna that produced the data set, as object or description string
+        Antenna that produced the data set, as object or description string. For
+        interferometer data, this is the first antenna.
     nd_data : :class:`gaincal.NoiseDiodeModel` object, optional
         Noise diode model
     pointing_model : :class:`katpoint.PointingModel` object or array of float, optional
         Pointing model in use during experiment (or array of parameters in radians)
+    antenna2 : :class:`katpoint.Antenna` object or string or None, optional
+        Second antenna of baseline, as object or description string. This is
+        *None* for single-dish autocorrelation data.
     kwargs : dict, optional
         Extra keyword arguments are passed to selected :func:`load_dataset` function
 
@@ -83,20 +90,21 @@ class DataSet(object):
 
     """
     def __init__(self, filename, compscanlist=None, data_unit=None, corrconf=None,
-                 antenna=None, nd_data=None, pointing_model=None, **kwargs):
+                 antenna=None, nd_data=None, pointing_model=None, antenna2=None, **kwargs):
         if filename:
             ext = os.path.splitext(filename)[1]
             if ext == '.fits':
                 if not xdmfits_found:
                     raise ImportError('XDM FITS support could not be loaded - please check xdmfits module')
                 compscanlist, data_unit, corrconf, antenna, nd_data = xdmfits_load(filename, **kwargs)
+                antenna2 = None
             elif (ext == '.h5') or (ext == '.hdf5'):
                 if not hdf5_found:
                     raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
                 hdf5_results = hdf5_load(filename, **kwargs)
-                compscanlist, data_unit, corrconf, antenna, nd_data = hdf5_results[:5]
+                compscanlist, data_unit, corrconf, antenna, antenna2, nd_data = hdf5_results[:6]
                 if pointing_model is None:
-                    pointing_model = hdf5_results[5]
+                    pointing_model = hdf5_results[6]
             else:
                 raise ValueError("File extension '%s' not understood" % ext)
 
@@ -107,6 +115,10 @@ class DataSet(object):
             self.antenna = antenna
         else:
             self.antenna = katpoint.construct_antenna(antenna)
+        if antenna2 is None or isinstance(antenna2, katpoint.Antenna):
+            self.antenna2 = antenna2
+        else:
+            self.antenna2 = katpoint.construct_antenna(antenna2)
         self.noise_diode_data = nd_data
         if isinstance(pointing_model, katpoint.PointingModel):
             self.pointing_model = pointing_model
@@ -116,7 +128,7 @@ class DataSet(object):
         # Create scan list and calculate target coordinates for all scans
         self.scans = []
         for compscan in self.compscans:
-            # Set default antenna on the target object to the data set antenna
+            # Set default antenna on the target object to the (first) data set antenna
             compscan.target.antenna = self.antenna
             self.scans.extend(compscan.scans)
         self.calc_target_coords()
@@ -130,6 +142,9 @@ class DataSet(object):
                 return False
         return (self.data_unit == other.data_unit) and (self.corrconf == other.corrconf) and \
                (self.antenna.description == other.antenna.description) and \
+               ((self.antenna2 == other.antenna2 == None) or \
+                ((self.antenna2 is not None) and (other.antenna2 is not None) and \
+                 self.antenna2.description == other.antenna2.description)) and \
                (self.noise_diode_data == other.noise_diode_data) and \
                np.all(self.pointing_model.params == other.pointing_model.params)
 
@@ -186,9 +201,11 @@ class DataSet(object):
 
     def __str__(self):
         """Verbose human-friendly string representation of data set object."""
-        descr = ["antenna='%s', data_unit=%s, bands=%d, freqs=%f - %f MHz, total bw=%f MHz, dumprate=%f Hz" %
-                 (self.antenna.name, self.data_unit, len(self.freqs), self.freqs[0],
-                  self.freqs[-1], self.bandwidths.sum(), self.dump_rate)]
+        descr = ["%s, data_unit=%s, bands=%d, freqs=%f - %f MHz, total bw=%f MHz, dumprate=%f Hz" %
+                 ("antenna='%s'" % self.antenna.name if self.antenna2 is None else \
+                  "baseline='%s - %s'" % (self.antenna.name, self.antenna2.name),
+                  self.data_unit, len(self.freqs), self.freqs[0], self.freqs[-1],
+                  self.bandwidths.sum(), self.dump_rate)]
         for compscan_ind, compscan in enumerate(self.compscans):
             descr.append("%4d: target='%s' [%s]" %
                          (compscan_ind, compscan.target.name, compscan.target.body_type))
@@ -202,8 +219,10 @@ class DataSet(object):
 
     def __repr__(self):
         """Short human-friendly string representation of data set object."""
-        return "<scape.DataSet antenna='%s' compscans=%d at 0x%x>" % \
-               (self.antenna.name, len(self.compscans), id(self))
+        return "<scape.DataSet %s compscans=%d at 0x%x>" % \
+               ("antenna='%s'" % self.antenna.name if self.antenna2 is None else \
+                "baseline='%s - %s'" % (self.antenna.name, self.antenna2.name),
+                len(self.compscans), id(self))
 
     def calc_target_coords(self):
         """Calculate scan target coordinates, using compound scan target and data set antenna.
@@ -349,9 +368,9 @@ class DataSet(object):
                 if (labelkeep is None) or (scan.label in labelkeep):
                     scanlist.append(scan.select(timekeep, freqkeep, copy))
             if scanlist:
-                compscanlist.append(CompoundScan(scanlist, compscan.target.description))
+                compscanlist.append(CompoundScan(scanlist, compscan.target))
         return DataSet(None, compscanlist, self.data_unit, self.corrconf.select(freqkeep),
-                       self.antenna.description, self.noise_diode_data, self.pointing_model)
+                       self.antenna, self.noise_diode_data, self.pointing_model, self.antenna2)
 
     def identify_rfi_channels(self, sigma=8.0, min_bad_scans=0.25, extra_outputs=False):
         """Identify potential RFI-corrupted channels.
