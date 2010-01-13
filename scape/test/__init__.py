@@ -5,6 +5,7 @@ import unittest
 import test_stats
 import test_fitting
 import test_scape
+import test_xdmfits
 
 def suite():
     loader = unittest.TestLoader()
@@ -12,6 +13,7 @@ def suite():
     testsuite.addTests(loader.loadTestsFromModule(test_stats))
     testsuite.addTests(loader.loadTestsFromModule(test_fitting))
     testsuite.addTests(loader.loadTestsFromModule(test_scape))
+    testsuite.addTests(loader.loadTestsFromModule(test_xdmfits))
     return testsuite
 
 if __name__ == '__main__':
