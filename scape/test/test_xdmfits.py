@@ -1,9 +1,8 @@
 """Tests for the xdmfits module."""
 # pylint: disable-msg=C0103
 
-import time
 import unittest
-import nose
+import pkg_resources
 import os.path
 
 import numpy as np
@@ -15,10 +14,9 @@ class XDMFitsTestCases(unittest.TestCase):
     """Load existing XDM FITS data set and process it."""
 
     def setUp(self):
-        """Set up variables."""
-        self.datadir = os.path.dirname(nose.util.getfilename('scape.test.test_xdmfits'))
-        self.dataset = os.path.join(self.datadir, 'J1959+4044_2009-07-18-21h40',
-                                                  'scheduled_obs_2009-07-18-21h40_0000.fits')
+        """Find path to test data set and store expected results."""
+        fitsfile = os.path.join('J1959+4044_2009-07-18-21h40', 'scheduled_obs_2009-07-18-21h40_0000.fits')
+        self.dataset = pkg_resources.resource_filename('scape.test', fitsfile)
         self.catalogue = katpoint.Catalogue()
         self.catalogue.add('J1959+4044 | *Cygnus A | CygA | 3C405, radec J2000, 19:59:28.36, 40:44:2.1, (20.0 2000.0 4.695 0.085 -0.178)')
         self.beam_height = 108.8561436
@@ -39,7 +37,11 @@ class XDMFitsTestCases(unittest.TestCase):
         try:
             d = scape.DataSet(self.dataset, catalogue=self.catalogue)
         except (ImportError, IOError):
-            raise nose.SkipTest
+            try:
+                import nose
+                raise nose.SkipTest
+            except ImportError:
+                pass
 
         # Standard continuum reduction
         d.remove_rfi_channels()
