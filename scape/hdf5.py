@@ -8,11 +8,14 @@ import h5py
 import numpy as np
 
 from .gaincal import NoiseDiodeModel
-from .scan import Scan
+from .scan import Scan, scape_pol
 from .compoundscan import CorrelatorConfig, CompoundScan
 from .fitting import PiecewisePolynomial1DFit, Independent1DFit
 
 logger = logging.getLogger("scape.hdf5")
+
+# Mapping from scape polarisation component to corresponding HDF5 correlation product
+scape_to_hdf5 = {'HH' : 'AxBx', 'VV' : 'AyBy', 'HV' : 'AxBy', 'VH' : 'AyBx'}
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  load_dataset
@@ -71,7 +74,10 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
         data_unit = f.attrs['data_unit']
         data_timestamps_at_sample_centers = f.attrs.get('data_timestamps_at_sample_centers', False)
         antenna = f.attrs['antenna']
+        # Get second antenna of baseline pair (or set to None for single-dish data)
         antenna2 = f.attrs.get('antenna2', None)
+        if antenna2 == antenna:
+            antenna2 = None
         comment = f.attrs['comment'] # TODO return this as well
 
         # Load correlator configuration group
@@ -92,7 +98,6 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
         rfi_channels = corrconf_group['rfi_channels'].value.nonzero()[0].tolist()
         dump_rate = corrconf_group.attrs['dump_rate']
         sample_period = 1.0 / dump_rate
-        accum_per_int = corrconf_group.attrs.get('accum_per_int', 1)
         corrconf = CorrelatorConfig(center_freqs, bandwidths, rfi_channels, dump_rate)
 
         # Load noise diode model group
@@ -111,21 +116,16 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
             scanlist = []
             for scan in compscan_group:
                 scan_group = compscan_group[scan]
-                complex_data = scan_group['data'].value
-                assert complex_data.dtype.fields.has_key('XX'), "Power data is not in coherency form"
-                # Load power data either in complex64 (intermediate scape) form or int32 (correlator) form
-                if complex_data.dtype.fields['XX'][0] == np.complex64:
-                    scan_data = np.dstack([complex_data['XX'].real, complex_data['YY'].real,
-                                           complex_data['XY'].real, complex_data['XY'].imag])
+                data = scan_group['data'].value
+                # Load power data either in float64 (single-dish) form or complex128 (interferometer) form
+                # Data has already been normalised by number of samples in integration (accum_per_int)
+                if antenna2 is None:
+                    scan_data = np.dstack([data[scape_to_hdf5['HH']].real,
+                                           data[scape_to_hdf5['VV']].real,
+                                           data[scape_to_hdf5['HV']].real,
+                                           data[scape_to_hdf5['HV']].imag]).astype(np.float64)
                 else:
-                    # Load data as 64-bit floats initially, to preserve resolution before scaling
-                    scan_data = np.dstack([complex_data['XX']['r'].astype(np.float64),
-                                           complex_data['YY']['r'].astype(np.float64),
-                                           complex_data['XY']['r'].astype(np.float64),
-                                           complex_data['XY']['i'].astype(np.float64)])
-                    # Normalise data by the number of correlator samples per integration
-                    # and convert to 32-bit floats to save memory
-                    scan_data = scan_data / np.float64(accum_per_int)
+                    scan_data = np.dstack([data[scape_to_hdf5[p]] for p in scape_pol]).astype(np.complex128)
                 # Convert from millisecs to secs since Unix epoch, and be sure to use float64 to preserve digits
                 data_timestamps = scan_group['timestamps'].value.astype(np.float64) / 1000.0
                 # Move correlator data timestamps from start of each sample to the middle
@@ -195,6 +195,8 @@ def save_dataset(dataset, filename):
         f['/'].attrs['antenna'] = dataset.antenna.description
         if dataset.antenna2 is not None:
             f['/'].attrs['antenna2'] = dataset.antenna2.description
+        else:
+            f['/'].attrs['antenna2'] = f['/'].attrs['antenna']
         f['/'].attrs['comment'] = ''
         f['/'].attrs['augment'] = 'File created by scape'
 
@@ -220,9 +222,8 @@ def save_dataset(dataset, filename):
             for scan_ind, scan in enumerate(compscan.scans):
                 scan_group = compscan_group.create_group('Scan%d' % scan_ind)
 
-                scape_pol = ['HH', 'VV', 'HV', 'VH']
-                hdf5_pol = ['XX', 'YY', 'XY', 'YX']
                 # Always save power data in complex64 form
+                hdf5_pol = [scape_to_hdf5[key] for key in scape_pol]
                 complex_data = np.rec.fromarrays([scan.pol(key) for key in scape_pol],
                                                  names=hdf5_pol, formats=['complex64'] * 4)
                 scan_group.create_dataset('data', data=complex_data, compression='gzip')
