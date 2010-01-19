@@ -242,12 +242,12 @@ def load_scan(filename):
     channel_width = np.double(header['ChannelB'])
     exp_seq_num = int(header['ExpSeqN'])
     feed_id = int(header['FeedID'])
+    data = hdu['MSDATA'].data.field
 
     if is_stokes:
-        data = np.dstack([hdu['MSDATA'].data.field(s) for s in ['I', 'Q', 'U', 'V']])
+        data = 0.5 * np.dstack([data('I') + data('Q'), data('I') - data('Q'), data('U'), data('V')]).astype(np.float64)
     else:
-        data = np.dstack([hdu['MSDATA'].data.field('XX'), hdu['MSDATA'].data.field('YY'),
-                          2.0 * hdu['MSDATA'].data.field('XY').real, 2.0 * hdu['MSDATA'].data.field('XY').imag])
+        data = np.dstack([data('XX'), data('YY'), data('XY').real, data('XY').imag]).astype(np.float64)
     timestamps = np.arange(num_samples, dtype=np.float64) * sample_period + start_time + start_time_offset
     # Round timestamp to nearest millisecond, as this corresponds to KAT7 accuracy and allows better data comparison
     timestamps = np.round(timestamps * 1000.0) / 1000.0
@@ -282,11 +282,11 @@ def load_scan(filename):
     target = acsm_target_description(cPickle.loads(hdu['OBJECTS'].data.field('Target')[0]))
     antenna = acsm_antenna_description(cPickle.loads(hdu['OBJECTS'].data.field('Mount')[0]))
 
-    return Scan(data, is_stokes, timestamps, pointing, flags, enviro_ambient, enviro_wind, label, path), \
+    return Scan(data, timestamps, pointing, flags, enviro_ambient, enviro_wind, label, path), \
            data_unit, corrconf, target, antenna, exp_seq_num, feed_id
 
 # pylint: disable-msg=W0613
-def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_xy=False, **kwargs):
+def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False, **kwargs):
     """Load data set from XDM FITS file series.
 
     This loads the XDM data set starting at the given filename and consisting of
@@ -304,8 +304,8 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_xy=False,
         Name of FITS file containing alternative noise diode model
     catalogue : :class:`katpoint.Catalogue` object or string, optional
         Catalogue used to refine ACSM target objects in data set (or filename)
-    swap_xy : {False, True}, optional
-        True if X and Y polarisations are to be swapped from their FITS definitions
+    swap_hv : {False, True}, optional
+        True if H and V polarisations are to be swapped from their FITS definitions
     kwargs : dict, optional
         Extra keyword arguments are ignored, as they usually apply to other formats
 
@@ -354,8 +354,8 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_xy=False,
     nd_data = None
     for fits_file in filelist:
         scan, data_unit, corrconf, target, antenna, exp_seq_num, feed_id = load_scan(fits_file)
-        if swap_xy:
-            scan.swap_x_and_y()
+        if swap_hv:
+            scan.swap_h_and_v()
         if scanlists.has_key(exp_seq_num):
             scanlists[exp_seq_num].append(scan)
         else:

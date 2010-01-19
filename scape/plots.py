@@ -36,7 +36,7 @@ def plot_spectrum(dataset, pol='I', scan=-1, sigma=1.0, vertical=True, dB=True, 
     ----------
     dataset : :class:`scape.DataSet` object
         Data set to plot
-    pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
+    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'}, optional
         The coherency / Stokes parameter to display (must be real)
     scan : int, optional
         Index of scan in data set to plot (-1 to plot all scans together)
@@ -63,8 +63,8 @@ def plot_spectrum(dataset, pol='I', scan=-1, sigma=1.0, vertical=True, dB=True, 
         If *pol* is not one of the allowed names
 
     """
-    if not pol in ('I', 'Q', 'U', 'V', 'XX', 'YY'):
-        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'XX' or 'YY' (i.e. real)")
+    if not pol in ('I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX' or 'YY' (i.e. real)")
     if ax is None:
         ax = plt.gca()
     if scan >= 0:
@@ -172,7 +172,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
     for n, scan in enumerate(scans):
         time_origin = min(time_origin, scan.timestamps.min())
         for pol in ['XX', 'YY']:
-            smoothed_power = remove_spikes(scan.coherency(pol))
+            smoothed_power = remove_spikes(scan.pol(pol))
             channel_min = smoothed_power.min(axis=0)
             data_min[pol][n] = np.where(channel_min < data_min[pol][n], channel_min, data_min[pol][n])
             channel_max = smoothed_power.max(axis=0)
@@ -201,7 +201,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
                 time_line = scan.timestamps - time_origin
                 # Normalise the data in each channel to lie between 0 and (channel bandwidth * scale)
                 norm_power = scale * channel_bandwidths_MHz[np.newaxis, :] * \
-                            (scan.coherency(pol) - data_min[pol][np.newaxis, :]) / \
+                            (scan.pol(pol) - data_min[pol][np.newaxis, :]) / \
                             (data_max[pol][np.newaxis, :] - data_min[pol][np.newaxis, :])
                 segments = [np.vstack((time_line, norm_power[:, chan])).transpose() for chan in channel_list]
                 if len(segments) > 1:
@@ -212,7 +212,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
                     ax.plot(segments[0][:, 0] + offsets.squeeze()[0],
                             segments[0][:, 1] + offsets.squeeze()[1], color=colors[0], lw=0.5)
                 t_limits += [time_line.min(), time_line.max()]
-                all_scans.append(scan.coherency(pol))
+                all_scans.append(scan.pol(pol))
             # Add compound scan target name and partition lines between compound scans
             if compscan.scans:
                 start_time_ind = len(t_limits) - 2 * len(compscan.scans)
@@ -885,7 +885,7 @@ def plot_data_set_in_mount_space(dataset, levels=None, band=0, ax=None):
         levels = [0.5, 0.1]
 
     for compscan in dataset.compscans:
-        total_power = np.hstack([remove_spikes(scan.stokes('I')[:, band]) for scan in compscan.scans])
+        total_power = np.hstack([remove_spikes(scan.pol('I')[:, band]) for scan in compscan.scans])
         target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
         center_time = np.median(np.hstack([scan.timestamps for scan in compscan.scans]))
         # Instantaneous mount coordinates are back on the sphere, but at a single time instant for all points

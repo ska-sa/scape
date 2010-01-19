@@ -25,7 +25,7 @@ class SaveLoadTestCases(unittest.TestCase):
         enviro_wind = np.rec.array([(timestamps[0], 2.0, 45.3)],
                                    dtype=[('timestamp', np.float64),
                                           ('wind_speed', np.float32), ('wind_direction', np.float32)])
-        s1 = scan.Scan(data, False, timestamps, pointing, flags, enviro_ambient, enviro_wind, 'test', 'generated')
+        s1 = scan.Scan(data, timestamps, pointing, flags, enviro_ambient, enviro_wind, 'test', 'generated')
         s2 = s1.select(timekeep=s1.flags['valid'], copy=True)
         s3 = s1.select(copy=True)
         s4 = s1.select(timekeep=s1.flags['nd_on'], copy=True)

@@ -116,16 +116,16 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
                 # Load power data either in complex64 (intermediate scape) form or int32 (correlator) form
                 if complex_data.dtype.fields['XX'][0] == np.complex64:
                     scan_data = np.dstack([complex_data['XX'].real, complex_data['YY'].real,
-                                           2.0 * complex_data['XY'].real, 2.0 * complex_data['XY'].imag])
+                                           complex_data['XY'].real, complex_data['XY'].imag])
                 else:
                     # Load data as 64-bit floats initially, to preserve resolution before scaling
                     scan_data = np.dstack([complex_data['XX']['r'].astype(np.float64),
                                            complex_data['YY']['r'].astype(np.float64),
-                                           2.0 * complex_data['XY']['r'].astype(np.float64),
-                                           2.0 * complex_data['XY']['i'].astype(np.float64)])
+                                           complex_data['XY']['r'].astype(np.float64),
+                                           complex_data['XY']['i'].astype(np.float64)])
                     # Normalise data by the number of correlator samples per integration
                     # and convert to 32-bit floats to save memory
-                    scan_data = np.float32(scan_data / np.float64(accum_per_int))
+                    scan_data = scan_data / np.float64(accum_per_int)
                 # Convert from millisecs to secs since Unix epoch, and be sure to use float64 to preserve digits
                 data_timestamps = scan_group['timestamps'].value.astype(np.float64) / 1000.0
                 # Move correlator data timestamps from start of each sample to the middle
@@ -160,7 +160,7 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
                 scan_label = scan_group.attrs['label']
                 scan_comment = scan_group.attrs['comment'] # TODO: do something with this
 
-                scanlist.append(Scan(scan_data, False, data_timestamps, scan_pointing, scan_flags, scan_enviro_ambient,
+                scanlist.append(Scan(scan_data, data_timestamps, scan_pointing, scan_flags, scan_enviro_ambient,
                                      scan_enviro_wind, scan_label, filename + '/Scans/%s/%s' % (compscan, scan)))
 
             # Sort scans chronologically, as h5py seems to scramble them based on group name
@@ -220,10 +220,11 @@ def save_dataset(dataset, filename):
             for scan_ind, scan in enumerate(compscan.scans):
                 scan_group = compscan_group.create_group('Scan%d' % scan_ind)
 
-                coherency_order = ['XX', 'YY', 'XY', 'YX']
+                scape_pol = ['HH', 'VV', 'HV', 'VH']
+                hdf5_pol = ['XX', 'YY', 'XY', 'YX']
                 # Always save power data in complex64 form
-                complex_data = np.rec.fromarrays([scan.coherency(key) for key in coherency_order],
-                                                 names=coherency_order, formats=['complex64'] * 4)
+                complex_data = np.rec.fromarrays([scan.pol(key) for key in scape_pol],
+                                                 names=hdf5_pol, formats=['complex64'] * 4)
                 scan_group.create_dataset('data', data=complex_data, compression='gzip')
                 # Save data timestamps in milliseconds
                 scan_group.create_dataset('timestamps', data=1000.0 * scan.timestamps, compression='gzip')

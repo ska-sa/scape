@@ -1,4 +1,4 @@
-"""Container for the data of a single-dish experiment."""
+"""Container for the data of a single-dish or single-baseline experiment."""
 
 import os.path
 import logging
@@ -131,7 +131,7 @@ class DataSet(object):
             # Set default antenna on the target object to the (first) data set antenna
             compscan.target.antenna = self.antenna
             self.scans.extend(compscan.scans)
-        self.calc_target_coords()
+        self.calc_cached_coords()
 
     def __eq__(self, other):
         """Equality comparison operator."""
@@ -224,37 +224,20 @@ class DataSet(object):
                 "baseline='%s - %s'" % (self.antenna.name, self.antenna2.name),
                 len(self.compscans), id(self))
 
-    def calc_target_coords(self):
-        """Calculate scan target coordinates, using compound scan target and data set antenna.
+    def calc_cached_coords(self):
+        """Calculate cached coordinates, using appropriate target and antenna.
 
-        This functionality is here at the highest level because it involves
-        interaction between the DataSet, CompoundScan and Scan levels, while the
-        results need to be stored at a Scan level.
+        This calculates the target coordinates and parallactic angle as a function
+        of time for each scan in the data set, using the compound scan target
+        object and the (first) data set antenna. This functionality is here at
+        the highest level because it involves interaction between the DataSet,
+        CompoundScan and Scan levels, while the results need to be stored at the
+        Scan level.
 
         """
         for compscan in self.compscans:
             for scan in compscan.scans:
-                scan.calc_target_coords(compscan.target, self.antenna)
-
-    def convert_to_coherency(self):
-        """Convert power data to coherency format.
-
-        This is a convenience function to convert the data of the underlying
-        scans to coherency format.
-
-        """
-        for scan in self.scans:
-            scan.convert_to_coherency()
-
-    def convert_to_stokes(self):
-        """Convert power data to Stokes parameter format.
-
-        This is a convenience function to convert the data of the underlying
-        scans to Stokes parameter format.
-
-        """
-        for scan in self.scans:
-            scan.convert_to_stokes()
+                scan.calc_cached_coords(compscan.target, self.antenna)
 
     def save(self, filename, **kwargs):
         """Save data set object to file.
@@ -406,7 +389,7 @@ class DataSet(object):
         rfi_data = []
         for scan in self.scans:
             # Normalise power in scan by removing spikes, offsets and differences in scale
-            power = remove_spikes(scan.stokes('I'))
+            power = remove_spikes(scan.pol('I'))
             offset = power.min(axis=0)
             scale = power.max(axis=0) - offset
             scale[scale <= 0.0] = 1.0
@@ -575,9 +558,9 @@ class DataSet(object):
 
         Parameters
         ----------
-        pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
-            Coherency / Stokes parameter which will be fit. Beam fits are only
-            possible with 'I', 'XX' and 'YY', which exhibit Gaussian beams.
+        pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'}, optional
+            Coherency / Stokes parameter which will be fit. Beam fits are not
+            advised for 'Q', 'U' and 'V', which typically exhibit non-Gaussian beams.
         band : int, optional
             Frequency band in which to fit beam and baseline(s)
         circular_beam : {True, False}, optional

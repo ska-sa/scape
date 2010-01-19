@@ -87,16 +87,16 @@ class XDMFitsTestCases(unittest.TestCase):
         # Make sure the offset is a small angle around 0 degrees
         offset_azel = scape.stats.angle_wrap(beam_center_azel - requested_azel, 360.)
 
-        # Compare calculations to expected results
-        self.assertAlmostEqual(compscan.beam.height, self.beam_height, places=7)
+        # Compare calculations to expected results (assuming float32 precision)
+        self.assertAlmostEqual(compscan.beam.height, self.beam_height, places=4)
         self.assertAlmostEqual(katpoint.rad2deg(compscan.beam.width), self.beam_width, places=7)
-        self.assertAlmostEqual(compscan.baseline_height(), self.baseline_height, places=7)
+        self.assertAlmostEqual(compscan.baseline_height(), self.baseline_height, places=4)
         self.assertEqual(compscan.beam.refined, 3)
-        self.assertAlmostEqual(average_flux, self.average_flux, places=4)
+        self.assertAlmostEqual(average_flux, self.average_flux, places=3)
         self.assertAlmostEqual(temperature, self.temperature, places=2)
         self.assertAlmostEqual(pressure, self.pressure, places=2)
         self.assertAlmostEqual(humidity, self.humidity, places=2)
-        self.assertAlmostEqual(requested_azel[0], self.az, places=7)
-        self.assertAlmostEqual(requested_azel[1], self.el, places=7)
+        self.assertAlmostEqual(requested_azel[0], self.az, places=5)
+        self.assertAlmostEqual(requested_azel[1], self.el, places=5)
         self.assertAlmostEqual(offset_azel[0], self.delta_az, places=7)
         self.assertAlmostEqual(offset_azel[1], self.delta_el, places=7)

@@ -178,12 +178,12 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
         If this is a single number, a circular beam will be fit, while two
         numbers will result in an elliptical beam.
     dof : float
-        Degrees of freedom of chi^2 distribution of XX (and YY) power samples
+        Degrees of freedom of chi^2 distribution of HH (and VV) power samples
     bl_degrees : sequence of 2 ints, optional
         Degrees of initial polynomial baseline, along *x* and *y* coordinate
-    pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
-        The coherency / Stokes parameter which will be fit. Beam fits are only
-        advised for 'I', 'XX' and 'YY', which typically exhibit Gaussian beams.
+    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'}, optional
+        The coherency / Stokes parameter which will be fit. Beam fits are not
+        advised for 'Q', 'U' and 'V', which typically exhibit non-Gaussian beams.
     refine_beam : {True, False}, optional
         If true, baselines are refined per scan and beam is refitted to within
         FWHM region around peak. This is a good idea for linear scans, but not
@@ -231,8 +231,8 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
 
     """
     # Fit beam and baselines directly to positive coherencies / Stokes params only, otherwise use I
-    underlying_pol = pol if pol in ('I', 'XX', 'YY') else 'I'
-    # Stokes I has double the degrees of freedom, as it is the sum of the independent XX and YY samples
+    underlying_pol = pol if pol in ('I', 'HH', 'VV', 'XX', 'YY') else 'I'
+    # Stokes I has double the degrees of freedom, as it is the sum of the independent HH and VV samples
     dof = 2 * dof if underlying_pol == 'I' else dof
     # Clean up power data by removing isolated spikes
     scan_power = [remove_spikes(scan.pol(underlying_pol)[:, band]) for scan in compscan.scans]
@@ -434,7 +434,7 @@ def extract_measured_beam(compscan, pol='I', band=0, subtract_baseline=True):
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to provide beam pattern
-    pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
+    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'}, optional
         The coherency / Stokes parameter that will be mapped (must be real)
     band : int, optional
         Frequency band of measured beam pattern
@@ -451,8 +451,8 @@ def extract_measured_beam(compscan, pol='I', band=0, subtract_baseline=True):
         Sequence of normalised power measurements
 
     """
-    if not pol in ('I', 'Q', 'U', 'V', 'XX', 'YY'):
-        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'XX' or 'YY' (i.e. real)")
+    if not pol in ('I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX' or 'YY' (i.e. real)")
     # If there are no baselines in data set, don't subtract them
     if np.array([scan.baseline is None for scan in compscan.scans]).all():
         subtract_baseline = False

@@ -78,7 +78,7 @@ class PointSourceScanTestCases(unittest.TestCase):
                                        dtype=[('timestamp', np.float64),
                                               ('wind_speed', np.float32), ('wind_direction', np.float32)])
             time_start += samples_per_scan / dump_rate + 10.
-            scanlist.append(scape.Scan(data, False, timestamps, pointing, flags,
+            scanlist.append(scape.Scan(data, timestamps, pointing, flags,
                                        enviro_ambient, enviro_wind, 'scan', ('scan_%d' % (n,))))
 
         # Construct data set

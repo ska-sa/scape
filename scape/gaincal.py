@@ -142,10 +142,10 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
                     # Obtain mean and standard deviation of difference between averaged power in the segments
                     nd_delta = MuSigmaArray(nd_on.mu - nd_off.mu,
                                             np.sqrt(nd_on.sigma ** 2 + nd_off.sigma ** 2))
-                    # Only keep jumps with significant *increase* in power (focus on the positive I or XX/YY)
+                    # Only keep jumps with significant *increase* in power (focus on the positive HH/VV)
                     # This discards segments where noise diode did not fire as expected
                     norm_jump = nd_delta.mu / nd_delta.sigma
-                    norm_jump = norm_jump[:, :1] if scan.is_stokes else norm_jump[:, :2]
+                    norm_jump = norm_jump[:, :2]
                     # Remove NaNs which typically occur with perfect simulated data (zero mu and zero sigma)
                     norm_jump[np.isnan(norm_jump)] = 0.0
                     if np.mean(norm_jump, axis=0).max() > jump_significance:
@@ -165,7 +165,7 @@ def estimate_gain(dataset, **kwargs):
     Parameters
     ----------
     dataset : :class:`dataset.DataSet` object
-        Data set to analyse (converted to coherency form in the process)
+        Data set to analyse
     kwargs : dict, optional
         Extra keyword arguments are passed to :func:`estimate_nd_jumps`
 
@@ -181,7 +181,6 @@ def estimate_gain(dataset, **kwargs):
         Phase of Y relative to X, per measurement and channel, in radians
 
     """
-    dataset.convert_to_coherency()
     nd_jump_times, nd_jump_power = estimate_nd_jumps(dataset, **kwargs)
     if not nd_jump_times:
         return np.zeros((0)), np.zeros((0, len(dataset.freqs))), \
@@ -205,7 +204,7 @@ def calibrate_gain(dataset, randomise=False, **kwargs):
     Parameters
     ----------
     dataset : :class:`dataset.DataSet` object
-        Data set to calibrate (converted to coherency form in the process)
+        Data set to calibrate
     randomise : {False, True}, optional
         True if raw data and noise diode spectrum smoothing should be randomised
     kwargs : dict, optional
@@ -217,7 +216,6 @@ def calibrate_gain(dataset, randomise=False, **kwargs):
         If no suitable noise diode on/off blocks were found in data set
 
     """
-    dataset.convert_to_coherency()
     nd_jump_power = estimate_nd_jumps(dataset, **kwargs)[1]
     if not nd_jump_power:
         raise NoSuitableNoiseDiodeDataFound
