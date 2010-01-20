@@ -135,10 +135,13 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
                 scan_pointing = scan_group['pointing'].value if 'pointing' in scan_group else None
                 if scan_pointing is None:
                     # Select appropriate sensor to use for (az, el) data
-                    if selected_pointing.startswith('request_'):
-                        scan_pointing = scan_group['requested_pointing'].value
-                    else:
-                        scan_pointing = scan_group['actual_pointing'].value
+                    scan_pointing_field = 'requested_pointing' \
+                                          if selected_pointing.startswith('request_') else 'actual_pointing'
+                    # If scan contains no pointing info (probably because it is very short), warn and discard the scan
+                    if scan_pointing_field not in scan_group:
+                        logger.warning("Discarded %s/%s - no '%s' table found" % (compscan, scan, scan_pointing_field))
+                        continue
+                    scan_pointing = scan_group[scan_pointing_field].value
                     azel_timestamps = scan_pointing['timestamp']
                     try:
                         original_az = scan_pointing[selected_pointing + '_azim']
