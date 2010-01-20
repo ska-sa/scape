@@ -429,7 +429,7 @@ class DataSet(object):
         non_rfi = sorted(list(set(range(len(self.freqs))) - set(rfi_channels)))
         d = self.select(freqkeep=non_rfi, copy=True)
         DataSet.__init__(self, None, d.compscans, d.data_unit, d.corrconf,
-                         d.antenna.description, d.noise_diode_data, d.pointing_model)
+                         d.antenna, d.noise_diode_data, d.pointing_model, d.antenna2)
         return self
 
     def convert_power_to_temperature(self, randomise=False, **kwargs):
