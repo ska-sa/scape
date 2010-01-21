@@ -129,16 +129,16 @@ class Scan(object):
         # significant digit of the float32 pointing values may change - do approximate comparison.
         # Since pointing is used to calculate target coords, this is also only approximately equal.
         # Timestamps and pointing are also converted to and from the start and middle of each sample,
-        # which causes extra approximateness... (pointing now only accurate to arcminutes, but time
-        # should be OK up to microseconds)
+        # which causes extra approximateness... (pointing should be OK down to 5 arcsecond level,
+        # and time should be OK up to microseconds)
         return (self.has_autocorr == other.has_autocorr) and np.all(self.data == other.data) and \
                np.all(self.flags == other.flags) and (self.label == other.label) and \
                np.all(self.enviro_ambient == other.enviro_ambient) and \
                np.all(self.enviro_wind == other.enviro_wind) and \
-               np.allclose(self.timestamps, other.timestamps, atol=1e-6) and \
-               np.allclose(self.pointing.view(np.float32), other.pointing.view(np.float32), 1e-4) and \
-               np.allclose(self.target_coords, other.target_coords, atol=1e-6) and \
-               np.allclose(self.parangle, other.parangle, 1e-4)
+               np.allclose(self.timestamps, other.timestamps, rtol=0, atol=1e-6) and \
+               np.allclose(self.pointing.view(np.float32), other.pointing.view(np.float32), rtol=1e-6, atol=0) and \
+               np.allclose(self.target_coords, other.target_coords, rtol=1e-7, atol=0) and \
+               np.allclose(self.parangle, other.parangle, rtol=1e-7, atol=0)
 
     def __ne__(self, other):
         """Inequality comparison operator."""
