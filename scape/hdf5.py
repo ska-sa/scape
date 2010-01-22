@@ -143,6 +143,10 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
                         continue
                     scan_pointing = scan_group[scan_pointing_field].value
                     azel_timestamps = scan_pointing['timestamp']
+                    # If azel timestamps have problems, warn and discard the scan
+                    if (np.diff(azel_timestamps).min() == 0.0) or np.any(azel_timestamps < 1000000000.0):
+                        logger.warning("Discarded %s/%s - bad pointing timestamps" % (compscan, scan))
+                        continue
                     try:
                         original_az = scan_pointing[selected_pointing + '_azim']
                         original_el = scan_pointing[selected_pointing + '_elev']
@@ -166,12 +170,14 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
                 scanlist.append(Scan(scan_data, data_timestamps, scan_pointing, scan_flags, scan_enviro_ambient,
                                      scan_enviro_wind, scan_label, filename + '/Scans/%s/%s' % (compscan, scan)))
 
-            # Sort scans chronologically, as h5py seems to scramble them based on group name
-            scanlist.sort(key=lambda scan: scan.timestamps[0])
-            compscanlist.append(CompoundScan(scanlist, compscan_target))
+            if len(scanlist) > 0:
+                # Sort scans chronologically, as h5py seems to scramble them based on group name
+                scanlist.sort(key=lambda scan: scan.timestamps[0])
+                compscanlist.append(CompoundScan(scanlist, compscan_target))
 
-        # Sort compound scans chronologically too
-        compscanlist.sort(key=lambda compscan: compscan.scans[0].timestamps[0])
+        if len(compscanlist) > 0:
+            # Sort compound scans chronologically too
+            compscanlist.sort(key=lambda compscan: compscan.scans[0].timestamps[0])
         return compscanlist, data_unit, corrconf, antenna, antenna2, nd_data, pointing_model
 
 #--------------------------------------------------------------------------------------------------
