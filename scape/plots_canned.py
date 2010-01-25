@@ -10,8 +10,8 @@ import matplotlib.pyplot as plt
 from katpoint import rad2deg
 from .stats import robust_mu_sigma, remove_spikes, minimise_angle_wrap
 from .beam_baseline import fwhm_to_sigma, extract_measured_beam, interpolate_measured_beam
-from .plots_basic import plot_compacted_segments, plot_marker_3d, gaussian_ellipses, plot_db_contours, \
-                         ordinal_suffix
+from .plots_basic import plot_compacted_line_segments, plot_compacted_images, plot_marker_3d, \
+                         gaussian_ellipses, plot_db_contours, ordinal_suffix
 
 logger = logging.getLogger("scape.plots_canned")
 
@@ -276,26 +276,28 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
     return axes_list
 
 #--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_compacted_spectrogram
+#--- FUNCTION :  plot_spectrogram
 #--------------------------------------------------------------------------------------------------
 
-def plot_compacted_spectrogram(dataset, pol='I', add_scan_ids=True, ax=None):
+def plot_spectrogram(dataset, pol='I', add_scan_ids=True, dB=True, ax=None):
     """Plot spectrogram of all scans in data set in compacted form.
 
     This plots the spectrogram of each scan in the data set on a single set of
     axes, with no gaps between the spectrogram images. This is done for all times
     and all channels. The tick labels on the *x* axis are modified to reflect
     the correct timestamps, and the breaks between scans are indicated by
-    vertical lines.
+    vertical lines. RFI-flagged channels are greyed out in the display.
 
     Parameters
     ----------
     dataset : :class:`scape.DataSet` object
         Data set to plot
-    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'}, optional
-        The coherency / Stokes parameter to display (must be real)
+    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'HV', 'VH', 'XX', 'YY', 'XY', 'YX'}, optional
+        The coherency / Stokes parameter to display (must be real for single-dish)
     add_scan_ids : {True, False}, optional
         True if scan index numbers are to be added to plot
+    dB : {True, False}, optional
+        True to plot power logarithmically in dB of the underlying unit
     ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
 
@@ -314,53 +316,83 @@ def plot_compacted_spectrogram(dataset, pol='I', add_scan_ids=True, ax=None):
         If *pol* is not one of the allowed names
 
     """
-    if not pol in ('I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
-        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX' or 'YY' (i.e. real)")
     if ax is None:
         ax = plt.gca()
+    db_func = (lambda x: 10.0 * np.log10(x)) if dB else (lambda x: x)
+    if dataset.scans[0].has_autocorr:
+        if not pol in ('I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
+            raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', " +
+                             "'HH', 'VV', 'XX' or 'YY' (i.e. real) for single-dish data")
+        imdata = [db_func(scan.pol(pol)).transpose() for scan in dataset.scans]
+    else:
+        imdata = [db_func(np.abs(scan.pol(pol))).transpose() for scan in dataset.scans]
+    xticks = [scan.timestamps for scan in dataset.scans]
+    time_origin = np.min([x.min() for x in xticks])
     labels = [str(n) for n in xrange(len(dataset.scans))] if add_scan_ids else []
-    start = np.array([scan.timestamps.min() for scan in dataset.scans])
-    end = np.array([scan.timestamps.max() for scan in dataset.scans])
-    compacted_start = [0.0] + np.cumsum(end - start).tolist()
-    time_origin = start.min()
-    p_lims = [np.double(np.inf), np.double(-np.inf)]
+    ylim = (dataset.freqs[0], dataset.freqs[-1])
+    clim = [np.double(np.inf), np.double(-np.inf)]
     for scan in dataset.scans:
-        smoothed_power = np.log10(np.abs(remove_spikes(scan.pol(pol))))
-        p_lims = [min(p_lims[0], smoothed_power.min()), max(p_lims[1], smoothed_power.max())]
-    images = []
-    for n, scan in enumerate(dataset.scans):
-        specgram = np.log10(np.abs(scan.pol(pol))).transpose()
-        colornorm = mpl.colors.Normalize(vmin=p_lims[0], vmax=p_lims[1])
-        image_data = mpl.cm.jet(colornorm(specgram))
-        image_data_rfi = mpl.cm.gray(colornorm(specgram))
-        image_data[dataset.rfi_channels, :, :] = image_data_rfi[dataset.rfi_channels, :, :]
-        images.append(ax.imshow(np.uint8(np.round(image_data * 255)), aspect='auto',
-                                interpolation='nearest', origin='lower',
-                                extent=(scan.timestamps[0] - start[n] + compacted_start[n],
-                                        scan.timestamps[-1] - start[n] + compacted_start[n],
-                                        dataset.freqs[0], dataset.freqs[-1])))
-    # These border lines have x coordinates fixed to the data and y coordinates fixed to the axes
-    transFixedY = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
-    border_lines = mpl.collections.LineCollection([[(s, 0), (s, 1)] for s in compacted_start[1:-1]],
-                                                  colors='k', linewidths=2.0, linestyles='solid',
-                                                  transform=transFixedY)
-    ax.add_collection(border_lines)
-    ax.axis([compacted_start[0], compacted_start[-1], dataset.freqs[0], dataset.freqs[-1]])
-    text_labels = []
-    for n, label in enumerate(labels):
-        text_labels.append(ax.text(np.mean(compacted_start[n:n+2]), 0.02, label, transform=transFixedY,
-                                   ha='center', va='bottom', clip_on=True, color='w'))
-    # Redefine x-axis label formatter to display the correct time for each segment
-    class SegmentedScalarFormatter(mpl.ticker.ScalarFormatter):
-        """Expand x axis value to correct segment before labelling."""
-        def __init__(self, useOffset=True, useMathText=False):
-            mpl.ticker.ScalarFormatter.__init__(self, useOffset, useMathText)
-        def __call__(self, x, pos=None):
-            if x > compacted_start[0]:
-                segment = (compacted_start[:-1] < x).nonzero()[0][-1]
-                x = x - compacted_start[segment] + start[segment] - time_origin
-            return mpl.ticker.ScalarFormatter.__call__(self, x, pos)
-    ax.xaxis.set_major_formatter(SegmentedScalarFormatter())
+        if dataset.scans[0].has_autocorr:
+            smoothed_power = db_func(remove_spikes(scan.pol(pol)))
+        else:
+            smoothed_power = db_func(remove_spikes(np.abs(scan.pol(pol))))
+        clim = [min(clim[0], smoothed_power.min()), max(clim[1], smoothed_power.max())]
+    grey_rows = dataset.rfi_channels
+    images, border_lines, text_labels = plot_compacted_images(imdata, xticks, labels, ylim, clim, grey_rows, ax)
+    ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
+    ax.set_ylabel('Channel frequency (MHz)')
+    return images, border_lines, text_labels
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  plot_fringes
+#--------------------------------------------------------------------------------------------------
+
+def plot_fringes(dataset, pol='I', add_scan_ids=True, ax=None):
+    """Plot fringe phase of all scans in data set in compacted form.
+
+    This plots the *fringe phase* (phase as a function of time and frequency) of
+    each scan in the data set on a single set of axes as a set of images, with no
+    gaps between the images. This is done for all times and all channels. The
+    tick labels on the *x* axis are modified to reflect the correct timestamps,
+    and the breaks between scans are indicated by vertical lines. RFI-flagged
+    channels are greyed out in the display.
+
+    Parameters
+    ----------
+    dataset : :class:`scape.DataSet` object
+        Data set to plot
+    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'HV', 'VH', 'XX', 'YY', 'XY', 'YX'}, optional
+        The coherency / Stokes parameter to display
+    add_scan_ids : {True, False}, optional
+        True if scan index numbers are to be added to plot
+    ax : :class:`matplotlib.axes.Axes` object, optional
+        Matplotlib axes object to receive plot (default is current axes)
+
+    Returns
+    -------
+    images : list of :class:`matplotlib.image.AxesImage` objects
+        List of fringe phase images
+    border_lines : :class:`matplotlib.collections.LineCollection` object
+        Collection of vertical lines separating the segments
+    text_labels : list of :class:`matplotlib.text.Text` objects
+        List of added text labels
+
+    Raises
+    ------
+    ValueError
+        If *pol* is not one of the allowed names
+
+    """
+    if ax is None:
+        ax = plt.gca()
+    imdata = [np.angle(scan.pol(pol)).transpose() for scan in dataset.scans]
+    xticks = [scan.timestamps for scan in dataset.scans]
+    time_origin = np.min([x.min() for x in xticks])
+    labels = [str(n) for n in xrange(len(dataset.scans))] if add_scan_ids else []
+    ylim = (dataset.freqs[0], dataset.freqs[-1])
+    clim = [-np.pi, np.pi]
+    grey_rows = dataset.rfi_channels
+    images, border_lines, text_labels = plot_compacted_images(imdata, xticks, labels, ylim, clim, grey_rows, ax)
     ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
     ax.set_ylabel('Channel frequency (MHz)')
     return images, border_lines, text_labels
@@ -403,7 +435,7 @@ def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=N
         ax.fill_between(timeline, upper, lower, edgecolor='0.7', facecolor='0.7', lw=0)
         data_segments = [np.column_stack((timeline, rfi_data[s][0][:, n])) for n in non_rfi_channels]
         ax.add_collection(mpl.collections.LineCollection(data_segments))
-    plot_compacted_segments(template, labels, ax=ax, lw=2, color='k')
+    plot_compacted_line_segments(template, labels, ax=ax, lw=2, color='k')
     ax.set_ylim(-0.05, 1.05)
     ax.set_ylabel('Normalised power')
     # do RFI display
@@ -415,7 +447,7 @@ def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=N
         ax.fill_between(timeline, upper, lower, edgecolor='0.7', facecolor='0.7', lw=0)
         data_segments = [np.column_stack((timeline, rfi_data[s][0][:, n])) for n in rfi_channels]
         ax.add_collection(mpl.collections.LineCollection(data_segments))
-    plot_compacted_segments(template, labels, ax=ax, lw=2, color='k')
+    plot_compacted_line_segments(template, labels, ax=ax, lw=2, color='k')
     ax.set_ylim(-0.05, 1.05)
     ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
     ax.set_ylabel('Normalised power')
@@ -493,15 +525,15 @@ def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, band=0, ax=
         inner_beam_segments.append(np.column_stack((timeline, inner_beam_power)))
     # Plot segments from back to front
     labels = [str(n) for n in xrange(len(compscan.scans))] if add_scan_ids else []
-    plot_compacted_segments(data_segments, labels, ax=ax, color='b', lw=1)
+    plot_compacted_line_segments(data_segments, labels, ax=ax, color='b', lw=1)
     beam_color = ('r' if compscan.beam.refined else 'g') if compscan.beam and compscan.beam.is_valid else 'y'
     baseline_colors = [('r' if scan.baseline else 'g') for scan in compscan.scans]
-    plot_compacted_segments(baseline_segments, ax=ax, color=baseline_colors, lw=2)
+    plot_compacted_line_segments(baseline_segments, ax=ax, color=baseline_colors, lw=2)
     if compscan.beam and compscan.beam.refined:
-        plot_compacted_segments(beam_segments, ax=ax, color=beam_color, lw=2, linestyles='dashed')
-        plot_compacted_segments(inner_beam_segments, ax=ax, color=beam_color, lw=2)
+        plot_compacted_line_segments(beam_segments, ax=ax, color=beam_color, lw=2, linestyles='dashed')
+        plot_compacted_line_segments(inner_beam_segments, ax=ax, color=beam_color, lw=2)
     else:
-        plot_compacted_segments(beam_segments, ax=ax, color=beam_color, lw=2)
+        plot_compacted_line_segments(beam_segments, ax=ax, color=beam_color, lw=2)
     # Format axes
     power_range = max(power_limits) - min(power_limits)
     if power_range == 0.0:

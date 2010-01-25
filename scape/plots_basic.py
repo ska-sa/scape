@@ -16,10 +16,10 @@ def ordinal_suffix(n):
         return {1 : 'st', 2 : 'nd', 3 : 'rd'}.get(n % 10, 'th')
 
 #--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_compacted_segments
+#--- FUNCTION :  plot_compacted_line_segments
 #--------------------------------------------------------------------------------------------------
 
-def plot_compacted_segments(segments, labels=None, ax=None, **kwargs):
+def plot_compacted_line_segments(segments, labels=None, ax=None, **kwargs):
     """Plot sequence of line segments in compacted form.
 
     This plots a sequence of line segments (of possibly varying length) on a
@@ -91,6 +91,99 @@ def plot_compacted_segments(segments, labels=None, ax=None, **kwargs):
             return mpl.ticker.ScalarFormatter.__call__(self, x, pos)
     ax.xaxis.set_major_formatter(SegmentedScalarFormatter())
     return segment_lines, border_lines, text_labels
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  plot_compacted_images
+#--------------------------------------------------------------------------------------------------
+
+def plot_compacted_images(imdata, xticks, labels=None, ylim=None, clim=None, grey_rows=None, ax=None):
+    """Plot sequence of images in compacted form.
+
+    This plots a sequence of 2-D arrays (with the same number of rows but
+    possibly varying number of columns) as images on a single set of axes, with
+    no gaps between the images along the *x* axis. Each image has an associated
+    sequence of *x* ticks, with one tick per image column. The tick labels on the
+    *x* axis are modified to reflect the original (padded) tick values, and the
+    breaks between segments are indicated by vertical lines. Some of the image
+    rows may optionally be greyed out (e.g. to indicate RFI-corrupted channels).
+
+    Parameters
+    ----------
+    imdata : sequence of array-like, shape (M, N_k)
+        Sequence of 2-D arrays (*image0*, *image1*, ..., *imagek*, ..., *imageK*)
+        to be displayed as images, where each array has the same number of rows,
+        *M*, but a potentially unique number of columns, *N_k*
+    xticks : sequence of array-like, shape (N_k,)
+        Sequence of 1-D arrays (*x_0*, *x_1*, ..., *x_k*, ..., *x_K*) serving as
+        *x*-axis ticks for the corresponding images, where *x_k* has length *N_k*
+    labels : sequence of strings, optional
+        Corresponding sequence of text labels to add below each image
+    ylim : sequence of 2 floats, or None, optional
+        Shared *y* limit of images, as (*ymin*, *ymax*), based on their common
+        rows (default is (1, M))
+    clim : sequence of 2 floats, or None, optional
+        Shared color limits of images, as (*vmin*, *vmax*). The default uses the
+        the global minimum and maximum of all the arrays in *imdata*.
+    grey_rows : sequence of integers, optional
+        Sequence of indices of rows which will be greyed out in each image
+        (default is no greyed-out rows)
+    ax : :class:`matplotlib.axes.Axes` object, optional
+        Matplotlib axes object to receive plot (default is current axes)
+
+    Returns
+    -------
+    images : list of :class:`matplotlib.image.AxesImage` objects
+        List of images
+    border_lines : :class:`matplotlib.collections.LineCollection` object
+        Collection of vertical lines separating the images
+    text_labels : list of :class:`matplotlib.text.Text` objects
+        List of added text labels
+
+    """
+    if ax is None:
+        ax = plt.gca()
+    if clim is None:
+        clim = (np.min([im.min() for im in imdata]), np.max([im.max() for im in imdata]))
+    if ylim is None:
+        ylim = (1, imdata[0].shape[0])
+    start = np.array([x.min() for x in xticks])
+    end = np.array([x.max() for x in xticks])
+    compacted_start = [0.0] + np.cumsum(end - start).tolist()
+    x_origin = start.min()
+    images = []
+    for k, (x, im) in enumerate(zip(xticks, imdata)):
+        colornorm = mpl.colors.Normalize(vmin=clim[0], vmax=clim[1])
+        image_data = mpl.cm.jet(colornorm(im))
+        if grey_rows is not None:
+            image_data_grey = mpl.cm.gray(colornorm(im))
+            image_data[grey_rows, :, :] = image_data_grey[grey_rows, :, :]
+        images.append(ax.imshow(np.uint8(np.round(image_data * 255)), aspect='auto',
+                                interpolation='nearest', origin='lower',
+                                extent=(x[0] - start[k] + compacted_start[k],
+                                        x[-1] - start[k] + compacted_start[k], ylim[0], ylim[1])))
+    # These border lines have x coordinates fixed to the data and y coordinates fixed to the axes
+    transFixedY = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
+    border_lines = mpl.collections.LineCollection([[(s, 0), (s, 1)] for s in compacted_start[1:-1]],
+                                                  colors='k', linewidths=2.0, linestyles='solid',
+                                                  transform=transFixedY)
+    ax.add_collection(border_lines)
+    ax.axis([compacted_start[0], compacted_start[-1], ylim[0], ylim[1]])
+    text_labels = []
+    for k, label in enumerate(labels):
+        text_labels.append(ax.text(np.mean(compacted_start[k:k+2]), 0.02, label, transform=transFixedY,
+                                   ha='center', va='bottom', clip_on=True, color='w'))
+    # Redefine x-axis label formatter to display the correct time for each segment
+    class SegmentedScalarFormatter(mpl.ticker.ScalarFormatter):
+        """Expand x axis value to correct segment before labelling."""
+        def __init__(self, useOffset=True, useMathText=False):
+            mpl.ticker.ScalarFormatter.__init__(self, useOffset, useMathText)
+        def __call__(self, x, pos=None):
+            if x > compacted_start[0]:
+                segment = (compacted_start[:-1] < x).nonzero()[0][-1]
+                x = x - compacted_start[segment] + start[segment] - x_origin
+            return mpl.ticker.ScalarFormatter.__call__(self, x, pos)
+    ax.xaxis.set_major_formatter(SegmentedScalarFormatter())
+    return images, border_lines, text_labels
 
 #---------------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_marker_3d
