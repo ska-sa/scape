@@ -63,9 +63,9 @@ def plot_spectrum(dataset, pol='I', scan=-1, sigma=1.0, vertical=True, dB=True, 
     if ax is None:
         ax = plt.gca()
     if scan >= 0:
-        data = dataset.scans[scan].pol(pol)
+        data = np.abs(dataset.scans[scan].pol(pol))
     else:
-        data = np.vstack([s.pol(pol) for s in dataset.scans])
+        data = np.vstack([np.abs(s.pol(pol)) for s in dataset.scans])
     power = robust_mu_sigma(data)
     power_min, power_max = data.min(axis=0), data.max(axis=0)
     del data
@@ -159,33 +159,32 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
     channel_bandwidths_MHz = dataset.bandwidths
     rfi_channels = dataset.rfi_channels
     num_channels = len(channel_freqs_MHz)
-    data_min = {'XX': np.tile(np.inf, (len(scans), num_channels)),
-                'YY': np.tile(np.inf, (len(scans), num_channels))}
-    data_max = {'XX': np.zeros((len(scans), num_channels)),
-                'YY': np.zeros((len(scans), num_channels))}
+    data_min = {'HH': np.tile(np.inf, (len(scans), num_channels)),
+                'VV': np.tile(np.inf, (len(scans), num_channels))}
+    data_max = {'HH': np.zeros((len(scans), num_channels)),
+                'VV': np.zeros((len(scans), num_channels))}
     time_origin = np.double(np.inf)
     for n, scan in enumerate(scans):
         time_origin = min(time_origin, scan.timestamps.min())
-        for pol in ['XX', 'YY']:
-            smoothed_power = remove_spikes(scan.pol(pol))
+        for pol in ['HH', 'VV']:
+            smoothed_power = remove_spikes(np.abs(scan.pol(pol)))
             channel_min = smoothed_power.min(axis=0)
             data_min[pol][n] = np.where(channel_min < data_min[pol][n], channel_min, data_min[pol][n])
             channel_max = smoothed_power.max(axis=0)
             data_max[pol][n] = np.where(channel_max > data_max[pol][n], channel_max, data_max[pol][n])
     # Obtain minimum and maximum values in each channel (of smoothed data)
-    for pol in ['XX', 'YY']:
+    for pol in ['HH', 'VV']:
         data_min[pol] = data_min[pol].min(axis=0)
         data_max[pol] = data_max[pol].max(axis=0)
     channel_list = np.arange(0, num_channels, channel_skip, dtype='int')
     offsets = np.column_stack((np.zeros(len(channel_list), dtype='float'), channel_freqs_MHz[channel_list]))
     scale = 0.08 * num_channels
 
-    # Plot of raw XX and YY power in all channels
+    # Plot of raw HH and YY power in all channels
     t_limits, p_limits = [], []
-    for ax_ind, pol in enumerate(['XX', 'YY']):
+    for ax_ind, pol in enumerate(['HH', 'VV']):
         # Time-frequency waterfall plots
         ax = axes_list[ax_ind]
-        all_scans = []
         for compscan_ind, compscan in enumerate(dataset.compscans):
             for scan in compscan.scans:
                 # Grey out RFI-tagged channels using alpha transparency
@@ -196,7 +195,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
                 time_line = scan.timestamps - time_origin
                 # Normalise the data in each channel to lie between 0 and (channel bandwidth * scale)
                 norm_power = scale * channel_bandwidths_MHz[np.newaxis, :] * \
-                            (scan.pol(pol) - data_min[pol][np.newaxis, :]) / \
+                            (np.abs(scan.pol(pol)) - data_min[pol][np.newaxis, :]) / \
                             (data_max[pol][np.newaxis, :] - data_min[pol][np.newaxis, :])
                 segments = [np.vstack((time_line, norm_power[:, chan])).transpose() for chan in channel_list]
                 if len(segments) > 1:
@@ -207,7 +206,6 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
                     ax.plot(segments[0][:, 0] + offsets.squeeze()[0],
                             segments[0][:, 1] + offsets.squeeze()[1], color=colors[0], lw=0.5)
                 t_limits += [time_line.min(), time_line.max()]
-                all_scans.append(scan.pol(pol))
             # Add compound scan target name and partition lines between compound scans
             if compscan.scans:
                 start_time_ind = len(t_limits) - 2 * len(compscan.scans)
@@ -227,7 +225,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
             waterfall_title = '%s temperature in every %s channel' % (pol, nth_str)
         else:
             waterfall_title = 'Raw %s power in every %s channel' % (pol, nth_str)
-        if pol == 'XX':
+        if pol == 'HH':
             if title:
                 title_obj = ax.set_title(title + '\n' + waterfall_title + '\n')
             else:
@@ -256,7 +254,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
         p_limits += power_lim
         ax.set_ylabel('')
         ax.set_title('%s power spectrum' % pol)
-        if pol == 'XX':
+        if pol == 'HH':
             # This is more elaborate because the subplot axes are shared
             plt.setp(ax.get_xticklabels(), visible=False)
             plt.setp(ax.get_yticklabels(), visible=False)
@@ -294,7 +292,7 @@ def plot_compacted_spectrogram(dataset, pol='I', add_scan_ids=True, ax=None):
     ----------
     dataset : :class:`scape.DataSet` object
         Data set to plot
-    pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
+    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'}, optional
         The coherency / Stokes parameter to display (must be real)
     add_scan_ids : {True, False}, optional
         True if scan index numbers are to be added to plot
@@ -316,8 +314,8 @@ def plot_compacted_spectrogram(dataset, pol='I', add_scan_ids=True, ax=None):
         If *pol* is not one of the allowed names
 
     """
-    if not pol in ('I', 'Q', 'U', 'V', 'XX', 'YY'):
-        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'XX' or 'YY' (i.e. real)")
+    if not pol in ('I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX' or 'YY' (i.e. real)")
     if ax is None:
         ax = plt.gca()
     labels = [str(n) for n in xrange(len(dataset.scans))] if add_scan_ids else []
@@ -459,8 +457,8 @@ def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, band=0, ax=
         If *pol* is not one of the allowed names
 
     """
-    if not pol in ('I', 'Q', 'U', 'V', 'XX', 'YY'):
-        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'XX' or 'YY' (i.e. real)")
+    if not pol in ('I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX' or 'YY' (i.e. real)")
     if ax is None:
         ax = plt.gca()
     time_origin = np.array([scan.timestamps.min() for scan in compscan.scans]).min()
@@ -470,7 +468,7 @@ def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, band=0, ax=
     # Construct segments to be plotted
     for scan in compscan.scans:
         timeline = scan.timestamps - time_origin
-        measured_power = scan.pol(pol)[:, band]
+        measured_power = np.abs(scan.pol(pol)[:, band])
         smooth_power = remove_spikes(measured_power)
         power_limits.extend([smooth_power.min(), smooth_power.max()])
         data_segments.append(np.column_stack((timeline, measured_power)))
@@ -529,7 +527,7 @@ def plot_compound_scan_on_target(compscan, pol='I', subtract_baseline=True, leve
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to plot
-    pol : {'I', 'XX', 'YY'}, optional
+    pol : {'I', 'HH', 'VV', 'XX', 'YY'}, optional
         The coherency / Stokes parameter to display (must be real and positive)
     subtract_baseline : {True, False}, optional
         True to subtract baselines (only scans with baselines are then shown)
@@ -554,8 +552,8 @@ def plot_compound_scan_on_target(compscan, pol='I', subtract_baseline=True, leve
         If *pol* is not one of the allowed names
 
     """
-    if not pol in ('I', 'XX', 'YY'):
-        raise ValueError("Polarisation key should be one of 'I', 'XX' or 'YY' (i.e. positive)")
+    if not pol in ('I', 'HH', 'VV', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'I', 'HH', 'VV', 'XX' or 'YY' (i.e. positive)")
     if ax is None:
         ax = plt.gca()
     if levels is None:
@@ -566,11 +564,11 @@ def plot_compound_scan_on_target(compscan, pol='I', subtract_baseline=True, leve
         logger.warning('No scans were found with baselines - setting subtract_baseline to False')
     # Extract total power and target coordinates (in degrees) of all scans (or those with baselines)
     if subtract_baseline:
-        compscan_power = np.hstack([remove_spikes(scan.pol(pol)[:, band]) - scan.baseline(scan.timestamps)
+        compscan_power = np.hstack([remove_spikes(np.abs(scan.pol(pol)[:, band])) - scan.baseline(scan.timestamps)
                                  for scan in compscan.scans if scan.baseline])
         target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans if scan.baseline]))
     else:
-        compscan_power = np.hstack([remove_spikes(scan.pol(pol)[:, band]) for scan in compscan.scans])
+        compscan_power = np.hstack([remove_spikes(np.abs(scan.pol(pol)[:, band])) for scan in compscan.scans])
         target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans]))
 
     # Show the locations of the scan samples themselves, with marker sizes indicating power values
@@ -657,7 +655,7 @@ def plot_data_set_in_mount_space(dataset, levels=None, band=0, ax=None):
         levels = [0.5, 0.1]
 
     for compscan in dataset.compscans:
-        total_power = np.hstack([remove_spikes(scan.pol('I')[:, band]) for scan in compscan.scans])
+        total_power = np.hstack([remove_spikes(np.abs(scan.pol('I')[:, band])) for scan in compscan.scans])
         target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
         center_time = np.median(np.hstack([scan.timestamps for scan in compscan.scans]))
         # Instantaneous mount coordinates are back on the sphere, but at a single time instant for all points
@@ -708,7 +706,7 @@ def plot_measured_beam_pattern(compscan, pol='I', band=0, subtract_baseline=True
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to plot
-    pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
+    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'}, optional
         The coherency / Stokes parameter to display (must be real)
     band : int, optional
         Frequency band to plot

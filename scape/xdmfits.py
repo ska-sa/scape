@@ -206,7 +206,7 @@ def load_scan(filename):
     -------
     scan : :class:`scan.Scan` object
         Scan based on file
-    data_unit : {'raw', 'K', 'Jy'}
+    data_unit : {'counts', 'K', 'Jy'}
         Physical unit of power data
     corrconf : :class:`compoundscan.CorrelatorConfig` object
         Correlator configuration
@@ -270,7 +270,7 @@ def load_scan(filename):
     label = str(data_header['ID'+str(data_header['DATAID'])])
     path = filename
 
-    data_unit = 'raw'
+    data_unit = 'counts'
     freqs = hdu['CHANNELS'].data.field('Freq') / 1e6
     bandwidths = np.repeat(channel_width, len(freqs)) / 1e6
     rfi_channels = [x[0] for x in hdu['RFI'].data.field('Channels')]
@@ -313,7 +313,7 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
     -------
     compscanlist : list of :class:`compoundscan.CompoundScan` objects
         List of compound scans
-    data_unit : {'raw', 'K', 'Jy'}
+    data_unit : {'counts', 'K', 'Jy'}
         Physical unit of power data
     corrconf : :class:`compoundscan.CorrelatorConfig` object
         Correlator configuration object

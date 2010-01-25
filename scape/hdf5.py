@@ -43,7 +43,7 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
     -------
     compscanlist : list of :class:`compoundscan.CompoundScan` objects
         List of compound scans
-    data_unit : {'raw', 'K', 'Jy'}
+    data_unit : {'counts', 'K', 'Jy'}
         Physical unit of power data
     corrconf : :class:`compoundscan.CorrelatorConfig` object
         Correlator configuration object
@@ -72,6 +72,8 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
             raise ValueError('HDF5 file not augmented - please run k7augment/augment2.py on this file')
         pointing_model = f['pointing_model'].value
         data_unit = f.attrs['data_unit']
+        if data_unit == 'raw':
+            data_unit = 'counts'
         data_timestamps_at_sample_centers = f.attrs.get('data_timestamps_at_sample_centers', False)
         antenna = f.attrs['antenna']
         # Get second antenna of baseline pair (or set to None for single-dish data)

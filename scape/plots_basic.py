@@ -68,7 +68,7 @@ def plot_compacted_segments(segments, labels=None, ax=None, **kwargs):
     # Plot the segment lines as a collection
     segment_lines = mpl.collections.LineCollection(compacted_segments, **kwargs)
     ax.add_collection(segment_lines)
-    # These border lines have x coordinates fixed to the data and y coordinates fixed to the axes
+    # These border lines have x coordinates fixed to the data and y coordinates fixed to the axes (like axvline)
     transFixedY = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
     border_lines = mpl.collections.LineCollection([[(s, 0), (s, 1)] for s in compacted_start[1:-1]],
                                                   colors='k', linewidths=0.5, linestyles='dotted',

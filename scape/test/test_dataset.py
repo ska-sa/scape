@@ -37,7 +37,7 @@ class SaveLoadTestCases(unittest.TestCase):
         temp = np.column_stack((freqs, 20.0 + np.random.randn(len(freqs))))
         nd_data = gaincal.NoiseDiodeModel(temp, temp)
         pm = np.ones(20)
-        self.d = dataset.DataSet('', [cs1, cs2], 'raw', corrconf, 'Test, 0, 0, 0, 15.0', nd_data, pm)
+        self.d = dataset.DataSet('', [cs1, cs2], 'counts', corrconf, 'Test, 0, 0, 0, 15.0', nd_data, pm)
         self.filename = 'scape_test_dataset.h5'
         if os.path.exists(self.filename):
             os.remove(self.filename)

@@ -51,7 +51,7 @@ class DataSet(object):
         Name of data set file, or blank string if the other parameters are given
     compscanlist : list of :class:`compoundscan.CompoundScan` objects, optional
         List of compound scans
-    data_unit : {'raw', 'K', 'Jy'}, optional
+    data_unit : {'counts', 'K', 'Jy'}, optional
         Physical unit of power data
     corrconf : :class:`compoundscan.CorrelatorConfig` object, optional
         Correlator configuration object
@@ -457,7 +457,7 @@ class DataSet(object):
 
         """
         # Only operate on raw data
-        if self.data_unit != 'raw':
+        if self.data_unit != 'counts':
             logger.error("Expected raw power data to convert to temperature, got data with units '" +
                          self.data_unit + "' instead.")
             return self
