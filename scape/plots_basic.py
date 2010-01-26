@@ -19,7 +19,7 @@ def ordinal_suffix(n):
 #--- FUNCTION :  plot_compacted_line_segments
 #--------------------------------------------------------------------------------------------------
 
-def plot_compacted_line_segments(segments, labels=None, ax=None, **kwargs):
+def plot_compacted_line_segments(segments, labels=None, ylim=None, ax=None, **kwargs):
     """Plot sequence of line segments in compacted form.
 
     This plots a sequence of line segments (of possibly varying length) on a
@@ -41,6 +41,8 @@ def plot_compacted_line_segments(segments, labels=None, ax=None, **kwargs):
         :class:`matplotlib.collections.LineCollection`.
     labels : sequence of strings, optional
         Corresponding sequence of text labels to add below each segment
+    ylim : sequence of 2 floats, or None, optional
+        Shared *y* limit of segments, as (*ymin*, *ymax*) (default is data limits)
     ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
     kwargs : dict, optional
@@ -58,6 +60,9 @@ def plot_compacted_line_segments(segments, labels=None, ax=None, **kwargs):
     """
     if ax is None:
         ax = plt.gca()
+    if ylim is None:
+        ylim = (np.min([np.asarray(segm)[:, 1].min() for segm in segments]),
+                np.max([np.asarray(segm)[:, 1].max() for segm in segments]))
     if labels is None:
         labels = []
     start = np.array([np.asarray(segm)[:, 0].min() for segm in segments])
@@ -90,6 +95,7 @@ def plot_compacted_line_segments(segments, labels=None, ax=None, **kwargs):
                 x = x - compacted_start[segment] + start[segment]
             return mpl.ticker.ScalarFormatter.__call__(self, x, pos)
     ax.xaxis.set_major_formatter(SegmentedScalarFormatter())
+    ax.set_ylim(ylim)
     return segment_lines, border_lines, text_labels
 
 #--------------------------------------------------------------------------------------------------
