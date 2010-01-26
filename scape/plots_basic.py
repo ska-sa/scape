@@ -61,8 +61,12 @@ def plot_compacted_line_segments(segments, labels=None, ylim=None, ax=None, **kw
     if ax is None:
         ax = plt.gca()
     if ylim is None:
-        ylim = (np.min([np.asarray(segm)[:, 1].min() for segm in segments]),
-                np.max([np.asarray(segm)[:, 1].max() for segm in segments]))
+        ymin = np.min([np.asarray(segm)[:, 1].min() for segm in segments])
+        ymax = np.max([np.asarray(segm)[:, 1].max() for segm in segments])
+        yrange = ymax - ymin
+        if yrange == 0.0:
+            yrange = 1.0
+        ylim = (ymin - 0.05 * yrange, ymax + 0.05 * yrange)
     if labels is None:
         labels = []
     start = np.array([np.asarray(segm)[:, 0].min() for segm in segments])

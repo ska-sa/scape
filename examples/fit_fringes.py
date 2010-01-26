@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 
 import scape
 import katpoint
+import time
 
 # Parse command-line options and arguments
 parser = optparse.OptionParser(usage="%prog [options] <data file>")
@@ -23,7 +24,7 @@ d = scape.DataSet(args[0])
 d = d.select(labelkeep='scan', freqkeep=range(100, 420), copy=True)
 
 # Iterate through all scans
-group_delay, sigma_delay, targetdir = [], [], []
+group_delay_per_scan, sigma_delay_per_scan, targetdir_per_scan = [], [], []
 for compscan in d.compscans:
     for scan in compscan.scans:
         # Group delay is proportional to phase slope across the band - start with rads / MHz
@@ -36,13 +37,15 @@ for compscan in d.compscans:
         # Thereafter, it repeats periodically -> focus on primary range of +- 0.5 / channel_bandwidth
         # Obtain robust periodic statistics for delay based on this argument
         delay_stats = scape.stats.periodic_mu_sigma(delay, axis=1, period=1e-6 / d.bandwidths[0])
-        group_delay.append(delay_stats.mu)
-        sigma_delay.append(delay_stats.sigma)
+        group_delay_per_scan.append(delay_stats.mu)
+        sigma_delay_per_scan.append(delay_stats.sigma)
         # Obtain vectors pointing from antenna 1 to target for each scan
         az, el = compscan.target.azel(scan.timestamps, d.antenna)
-        targetdir.append(katpoint.azel_to_enu(az, el))
-# Concatenate arrays into a single array
-group_delay, sigma_delay, targetdir = np.hstack(group_delay), np.hstack(sigma_delay), np.hstack(targetdir)
+        targetdir_per_scan.append(np.array(katpoint.azel_to_enu(az, el)))
+# Concatenate per-scan arrays into a single array for data set
+group_delay = np.hstack(group_delay_per_scan)
+sigma_delay = np.hstack(sigma_delay_per_scan)
+targetdir = np.hstack(targetdir_per_scan)
 # Augment target vector with a 1, as this allows fitting of constant (receiver) delay
 # Also invert sign of target vector, as positive dot product with baseline implies negative delay / advance
 augmented_targetdir = np.vstack((-targetdir, np.ones(targetdir.shape[1])))
@@ -65,14 +68,20 @@ sigma_receiver_delay = sigma_augmented_baseline[3]
 
 # Stop the fringes (make a copy of the data first)
 d2 = d.select(copy=True)
-for compscan in d2.compscans:
-    for scan in compscan.scans:
-        az, el = compscan.target.azel(scan.timestamps, d2.antenna)
-        targdir = np.array(katpoint.azel_to_enu(az, el))
-        augmented_targdir = np.vstack((-targdir, np.ones(targdir.shape[1])))
-        scan.data[:,:,0] *= np.exp(2j * np.pi * np.outer(np.dot(augmented_baseline, augmented_targdir), d2.freqs * 1e6))
+fitted_delay_per_scan = []
+time_origin = np.min([scan.timestamps.min() for scan in d2.scans])
+for n, scan in enumerate(d2.scans):
+    targdir = targetdir_per_scan[n]
+    # Store fitted delay and other delays with corresponding timestamps, to allow compacted plot
+    fitted_delay = np.dot(augmented_baseline, np.vstack((-targdir, np.ones(targdir.shape[1]))))
+    fitted_delay_per_scan.append(np.vstack((scan.timestamps - time_origin, fitted_delay)).transpose())
+    group_delay_per_scan[n] = np.vstack((scan.timestamps - time_origin, group_delay_per_scan[n])).transpose()
+    sigma_delay_per_scan[n] = np.vstack((scan.timestamps - time_origin, sigma_delay_per_scan[n])).transpose()
+    # Stop the fringes (remember that HH phase is antenna1 - antenna2, need to *add* fitted delay to fix it)
+    scan.data[:,:,0] *= np.exp(2j * np.pi * np.outer(fitted_delay, d2.freqs * 1e6))
 old_baseline = d.antenna.baseline_toward(d.antenna2)
 old_receiver_delay = 5.0808482980582519e-07 - 4.4597519527992932e-07
+labels = [str(n) for n in xrange(len(d2.scans))]
 
 # Produce output plots and results
 print "   Baseline (m), old,      stdev"
@@ -89,14 +98,17 @@ plt.title('Fringes before stopping')
 plt.figure(2)
 plt.clf()
 ax = plt.subplot(211)
-plt.plot(group_delay)
-plt.plot(np.dot(augmented_baseline, augmented_targetdir), 'r')
+scape.plots_basic.plot_compacted_line_segments(group_delay_per_scan, labels)
+scape.plots_basic.plot_compacted_line_segments(fitted_delay_per_scan, color='r')
 ax.set_xticklabels([])
+ylim_max = np.max(np.abs(ax.get_ylim()))
+ax.set_ylim(-1.1 * ylim_max, 1.1 * ylim_max)
 plt.ylabel('Delay (seconds)')
 plt.title('Group delay')
 plt.subplot(212)
-plt.plot(sigma_delay)
-plt.xlabel('Time (seconds)')
+scape.plots_basic.plot_compacted_line_segments(sigma_delay_per_scan)
+ax.set_ylim(1.2 * ax.get_ylim()[0], 1.2 * ax.get_ylim()[1])
+plt.xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
 plt.ylabel('Delay (seconds)')
 plt.title('Standard deviation of group delay')
 
