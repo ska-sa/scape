@@ -24,7 +24,7 @@ d = scape.DataSet(args[0])
 d = d.select(labelkeep='scan', freqkeep=range(100, 420), copy=True)
 
 # Iterate through all scans
-group_delay_per_scan, sigma_delay_per_scan, targetdir_per_scan = [], [], []
+group_delay_per_scan, sigma_delay_per_scan, augmented_targetdir_per_scan = [], [], []
 for compscan in d.compscans:
     for scan in compscan.scans:
         # Group delay is proportional to phase slope across the band - estimate this as
@@ -43,16 +43,16 @@ for compscan in d.compscans:
         # The estimated mean group delay is the average of N-1 per-channel differences. Since this is less
         # variable than the per-channel data itself, we have to divide the data sigma by sqrt(N-1).
         sigma_delay_per_scan.append(delay_stats.sigma / np.sqrt(len(d.freqs) - 1))
-        # Obtain vectors pointing from antenna 1 to target for each scan
+        # Obtain unit vectors pointing from antenna 1 to target for each timestamp in scan
         az, el = compscan.target.azel(scan.timestamps, d.antenna)
-        targetdir_per_scan.append(np.array(katpoint.azel_to_enu(az, el)))
+        targetdir = np.array(katpoint.azel_to_enu(az, el))
+        # Invert sign of target vector, as positive dot product with baseline implies negative delay / advance
+        # Augment target vector with a 1, as this allows fitting of constant (receiver) delay
+        augmented_targetdir_per_scan.append(np.vstack((-targetdir, np.ones(len(el)))))
 # Concatenate per-scan arrays into a single array for data set
 group_delay = np.hstack(group_delay_per_scan)
 sigma_delay = np.hstack(sigma_delay_per_scan)
-targetdir = np.hstack(targetdir_per_scan)
-# Augment target vector with a 1, as this allows fitting of constant (receiver) delay
-# Also invert sign of target vector, as positive dot product with baseline implies negative delay / advance
-augmented_targetdir = np.vstack((-targetdir, np.ones(targetdir.shape[1])))
+augmented_targetdir = np.hstack(augmented_targetdir_per_scan)
 
 # Construct design matrix, containing weighted basis functions
 A = augmented_targetdir / sigma_delay
@@ -62,7 +62,7 @@ b = group_delay / sigma_delay
 U, s, Vt = np.linalg.svd(A.transpose(), full_matrices=False)
 augmented_baseline = np.dot(Vt.T, np.dot(U.T, b) / s)
 # Also obtain standard errors of parameters (see NRinC, 2nd ed, Eq. 15.4.19)
-sigma_augmented_baseline = np.sum((Vt.T / s[np.newaxis, :]) ** 2, axis=1)
+sigma_augmented_baseline = np.sqrt(np.sum((Vt.T / s[np.newaxis, :]) ** 2, axis=1))
 
 # Convert to useful output (baseline ENU offsets in metres, and receiver delay in seconds)
 baseline = augmented_baseline[:3] * katpoint.lightspeed
@@ -75,9 +75,8 @@ d2 = d.select(copy=True)
 fitted_delay_per_scan = []
 time_origin = np.min([scan.timestamps.min() for scan in d2.scans])
 for n, scan in enumerate(d2.scans):
-    targdir = targetdir_per_scan[n]
     # Store fitted delay and other delays with corresponding timestamps, to allow compacted plot
-    fitted_delay = np.dot(augmented_baseline, np.vstack((-targdir, np.ones(targdir.shape[1]))))
+    fitted_delay = np.dot(augmented_baseline, augmented_targetdir_per_scan[n])
     fitted_delay_per_scan.append(np.vstack((scan.timestamps - time_origin, fitted_delay)).transpose())
     group_delay_per_scan[n] = np.vstack((scan.timestamps - time_origin, group_delay_per_scan[n])).transpose()
     sigma_delay_per_scan[n] = np.vstack((scan.timestamps - time_origin, sigma_delay_per_scan[n])).transpose()
