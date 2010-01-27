@@ -27,18 +27,22 @@ d = d.select(labelkeep='scan', freqkeep=range(100, 420), copy=True)
 group_delay_per_scan, sigma_delay_per_scan, targetdir_per_scan = [], [], []
 for compscan in d.compscans:
     for scan in compscan.scans:
-        # Group delay is proportional to phase slope across the band - start with rads / MHz
+        # Group delay is proportional to phase slope across the band - estimate this as
+        # the phase difference between consecutive frequency channels calculated via np.diff.
         # Pick antenna 1 as reference antenna -> correlation product XY* means we
-        # actually measure phase(antenna1) - phase(antenna2), therefore flip the sign
-        phase_slope_per_MHz = np.diff(-np.angle(scan.pol('HH')), axis=1) / np.abs(np.diff(d.freqs))
-        # Convert to delay in seconds
-        delay = phase_slope_per_MHz / 1e6 / (-2.0 * np.pi)
+        # actually measure phase(antenna1) - phase(antenna2), therefore flip the sign.
+        # Also divide by channel frequency difference, which correctly handles gaps in frequency coverage.
+        phase_diff_per_MHz = np.diff(-np.angle(scan.pol('HH')), axis=1) / np.abs(np.diff(d.freqs))
+        # Convert to a delay in seconds
+        delay = phase_diff_per_MHz / 1e6 / (-2.0 * np.pi)
         # The maximum delay that can be represented in the sampled phase slope is 1 / channel_bandwidth
         # Thereafter, it repeats periodically -> focus on primary range of +- 0.5 / channel_bandwidth
-        # Obtain robust periodic statistics for delay based on this argument
+        # Obtain robust periodic statistics for *per-channel* phase difference based on this argument
         delay_stats = scape.stats.periodic_mu_sigma(delay, axis=1, period=1e-6 / d.bandwidths[0])
         group_delay_per_scan.append(delay_stats.mu)
-        sigma_delay_per_scan.append(delay_stats.sigma)
+        # The estimated mean group delay is the average of N-1 per-channel differences. Since this is less
+        # variable than the per-channel data itself, we have to divide the data sigma by sqrt(N-1).
+        sigma_delay_per_scan.append(delay_stats.sigma / np.sqrt(len(d.freqs) - 1))
         # Obtain vectors pointing from antenna 1 to target for each scan
         az, el = compscan.target.azel(scan.timestamps, d.antenna)
         targetdir_per_scan.append(np.array(katpoint.azel_to_enu(az, el)))
@@ -116,5 +120,32 @@ plt.figure(3)
 plt.clf()
 scape.plot_fringes(d2)
 plt.title('Fringes after stopping')
+
+# plt.figure(4)
+# plt.clf()
+# ax = plt.subplot(311)
+# scape.plots_basic.plot_compacted_line_segments(group_delay_per_scan, labels)
+# scape.plots_basic.plot_compacted_line_segments(fitted_delay_per_scan, color='r')
+# ylim_max = np.max(np.abs(ax.get_ylim()))
+# ax.set_ylim(-1.1 * ylim_max, 1.1 * ylim_max)
+# left, right, bottom, top = 870, 1140, -1.8e-7, -1.2e-7
+# ax.add_patch(plt.Rectangle((left, bottom), right - left, top - bottom, fill=False, ec='g', lw=2))
+# plt.ylabel('Delay (seconds)')
+# plt.title('Group delay')
+# ax = plt.subplot(312)
+# scape.plots_basic.plot_compacted_line_segments(group_delay_per_scan, labels)
+# scape.plots_basic.plot_compacted_line_segments(fitted_delay_per_scan, color='r')
+# ax.set_xlim(left, right)
+# ax.set_ylim(bottom, top)
+# left, right, bottom, top = 1000, 1066, -1.67364e-7, -1.66716e-7
+# ax.add_patch(plt.Rectangle((left, bottom), right - left, top - bottom, fill=False, ec='g', lw=2))
+# plt.ylabel('Delay (seconds)')
+# ax = plt.subplot(313)
+# scape.plots_basic.plot_compacted_line_segments(group_delay_per_scan, labels)
+# scape.plots_basic.plot_compacted_line_segments(fitted_delay_per_scan, color='r')
+# ax.set_xlim(left, right)
+# ax.set_ylim(bottom, top)
+# plt.xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
+# plt.ylabel('Delay (seconds)')
 
 plt.show()
