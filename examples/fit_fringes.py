@@ -69,6 +69,10 @@ baseline = augmented_baseline[:3] * katpoint.lightspeed
 sigma_baseline = sigma_augmented_baseline[:3] * katpoint.lightspeed
 receiver_delay = augmented_baseline[3]
 sigma_receiver_delay = sigma_augmented_baseline[3]
+# The speed of light in the fibres is lower than in vacuum
+cable_lightspeed = katpoint.lightspeed / 1.4
+cable_length_diff = augmented_baseline[3] * cable_lightspeed
+sigma_cable_length_diff = sigma_augmented_baseline[3] * cable_lightspeed
 
 # Stop the fringes (make a copy of the data first)
 d2 = d.select(copy=True)
@@ -83,7 +87,8 @@ for n, scan in enumerate(d2.scans):
     # Stop the fringes (remember that HH phase is antenna1 - antenna2, need to *add* fitted delay to fix it)
     scan.data[:,:,0] *= np.exp(2j * np.pi * np.outer(fitted_delay, d2.freqs * 1e6))
 old_baseline = d.antenna.baseline_toward(d.antenna2)
-old_receiver_delay = 5.0808482980582519e-07 - 4.4597519527992932e-07
+old_cable_length_diff = 13.3
+old_receiver_delay = old_cable_length_diff / cable_lightspeed
 labels = [str(n) for n in xrange(len(d2.scans))]
 
 # Produce output plots and results
@@ -92,6 +97,7 @@ print "E: %.3f,       %.3f,   %g" % (baseline[0], old_baseline[0], sigma_baselin
 print "N: %.3f,       %.3f,   %g" % (baseline[1], old_baseline[1], sigma_baseline[1])
 print "U: %.3f,       %.3f,   %g" % (baseline[2], old_baseline[2], sigma_baseline[2])
 print "Receiver delay (ns): %.3f, %.3f, %g" % (receiver_delay * 1e9, old_receiver_delay * 1e9, sigma_receiver_delay * 1e9)
+print "Cable length difference (m): %.3f, %.3f, %g" % (cable_length_diff, old_cable_length_diff, sigma_cable_length_diff)
 
 plt.figure(1)
 plt.clf()
