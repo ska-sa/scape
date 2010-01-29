@@ -548,7 +548,7 @@ class DataSet(object):
         self.corrconf.merge(channels_per_band)
         return self
 
-    def fit_beams_and_baselines(self, pol='I', band=0, circular_beam=True, **kwargs):
+    def fit_beams_and_baselines(self, pol='I', band=0, circular_beam=True, compscan=-1, **kwargs):
         """Simultaneously fit beams and baselines to all compound scans.
 
         This fits a beam pattern and baseline to the total power data of all the
@@ -565,6 +565,8 @@ class DataSet(object):
             Frequency band in which to fit beam and baseline(s)
         circular_beam : {True, False}, optional
             True forces beam to be circular; False allows for elliptical beam
+        compscan : integer, optional
+            Index of compound scan to fit beam to (default is all compound scans)
         kwargs : dict, optional
             Extra keyword arguments are passed to underlying :mod:`beam_baseline`
             functions
@@ -575,6 +577,11 @@ class DataSet(object):
             Data set with fitted beam/baseline functions added
 
         """
+        # Select all or one compscan
+        if compscan == -1:
+            compscans = self.compscans
+        else:
+            compscans = [self.compscans[compscan]]
         # FWHM beamwidth for uniformly illuminated circular dish is 1.03 lambda / D
         # FWHM beamwidth for Gaussian-tapered circular dish is 1.22 lambda / D
         # We are somewhere in between (the factor 1.178 is based on measurements of XDM)
@@ -585,7 +592,7 @@ class DataSet(object):
         # Degrees of freedom is time-bandwidth product (2 * BW * t_dump) of each sample
         # Stokes I would have double this value, as it is the sum of the independent XX and YY samples
         dof = 2.0 * (self.bandwidths[band] * 1e6) / self.dump_rate
-        for compscan in self.compscans:
+        for compscan in compscans:
             compscan.beam, baselines, compscan.baseline = fit_beam_and_baselines(compscan, expected_width, dof,
                                                                                  pol=pol, band=band, **kwargs)
             for scan, bl in zip(compscan.scans, baselines):
