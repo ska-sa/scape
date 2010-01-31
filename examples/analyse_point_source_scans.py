@@ -166,17 +166,17 @@ def next_load_reduce_plot(fig=None):
     average_flux = np.mean([flux for flux in flux_spectrum if flux])
 
     # Obtain middle timestamp of compound scan, where all pointing calculations are done
-    middle_time = np.median([scan.timestamps for scan in compscan.scans], axis=None)
+    middle_time = np.median(np.hstack([scan.timestamps for scan in compscan.scans]), axis=None)
     # Obtain average environmental data
-    temperature = np.mean([scan.enviro_ambient['temperature'] for scan in d.scans
-                           if (scan.enviro_ambient is not None) and
-                              scan.enviro_ambient.dtype.fields.has_key('temperature')])
-    pressure = np.mean([scan.enviro_ambient['pressure'] for scan in d.scans
-                        if (scan.enviro_ambient is not None) and
-                           scan.enviro_ambient.dtype.fields.has_key('pressure')])
-    humidity = np.mean([scan.enviro_ambient['humidity'] for scan in d.scans
-                        if (scan.enviro_ambient is not None) and
-                           scan.enviro_ambient.dtype.fields.has_key('humidity')])
+    temperature = np.mean(np.hstack([scan.enviro_ambient['temperature'] for scan in d.scans
+                                     if (scan.enviro_ambient is not None) and
+                                        scan.enviro_ambient.dtype.fields.has_key('temperature')]))
+    pressure = np.mean(np.hstack([scan.enviro_ambient['pressure'] for scan in d.scans
+                                  if (scan.enviro_ambient is not None) and
+                                     scan.enviro_ambient.dtype.fields.has_key('pressure')]))
+    humidity = np.mean(np.hstack([scan.enviro_ambient['humidity'] for scan in d.scans
+                                  if (scan.enviro_ambient is not None) and
+                                     scan.enviro_ambient.dtype.fields.has_key('humidity')]))
     wind_speed = np.hstack([scan.enviro_wind['wind_speed'] for scan in d.scans
                             if (scan.enviro_wind is not None) and
                                scan.enviro_wind.dtype.fields.has_key('wind_speed')])
