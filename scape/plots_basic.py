@@ -156,6 +156,8 @@ def plot_compacted_images(imdata, xticks, labels=None, ylim=None, clim=None, gre
         clim = (np.min([im.min() for im in imdata]), np.max([im.max() for im in imdata]))
     if ylim is None:
         ylim = (1, imdata[0].shape[0])
+    if labels is None:
+        labels = []
     start = np.array([x.min() for x in xticks])
     end = np.array([x.max() for x in xticks])
     compacted_start = [0.0] + np.cumsum(end - start).tolist()
