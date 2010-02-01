@@ -52,7 +52,7 @@ fh.setLevel(logging.DEBUG)
 fh.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
 logger.addHandler(fh)
 
-# Load catalogue used to convert ACSM targets to katpoint ones
+# Load catalogue used to convert ACSM targets to katpoint ones (only needed for XDM data files)
 try:
     cat = katpoint.Catalogue(file(options.catfilename), add_specials=False)
 except IOError:
@@ -76,33 +76,17 @@ for arg in args:
 if len(datasets) == 0:
     logger.error('No data sets (HDF5 or XDM FITS) found')
     sys.exit(1)
-# Index to step through data sets as the buttons are pressed
-index = 0
+# Indices to step through data sets and compound scans as the buttons are pressed
+dataset_index = compscan_index = 0
+# Remember current data set (useful when iterating through multiple compscans inside the set)
+current_dataset = None
+channel_freqs = []
+beam_data = [[] for dataset in datasets]
 output_data = []
 antenna = None
 
-def next_load_reduce_plot(fig=None):
-    """Load next data set, reduce the data, update the plots in given figure and store output data."""
-    # If end of list is reached, save output data to file and exit
-    global index, antenna
-    if index >= len(datasets):
-        f = file(options.outfilebase + '.csv', 'w')
-        f.write('# antenna = %s\n' % antenna.description)
-        f.write('dataset, target, timestamp_ut, azimuth, elevation, delta_azimuth, delta_elevation, data_unit, ' +
-                'beam_height_I, beam_width_I, baseline_height_I, refined_I, beam_height_XX, beam_width_XX, ' +
-                'baseline_height_XX, refined_XX, beam_height_YY, beam_width_YY, baseline_height_YY, refined_YY, ' +
-                'frequency, flux, temperature, pressure, humidity, wind_speed, wind_direction\n')
-        f.writelines([(('%s, %s, %s, %.7f, %.7f, %.7f, %.7f, %s, %.7f, %.7f, %.7f, %d, %.7f, %.7f, %.7f, %d, %.7f, ' +
-                        '%.7f, %.7f, %d, %.7f, %.4f, %.2f, %.2f, %.2f, %.2f, %.2f\n') % p) for p in output_data if p])
-        f.close()
-        sys.exit(0)
-
-    # Load next data set
-    filename = datasets[index]
-    index += 1
-    logger.info("Loading dataset '%s'" % (filename,))
-    d = scape.DataSet(filename, catalogue=cat, pointing_model=pm)
-    antenna = d.antenna
+def dataset_name(filename):
+    """Convert filename to more compact data set name."""
     if filename.endswith('.fits'):
         dirs = filename.split(os.path.sep)
         if dirs[0] == '.':
@@ -114,53 +98,109 @@ def next_load_reduce_plot(fig=None):
     else:
         name = os.path.splitext(os.path.basename(filename))[0]
 
-    # Standard reduction
-    d.remove_rfi_channels()
-    d.convert_power_to_temperature()
-    d = d.select(labelkeep='scan')
-    # Save original channel frequencies before averaging
-    channel_freqs = d.freqs
-    d.average()
+def load_reduce(index):
+    """Load data set and do data reduction on data set level, storing beam fits per compound scan."""
+    # Global variables that will be modified inside this function
+    global current_dataset, channel_freqs, beam_data, antenna
 
-    # Handle missing data gracefully
-    if len(d.compscans) == 0:
+    filename = datasets[index]
+    logger.info("Loading dataset '%s'" % (filename,))
+    current_dataset = scape.DataSet(filename, catalogue=cat, pointing_model=pm)
+
+    # Skip data set if antenna differs from the first antenna found, or no scans found
+    if antenna is None or (antenna.name == current_dataset.antenna.name):
+        antenna = current_dataset.antenna
+    else:
+        logger.warning('Data set has different antenna (expected "%s", found "%s"), skipping data set' %
+                       (antenna.name, current_dataset.antenna.name))
+        return False
+    if len(current_dataset.compscans) == 0:
         logger.warning('No scan data found, skipping data set')
-        output_data.append(None)
-        if not options.batch:
-            ax1.clear()
-            ax1.set_title("%s - no scan data found" % name, size='medium')
-            ax2.clear()
-            plt.draw()
-        return
-    # Only use the first compound scan in the data set (this should be expanded later)
-    compscan = d.compscans[0]
+        return False
 
-    # First fit XX and YY data, and extract beam and baseline heights and refined scan count
-    d.fit_beams_and_baselines(pol='XX', circular_beam=False)
-    beam_height_XX = compscan.beam.height if compscan.beam else np.nan
-    beam_width_XX = katpoint.rad2deg(np.mean(compscan.beam.width)) if compscan.beam else np.nan
-    baseline_height_XX = compscan.baseline_height()
-    if baseline_height_XX is None:
-        baseline_height_XX = np.nan
-    refined_XX = compscan.beam.refined if compscan.beam else 0
+    # Standard reduction
+    current_dataset.remove_rfi_channels()
+    current_dataset.convert_power_to_temperature()
+    current_dataset = current_dataset.select(labelkeep='scan')
+    # Save original channel frequencies before averaging
+    channel_freqs = current_dataset.freqs
+    current_dataset.average()
 
-    d.fit_beams_and_baselines(pol='YY', circular_beam=False)
-    beam_height_YY = compscan.beam.height if compscan.beam else np.nan
-    beam_width_YY = katpoint.rad2deg(np.mean(compscan.beam.width)) if compscan.beam else np.nan
-    baseline_height_YY = compscan.baseline_height()
-    if baseline_height_YY is None:
-        baseline_height_YY = np.nan
-    refined_YY = compscan.beam.refined if compscan.beam else 0
+    # First fit HH and VV data, and extract beam and baseline heights and refined scan count
+    current_dataset.fit_beams_and_baselines(pol='HH', circular_beam=False)
+    beam_height_HH = [compscan.beam.height if compscan.beam else np.nan for compscan in current_dataset.compscans]
+    beam_width_HH = [katpoint.rad2deg(np.mean(compscan.beam.width)) if compscan.beam else np.nan
+                     for compscan in current_dataset.compscans]
+    baseline_height_HH = [compscan.baseline_height() for compscan in current_dataset.compscans]
+    baseline_height_HH = [bh if bh is not None else np.nan for bh in baseline_height_HH]
+    refined_HH = [compscan.beam.refined if compscan.beam else 0 for compscan in current_dataset.compscans]
+
+    current_dataset.fit_beams_and_baselines(pol='VV', circular_beam=False)
+    beam_height_VV = [compscan.beam.height if compscan.beam else np.nan for compscan in current_dataset.compscans]
+    beam_width_VV = [katpoint.rad2deg(np.mean(compscan.beam.width)) if compscan.beam else np.nan
+                     for compscan in current_dataset.compscans]
+    baseline_height_VV = [compscan.baseline_height() for compscan in current_dataset.compscans]
+    baseline_height_VV = [bh if bh is not None else np.nan for bh in baseline_height_VV]
+    refined_VV = [compscan.beam.refined if compscan.beam else 0 for compscan in current_dataset.compscans]
 
     # Now fit Stokes I, as this will be used for pointing and plots as well
-    d.fit_beams_and_baselines(pol='I')
+    current_dataset.fit_beams_and_baselines(pol='I')
     # Calculate beam and baseline height and refined scan count
-    beam_height_I = compscan.beam.height if compscan.beam else np.nan
-    beam_width_I = katpoint.rad2deg(compscan.beam.width) if compscan.beam else np.nan
-    baseline_height_I = compscan.baseline_height()
-    if baseline_height_I is None:
-        baseline_height_I = np.nan
-    refined_I = compscan.beam.refined if compscan.beam else 0
+    beam_height_I = [compscan.beam.height if compscan.beam else np.nan for compscan in current_dataset.compscans]
+    beam_width_I = [katpoint.rad2deg(np.mean(compscan.beam.width)) if compscan.beam else np.nan
+                    for compscan in current_dataset.compscans]
+    baseline_height_I = [compscan.baseline_height() for compscan in current_dataset.compscans]
+    baseline_height_I = [bh if bh is not None else np.nan for bh in baseline_height_I]
+    refined_I = [compscan.beam.refined if compscan.beam else 0 for compscan in current_dataset.compscans]
+
+    beam_data[index] = np.array([beam_height_I, beam_width_I, baseline_height_I, refined_I,
+                                 beam_height_HH, beam_width_HH, baseline_height_HH, refined_HH,
+                                 beam_height_VV, beam_width_VV, baseline_height_VV, refined_VV]).transpose()
+    return True
+
+def next_load_reduce_plot(fig=None):
+    """Load and reduce next data set, update the plots in given figure and store output data."""
+    # Global variables that will be modified inside this function
+    global dataset_index, compscan_index, output_data
+    # Total number of compound scans in data sets prior to the current one
+    compscans_in_previous_datasets = np.sum([len(bd) for bd in beam_data[:dataset_index]], dtype=np.int)
+    # Move to next compound scan
+    if current_dataset is not None:
+        compscan_index += 1
+    # Load next data set if last compscan has been reached
+    if compscan_index - compscans_in_previous_datasets >= len(beam_data[dataset_index]):
+        if current_dataset is not None:
+            dataset_index += 1
+        # If there are no more data sets, save output data to file and exit
+        if dataset_index >= len(datasets):
+            f = file(options.outfilebase + '.csv', 'w')
+            f.write('# antenna = %s\n' % antenna.description)
+            f.write('dataset, target, timestamp_ut, azimuth, elevation, delta_azimuth, delta_elevation, data_unit, ' +
+                    'beam_height_I, beam_width_I, baseline_height_I, refined_I, beam_height_HH, beam_width_HH, ' +
+                    'baseline_height_HH, refined_HH, beam_height_VV, beam_width_VV, baseline_height_VV, refined_VV, ' +
+                    'frequency, flux, temperature, pressure, humidity, wind_speed, wind_direction\n')
+            f.writelines([(('%s, %s, %s, %.7f, %.7f, %.7f, %.7f, %s, %.7f, %.7f, %.7f, %d, %.7f, %.7f, %.7f, %d, %.7f, ' +
+                            '%.7f, %.7f, %d, %.7f, %.4f, %.2f, %.2f, %.2f, %.2f, %.2f\n') % p) for p in output_data if p])
+            f.close()
+            sys.exit(0)
+        # Load next data set
+        loaded = load_reduce(dataset_index)
+        name = dataset_name(datasets[dataset_index])
+        if not loaded:
+            if not options.batch:
+                ax1.clear()
+                ax1.set_title("%s - data set skipped" % name, size='medium')
+                ax2.clear()
+                plt.draw()
+            return
+        compscans_in_previous_datasets = np.sum([len(bd) for bd in beam_data[:dataset_index]], dtype=np.int)
+
+    # Select current compound scan and related beam data
+    compscan = current_dataset.compscans[compscan_index - compscans_in_previous_datasets]
+    name = dataset_name(datasets[dataset_index])
+    beam_params = beam_data[dataset_index][compscan_index - compscans_in_previous_datasets].tolist()
+    beam_height_I, baseline_height_I = beam_params[0], beam_params[2]
+
     # Calculate average target flux over entire band
     flux_spectrum = [compscan.target.flux_density(freq) for freq in channel_freqs]
     average_flux = np.mean([flux for flux in flux_spectrum if flux])
@@ -168,19 +208,19 @@ def next_load_reduce_plot(fig=None):
     # Obtain middle timestamp of compound scan, where all pointing calculations are done
     middle_time = np.median(np.hstack([scan.timestamps for scan in compscan.scans]), axis=None)
     # Obtain average environmental data
-    temperature = np.mean(np.hstack([scan.enviro_ambient['temperature'] for scan in d.scans
+    temperature = np.mean(np.hstack([scan.enviro_ambient['temperature'] for scan in compscan.scans
                                      if (scan.enviro_ambient is not None) and
                                         scan.enviro_ambient.dtype.fields.has_key('temperature')]))
-    pressure = np.mean(np.hstack([scan.enviro_ambient['pressure'] for scan in d.scans
+    pressure = np.mean(np.hstack([scan.enviro_ambient['pressure'] for scan in compscan.scans
                                   if (scan.enviro_ambient is not None) and
                                      scan.enviro_ambient.dtype.fields.has_key('pressure')]))
-    humidity = np.mean(np.hstack([scan.enviro_ambient['humidity'] for scan in d.scans
+    humidity = np.mean(np.hstack([scan.enviro_ambient['humidity'] for scan in compscan.scans
                                   if (scan.enviro_ambient is not None) and
                                      scan.enviro_ambient.dtype.fields.has_key('humidity')]))
-    wind_speed = np.hstack([scan.enviro_wind['wind_speed'] for scan in d.scans
+    wind_speed = np.hstack([scan.enviro_wind['wind_speed'] for scan in compscan.scans
                             if (scan.enviro_wind is not None) and
                                scan.enviro_wind.dtype.fields.has_key('wind_speed')])
-    wind_direction = katpoint.deg2rad(np.hstack([scan.enviro_wind['wind_direction'] for scan in d.scans
+    wind_direction = katpoint.deg2rad(np.hstack([scan.enviro_wind['wind_direction'] for scan in compscan.scans
                                                  if (scan.enviro_wind is not None) and
                                                     scan.enviro_wind.dtype.fields.has_key('wind_direction')]))
     wind_n, wind_e = np.mean(wind_speed * np.cos(wind_direction)), np.mean(wind_speed * np.sin(wind_direction))
@@ -212,7 +252,7 @@ def next_load_reduce_plot(fig=None):
         # Now correct the measured (az, el) for refraction and then apply the old pointing model
         # to get a "raw" measured (az, el) at the output of the pointing model
         beam_center_azel = [beam_center_azel[0], rc.apply(beam_center_azel[1], temperature, pressure, humidity)]
-        beam_center_azel = d.pointing_model.apply(*beam_center_azel)
+        beam_center_azel = current_dataset.pointing_model.apply(*beam_center_azel)
         beam_center_azel = katpoint.rad2deg(np.array(beam_center_azel))
         # Make sure the offset is a small angle around 0 degrees
         offset_azel = scape.stats.angle_wrap(beam_center_azel - requested_azel, 360.)
@@ -227,28 +267,26 @@ def next_load_reduce_plot(fig=None):
         ax1.set_title("%s '%s'\nazel=(%.1f, %.1f) deg, offset=(%.1f, %.1f) arcmin" %
                       (name, compscan.target.name, requested_azel[0], requested_azel[1],
                        60. * offset_azel[0], 60. * offset_azel[1]), size='medium')
-        ax1.set_ylabel('Total power (%s)' % d.data_unit)
+        ax1.set_ylabel('Total power (%s)' % current_dataset.data_unit)
         ax2.clear()
         scape.plot_compound_scan_on_target(compscan, ax=ax2)
         if compscan.beam:
             info.set_text("Beamwidth = %.1f' (expected %.1f')\nBeam height = %.1f %s\nBaseline height = %.1f %s" %
                           (60. * katpoint.rad2deg(compscan.beam.width),
                            60. * katpoint.rad2deg(compscan.beam.expected_width),
-                           beam_height_I, d.data_unit, baseline_height_I, d.data_unit))
+                           beam_height_I, current_dataset.data_unit, baseline_height_I, current_dataset.data_unit))
         else:
-            info.set_text("No beam\nBaseline height = %.2f %s" % (baseline_height_I, d.data_unit))
+            info.set_text("No beam\nBaseline height = %.2f %s" % (baseline_height_I, current_dataset.data_unit))
         plt.draw()
 
     # If beam is marked as invalid, discard scan only if in batch mode (otherwise discard button has to do it)
     if not compscan.beam or (options.batch and not compscan.beam.is_valid):
         output_data.append(None)
     else:
-        output_data.append((name, compscan.target.name, katpoint.Timestamp(middle_time),
+        output_data.append([name, compscan.target.name, katpoint.Timestamp(middle_time),
                             requested_azel[0], requested_azel[1], offset_azel[0], offset_azel[1],
-                            d.data_unit, beam_height_I, beam_width_I, baseline_height_I, refined_I,
-                            beam_height_XX, beam_width_XX, baseline_height_XX, refined_XX, beam_height_YY,
-                            beam_width_YY, baseline_height_YY, refined_YY, d.freqs.mean(), average_flux,
-                            temperature, pressure, humidity, wind_speed, wind_direction))
+                            current_dataset.data_unit] + beam_params + [current_dataset.freqs.mean(),
+                            average_flux, temperature, pressure, humidity, wind_speed, wind_direction])
 
 ### BATCH MODE ###
 
@@ -279,17 +317,22 @@ def discard_callback(event):
 discard_button.on_clicked(discard_callback)
 back_button = widgets.Button(plt.axes([0.7, 0.05, 0.1, 0.075]), 'Back')
 def back_callback(event):
-    global index
-    if index > 1:
-        index -= 2
+    global dataset_index, compscan_index
+    # Ignore back button unless there are two compscans in the pipeline
+    if compscan_index > 0:
+        compscan_index -= 2
+        # Go back to previous data sets until the previous good compound scan is found
+        while compscan_index < np.sum([len(bd) for bd in beam_data[:dataset_index]], dtype=np.int):
+            dataset_index -= 1
         output_data.pop()
         output_data.pop()
-    next_load_reduce_plot(fig)
+        next_load_reduce_plot(fig)
 back_button.on_clicked(back_callback)
 done_button = widgets.Button(plt.axes([0.81, 0.05, 0.1, 0.075]), 'Done')
 def done_callback(event):
-    global index
-    index = len(datasets)
+    global dataset_index, compscan_index
+    compscan_index = np.inf
+    dataset_index = len(datasets)
     next_load_reduce_plot(fig)
 done_button.on_clicked(done_callback)
 
