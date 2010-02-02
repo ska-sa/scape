@@ -153,7 +153,12 @@ def plot_compacted_images(imdata, xticks, labels=None, ylim=None, clim=None, gre
     if ax is None:
         ax = plt.gca()
     if clim is None:
-        clim = (np.min([im.min() for im in imdata]), np.max([im.max() for im in imdata]))
+        cmin = np.min([im.min() for im in imdata])
+        cmax = np.max([im.max() for im in imdata])
+        crange = cmax - cmin
+        if crange == 0.0:
+            crange = 1.0
+        clim = (cmin - 0.05 * crange, cmax + 0.05 * crange)
     if ylim is None:
         ylim = (1, imdata[0].shape[0])
     if labels is None:
