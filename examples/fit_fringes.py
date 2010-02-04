@@ -22,9 +22,18 @@ parser = optparse.OptionParser(usage="%prog [options] <data file>")
 d = scape.DataSet(args[0])
 # Discard 'slew' scans and channels outside the Fringe Finder band
 d = d.select(labelkeep='scan', freqkeep=range(100, 420), copy=True)
+time_origin = np.min([scan.timestamps.min() for scan in d.scans])
+# Since the phase slope is sampled, the derived delay exhibits aliasing with a period of 1 / channel_bandwidth
+# The maximum delay that can be reliably represented is therefore +- 0.5 / channel_bandwidth
+max_delay = 1e-6 / d.bandwidths[0] / 2
+# Maximum standard deviation of delay occurs when delay samples are uniformly distributed between +- max_delay
+# In this case, delay is completely random / unknown, and its estimate cannot be trusted
+# The division by sqrt(N-1) converts the per-channel standard deviation to a per-snapshot deviation
+max_sigma_delay = np.abs(2 * max_delay) / np.sqrt(12) / np.sqrt(len(d.freqs) - 1)
 
 # Iterate through all scans
 group_delay_per_scan, sigma_delay_per_scan, augmented_targetdir_per_scan = [], [], []
+raw_delay_per_scan, timestamps = [], []
 for compscan in d.compscans:
     for scan in compscan.scans:
         # Group delay is proportional to phase slope across the band - estimate this as
@@ -35,10 +44,11 @@ for compscan in d.compscans:
         phase_diff_per_MHz = np.diff(-np.angle(scan.pol('HH')), axis=1) / np.abs(np.diff(d.freqs))
         # Convert to a delay in seconds
         delay = phase_diff_per_MHz / 1e6 / (-2.0 * np.pi)
-        # The maximum delay that can be represented in the sampled phase slope is 1 / channel_bandwidth
-        # Thereafter, it repeats periodically -> focus on primary range of +- 0.5 / channel_bandwidth
-        # Obtain robust periodic statistics for *per-channel* phase difference based on this argument
-        delay_stats = scape.stats.periodic_mu_sigma(delay, axis=1, period=1e-6 / d.bandwidths[0])
+        # Raw delay is calculated as an intermediate step for display only - wrap this to primary interval
+        raw_delay_per_scan.append(scape.stats.angle_wrap(delay / max_delay, period=1.0).transpose())
+        timestamps.append(scan.timestamps - time_origin)
+        # Obtain robust periodic statistics for *per-channel* phase difference
+        delay_stats = scape.stats.periodic_mu_sigma(delay, axis=1, period=2 * max_delay)
         group_delay_per_scan.append(delay_stats.mu)
         # The estimated mean group delay is the average of N-1 per-channel differences. Since this is less
         # variable than the per-channel data itself, we have to divide the data sigma by sqrt(N-1).
@@ -77,19 +87,25 @@ sigma_cable_length_diff = sigma_augmented_baseline[3] * cable_lightspeed
 # Stop the fringes (make a copy of the data first)
 d2 = d.select(copy=True)
 fitted_delay_per_scan = []
-time_origin = np.min([scan.timestamps.min() for scan in d2.scans])
 for n, scan in enumerate(d2.scans):
     # Store fitted delay and other delays with corresponding timestamps, to allow compacted plot
     fitted_delay = np.dot(augmented_baseline, augmented_targetdir_per_scan[n])
-    fitted_delay_per_scan.append(np.vstack((scan.timestamps - time_origin, fitted_delay)).transpose())
-    group_delay_per_scan[n] = np.vstack((scan.timestamps - time_origin, group_delay_per_scan[n])).transpose()
-    sigma_delay_per_scan[n] = np.vstack((scan.timestamps - time_origin, sigma_delay_per_scan[n])).transpose()
+    fitted_delay_per_scan.append(np.vstack((timestamps[n], fitted_delay)).transpose())
+    group_delay_per_scan[n] = np.vstack((timestamps[n], group_delay_per_scan[n])).transpose()
+    sigma_delay_per_scan[n] = np.vstack((timestamps[n], sigma_delay_per_scan[n])).transpose()
     # Stop the fringes (remember that HH phase is antenna1 - antenna2, need to *add* fitted delay to fix it)
     scan.data[:,:,0] *= np.exp(2j * np.pi * np.outer(fitted_delay, d2.freqs * 1e6))
 old_baseline = d.antenna.baseline_toward(d.antenna2)
 old_cable_length_diff = 13.3
 old_receiver_delay = old_cable_length_diff / cable_lightspeed
 labels = [str(n) for n in xrange(len(d2.scans))]
+
+# Scale delays to be in units of ADC sample periods, and normalise sigma delay
+adc_samplerate = 800e6
+for n in xrange(len(d.scans)):
+    group_delay_per_scan[n][:, 1] *= adc_samplerate
+    fitted_delay_per_scan[n][:, 1] *= adc_samplerate
+    sigma_delay_per_scan[n][:, 1] /= max_sigma_delay
 
 # Produce output plots and results
 print "   Baseline (m), old,      stdev"
@@ -98,6 +114,15 @@ print "N: %.3f,       %.3f,   %g" % (baseline[1], old_baseline[1], sigma_baselin
 print "U: %.3f,       %.3f,   %g" % (baseline[2], old_baseline[2], sigma_baseline[2])
 print "Receiver delay (ns): %.3f, %.3f, %g" % (receiver_delay * 1e9, old_receiver_delay * 1e9, sigma_receiver_delay * 1e9)
 print "Cable length difference (m): %.3f, %.3f, %g" % (cable_length_diff, old_cable_length_diff, sigma_cable_length_diff)
+print
+print "Sources from good to bad"
+print "------------------------"
+print "(rated on stdev of group delay normalised to max = %g ns):" % (max_sigma_delay * 1e9,)
+targets = np.array([compscan.target for scan in compscan.scans for compscan in d.compscans])
+sigma_delays = np.array([sigma_delay[:, 1].mean() for sigma_delay in sigma_delay_per_scan])
+decreasing_performance = np.argsort(sigma_delays)
+for target, sigma_delay in zip(targets[decreasing_performance], sigma_delays[decreasing_performance]):
+    print "%12s = %.5g" % (target.name, sigma_delay)
 
 plt.figure(1)
 plt.clf()
@@ -106,27 +131,36 @@ plt.title('Fringes before stopping')
 
 plt.figure(2)
 plt.clf()
+scape.plots_basic.plot_compacted_images(raw_delay_per_scan, timestamps, labels,
+                                        ylim=(d.freqs[0], d.freqs[-1]), clim=(-0.5, 0.5))
+plt.xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
+plt.ylabel('Frequency (MHz)')
+plt.title('Raw per-channel delay estimates, as a fraction of maximum delay')
+
+plt.figure(3)
+plt.clf()
 ax = plt.subplot(211)
 scape.plots_basic.plot_compacted_line_segments(group_delay_per_scan, labels)
 scape.plots_basic.plot_compacted_line_segments(fitted_delay_per_scan, color='r')
 ax.set_xticklabels([])
 ylim_max = np.max(np.abs(ax.get_ylim()))
-ax.set_ylim(-1.1 * ylim_max, 1.1 * ylim_max)
-plt.ylabel('Delay (seconds)')
+ax.set_ylim(-max_delay * adc_samplerate, max_delay * adc_samplerate)
+plt.ylabel('Delay (ADC samples)')
 plt.title('Group delay')
-plt.subplot(212)
+ax = plt.subplot(212)
 scape.plots_basic.plot_compacted_line_segments(sigma_delay_per_scan)
-ax.set_ylim(1.2 * ax.get_ylim()[0], 1.2 * ax.get_ylim()[1])
+ax.set_ylim(0, 1)
 plt.xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
-plt.ylabel('Delay (seconds)')
-plt.title('Standard deviation of group delay')
+plt.ylabel('Normalised sigma')
+plt.title('Standard deviation of group delay\n(fraction of maximum = %.3g ADC samples)' % (max_sigma_delay * adc_samplerate,))
+plt.subplots_adjust(hspace=0.25)
 
-plt.figure(3)
+plt.figure(4)
 plt.clf()
 scape.plot_fringes(d2)
 plt.title('Fringes after stopping')
 
-# plt.figure(4)
+# plt.figure(5)
 # plt.clf()
 # ax = plt.subplot(311)
 # scape.plots_basic.plot_compacted_line_segments(group_delay_per_scan, labels)
