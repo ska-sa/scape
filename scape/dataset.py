@@ -125,13 +125,18 @@ class DataSet(object):
         else:
             self.pointing_model = katpoint.PointingModel(pointing_model, strict=False)
 
-        # Create scan list and calculate target coordinates for all scans
+        # Create global scan list and fill in caches and links in lower-level objects
         self.scans = []
         for compscan in self.compscans:
+            # Add link to parent in each compound scan object
+            compscan.dataset = self
             # Set default antenna on the target object to the (first) data set antenna
             compscan.target.antenna = self.antenna
             self.scans.extend(compscan.scans)
-        self.calc_cached_coords()
+            for scan in compscan.scans:
+                # Add link to parent in each scan object
+                scan.compscan = compscan
+                scan.calc_cached_coords()
 
     def __eq__(self, other):
         """Equality comparison operator."""
@@ -223,21 +228,6 @@ class DataSet(object):
                ("antenna='%s'" % self.antenna.name if self.antenna2 is None else \
                 "baseline='%s - %s'" % (self.antenna.name, self.antenna2.name),
                 len(self.compscans), id(self))
-
-    def calc_cached_coords(self):
-        """Calculate cached coordinates, using appropriate target and antenna.
-
-        This calculates the target coordinates and parallactic angle as a function
-        of time for each scan in the data set, using the compound scan target
-        object and the (first) data set antenna. This functionality is here at
-        the highest level because it involves interaction between the DataSet,
-        CompoundScan and Scan levels, while the results need to be stored at the
-        Scan level.
-
-        """
-        for compscan in self.compscans:
-            for scan in compscan.scans:
-                scan.calc_cached_coords(compscan.target, self.antenna)
 
     def save(self, filename, **kwargs):
         """Save data set object to file.

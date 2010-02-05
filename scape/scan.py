@@ -101,6 +101,8 @@ class Scan(object):
     baseline : :class:`fitting.Polynomial1DFit` object, optional
         Object that describes fitted baseline (base power level as a function of
         time, not to be confused with interferometer or spectral baseline)
+    compscan : :class:`CompoundScan` object, optional
+        Parent compound scan of which this scan forms a part
 
     Arguments
     ---------
@@ -108,8 +110,8 @@ class Scan(object):
         True if the scan contains autocorrelation data in real single-dish format
 
     """
-    def __init__(self, data, timestamps, pointing, flags, enviro_ambient, enviro_wind,
-                 label, path, target_coords=None, parangle=None, baseline=None):
+    def __init__(self, data, timestamps, pointing, flags, enviro_ambient, enviro_wind, label, path,
+                 target_coords=None, parangle=None, baseline=None, compscan=None):
         self.data = data
         self.timestamps = timestamps
         self.pointing = pointing
@@ -122,6 +124,7 @@ class Scan(object):
         self.parangle = parangle
         self.baseline = baseline
         self.has_autocorr = np.isrealobj(self.data)
+        self.compscan = compscan
 
     def __eq__(self, other):
         """Equality comparison operator."""
@@ -156,7 +159,7 @@ class Scan(object):
         """Short human-friendly string representation of scan object."""
         return "<scape.Scan '%s' data=%s at 0x%x>" % (self.label, self.data.shape, id(self))
 
-    def calc_cached_coords(self, target, antenna=None):
+    def calc_cached_coords(self, target=None, antenna=None):
         """Calculate cached coordinates, based on target and antenna objects.
 
         This calculates the coordinates of the antenna pointing on a projected
@@ -166,12 +169,26 @@ class Scan(object):
 
         Parameters
         ----------
-        target : :class:`katpoint.Target` object
-            Target object which is scanned across, obtained from CompoundScan
+        target : :class:`katpoint.Target` object, optional
+            Target object which is scanned across, obtained from associated
+            :class:`CompoundScan` by default
         antenna : :class:`katpoint.Antenna` object, optional
-            Antenna object for antenna that does scanning, obtained from DataSet
+            Antenna object for antenna that does scanning, obtained from
+            associated :class:`DataSet` by default
+
+        Raises
+        ------
+        ValueError
+            If target or antenna is not specified, and no defaults are available
 
         """
+        if target is None:
+            if self.compscan:
+                target = self.compscan.target
+            else:
+                raise ValueError('Please specify a target object')
+        if antenna is None and self.compscan and self.compscan.dataset:
+            antenna = self.compscan.dataset.antenna
         # Fix over-the-top elevations (projections can only handle elevations in range +- 90 degrees)
         over_the_top = (self.pointing['el'] > np.pi / 2.0) & (self.pointing['el'] < np.pi)
         self.pointing['az'][over_the_top] += np.pi
@@ -369,8 +386,8 @@ class Scan(object):
             if not target_coords is None:
                 target_coords = target_coords[:, timekeep]
             return Scan(selected_data, self.timestamps[timekeep], self.pointing[timekeep],
-                        self.flags[timekeep], self.enviro_ambient, self.enviro_wind,
-                        self.label, self.path, target_coords, self.baseline)
+                        self.flags[timekeep], self.enviro_ambient, self.enviro_wind, self.label,
+                        self.path, target_coords, self.baseline, self.compscan)
         # Create a shallow view of data matrix via a masked array or view
         else:
             # If data matrix is kept intact, rather just return a view instead of masked array
@@ -396,4 +413,4 @@ class Scan(object):
                 selected_data = np.ma.array(self.data, mask=~keep3d)
             return Scan(selected_data, self.timestamps, self.pointing, self.flags,
                         self.enviro_ambient, self.enviro_wind, self.label, self.path,
-                        self.target_coords, self.baseline)
+                        self.target_coords, self.baseline, self.compscan)

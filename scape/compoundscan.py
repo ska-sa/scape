@@ -137,9 +137,11 @@ class CompoundScan(object):
         Object that describes fitted beam
     baseline : :class:`fitting.Polynomial2DFit` object, optional
         Object that describes initial fitted baseline
+    dataset : :class:`DataSet` object, optional
+        Parent data set of which this compound scan forms a part
 
     """
-    def __init__(self, scanlist, target, beam=None, baseline=None):
+    def __init__(self, scanlist, target, beam=None, baseline=None, dataset=None):
         self.scans = scanlist
         if isinstance(target, katpoint.Target):
             self.target = target
@@ -147,6 +149,7 @@ class CompoundScan(object):
             self.target = katpoint.construct_target(target)
         self.beam = beam
         self.baseline = baseline
+        self.dataset = dataset
 
     def __eq__(self, other):
         """Equality comparison operator."""
