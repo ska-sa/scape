@@ -288,8 +288,9 @@ class Scan(object):
             # [Q] = [0  c -s  0] [1  0  0 -1] [VH]
             # [U]   [0  s  c  0] [0  1  1  0] [HV]
             # [V]   [0  0  0  1] [0 -j  j  0] [HH]
-            cos2pa = np.expand_dims(np.cos(2.0 * self.parangle), 1)
-            sin2pa = np.expand_dims(np.sin(2.0 * self.parangle), 1)
+            if key in ('Q', 'U'):
+                cos2pa = np.expand_dims(np.cos(2.0 * self.parangle), 1)
+                sin2pa = np.expand_dims(np.sin(2.0 * self.parangle), 1)
             if self.has_autocorr:
                 if key == 'I':
                     return HH + VV
