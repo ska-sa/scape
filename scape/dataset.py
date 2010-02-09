@@ -132,11 +132,20 @@ class DataSet(object):
             compscan.dataset = self
             # Set default antenna on the target object to the (first) data set antenna
             compscan.target.antenna = self.antenna
-            self.scans.extend(compscan.scans)
+            good_scans = []
             for scan in compscan.scans:
                 # Add link to parent in each scan object
                 scan.compscan = compscan
-                scan.calc_cached_coords()
+                # Only keep scans with good cached coordinates
+                try:
+                    scan.calc_cached_coords()
+                except ValueError:
+                    logger.warning("Discarded scan '%s' - bad target coordinates or parallactic angle" % (scan.path,))
+                    continue
+                else:
+                    good_scans.append(scan)
+            compscan.scans = good_scans
+            self.scans.extend(compscan.scans)
 
     def __eq__(self, other):
         """Equality comparison operator."""
