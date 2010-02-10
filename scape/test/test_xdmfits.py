@@ -41,7 +41,7 @@ class XDMFitsTestCases(unittest.TestCase):
                 import nose
                 raise nose.SkipTest
             except ImportError:
-                pass
+                return
 
         # Standard continuum reduction
         d.remove_rfi_channels()
