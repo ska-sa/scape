@@ -42,8 +42,8 @@ class DataSet(object):
     :class:`DataSet` can also be directly initialised from its constituent
     parts, which is useful for simulations and creating the data sets from
     scratch. The :class:`DataSet` object contains a list of compound scans, as
-    well as the correlator configuration, antenna details, and noise diode and
-    pointing models.
+    well as experiment information, the correlator configuration, antenna
+    details, receiver chain models and weather sensor data.
 
     Parameters
     ----------
@@ -51,6 +51,13 @@ class DataSet(object):
         Name of data set file, or blank string if the other parameters are given
     compscanlist : list of :class:`compoundscan.CompoundScan` objects, optional
         List of compound scans
+    experiment_id : string, optional
+        Experiment ID, a unique string used to link the data files of an
+        experiment together with blog entries, etc.
+    observer : string, optional
+        Name of person that recorded the data set
+    description : string, optional
+        Short description of the purpose of the data set
     data_unit : {'counts', 'K', 'Jy'}, optional
         Physical unit of power data
     corrconf : :class:`compoundscan.CorrelatorConfig` object, optional
@@ -58,13 +65,19 @@ class DataSet(object):
     antenna : :class:`katpoint.Antenna` object or string, optional
         Antenna that produced the data set, as object or description string. For
         interferometer data, this is the first antenna.
-    nd_data : :class:`gaincal.NoiseDiodeModel` object, optional
-        Noise diode model
-    pointing_model : :class:`katpoint.PointingModel` object or array of float, optional
-        Pointing model in use during experiment (or array of parameters in radians)
     antenna2 : :class:`katpoint.Antenna` object or string or None, optional
         Second antenna of baseline, as object or description string. This is
         *None* for single-dish autocorrelation data.
+    nd_data : :class:`gaincal.NoiseDiodeModel` object, optional
+        Noise diode model
+    enviro_ambient : record array, shape (*Ta*,) or None
+        Slowly-varying environmental measurements, containing *Ta* records.
+        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
+        and the rest of the field names correspond to ambient variables.
+    enviro_wind : record array, shape (*Tw*,) or None
+        Wind speed and direction measurements, containing *Tw* records.
+        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
+        and the rest of the field names correspond to wind variables.
     kwargs : dict, optional
         Extra keyword arguments are passed to selected :func:`load_dataset` function
 
@@ -89,26 +102,29 @@ class DataSet(object):
         If file extension is unknown or parameter is invalid
 
     """
-    def __init__(self, filename, compscanlist=None, data_unit=None, corrconf=None,
-                 antenna=None, nd_data=None, pointing_model=None, antenna2=None, **kwargs):
+    def __init__(self, filename, compscanlist=None, experiment_id=None, observer=None, description=None,
+                 data_unit=None, corrconf=None, antenna=None, antenna2=None, nd_data=None,
+                 enviro_ambient=None, enviro_wind=None, **kwargs):
+        # Load dataset from file
         if filename:
             ext = os.path.splitext(filename)[1]
             if ext == '.fits':
                 if not xdmfits_found:
                     raise ImportError('XDM FITS support could not be loaded - please check xdmfits module')
-                compscanlist, data_unit, corrconf, antenna, nd_data = xdmfits_load(filename, **kwargs)
-                antenna2 = None
+                compscanlist, data_unit, corrconf, antenna, \
+                nd_data, enviro_ambient, enviro_wind = xdmfits_load(filename, **kwargs)
             elif (ext == '.h5') or (ext == '.hdf5'):
                 if not hdf5_found:
                     raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
-                hdf5_results = hdf5_load(filename, **kwargs)
-                compscanlist, data_unit, corrconf, antenna, antenna2, nd_data = hdf5_results[:6]
-                if pointing_model is None:
-                    pointing_model = hdf5_results[6]
+                compscanlist, experiment_id, observer, description, data_unit, \
+                corrconf, antenna, antenna2, nd_data, enviro_ambient, enviro_wind = hdf5_load(filename, **kwargs)
             else:
                 raise ValueError("File extension '%s' not understood" % ext)
 
         self.compscans = compscanlist
+        self.experiment_id = experiment_id
+        self.observer = observer
+        self.description = description
         self.data_unit = data_unit
         self.corrconf = corrconf
         if isinstance(antenna, katpoint.Antenna):
@@ -120,10 +136,8 @@ class DataSet(object):
         else:
             self.antenna2 = katpoint.Antenna(antenna2)
         self.noise_diode_data = nd_data
-        if isinstance(pointing_model, katpoint.PointingModel):
-            self.pointing_model = pointing_model
-        else:
-            self.pointing_model = katpoint.PointingModel(pointing_model, strict=False)
+        self.enviro_ambient = enviro_ambient
+        self.enviro_wind = enviro_wind
 
         # Create global scan list and fill in caches and links in lower-level objects
         self.scans = []
@@ -154,13 +168,14 @@ class DataSet(object):
         for self_compscan, other_compscan in zip(self.compscans, other.compscans):
             if self_compscan != other_compscan:
                 return False
-        return (self.data_unit == other.data_unit) and (self.corrconf == other.corrconf) and \
-               (self.antenna.description == other.antenna.description) and \
+        return (self.experiment_id == other.experiment_id) and (self.observer == other.observer) and \
+               (self.description == other.description) and (self.data_unit == other.data_unit) and \
+               (self.corrconf == other.corrconf) and (self.antenna.description == other.antenna.description) and \
                ((self.antenna2 == other.antenna2 == None) or \
                 ((self.antenna2 is not None) and (other.antenna2 is not None) and \
                  self.antenna2.description == other.antenna2.description)) and \
                (self.noise_diode_data == other.noise_diode_data) and \
-               np.all(self.pointing_model.params == other.pointing_model.params)
+               (self.enviro_ambient == other.enviro_ambient) and (self.enviro_wind == other.enviro_wind)
 
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -192,15 +207,15 @@ class DataSet(object):
     bandwidths = property(**bandwidths())
 
     # pylint: disable-msg=E0211,E0202,W0612,W0142
-    def rfi_channels():
-        """Class method which creates rfi_channels property."""
-        doc = 'List of RFI-flagged channels.'
+    def channel_select():
+        """Class method which creates channel_select property."""
+        doc = 'List of selected channels.'
         def fget(self):
-            return self.corrconf.rfi_channels
+            return self.corrconf.channel_select
         def fset(self, value):
-            self.corrconf.rfi_channels = value
+            self.corrconf.channel_select = value
         return locals()
-    rfi_channels = property(**rfi_channels())
+    channel_select = property(**channel_select())
 
     # pylint: disable-msg=E0211,E0202,W0612,W0142
     def dump_rate():
@@ -215,7 +230,8 @@ class DataSet(object):
 
     def __str__(self):
         """Verbose human-friendly string representation of data set object."""
-        descr = ["%s, data_unit=%s, bands=%d, freqs=%f - %f MHz, total bw=%f MHz, dumprate=%f Hz" %
+        descr = ["%s | %s" % (self.experiment_id, self.observer), self.description,
+                 "%s, data_unit=%s, bands=%d, freqs=%f - %f MHz, total bw=%f MHz, dumprate=%f Hz" %
                  ("antenna='%s'" % self.antenna.name if self.antenna2 is None else \
                   "baseline='%s - %s'" % (self.antenna.name, self.antenna2.name),
                   self.data_unit, len(self.freqs), self.freqs[0], self.freqs[-1],
@@ -233,10 +249,10 @@ class DataSet(object):
 
     def __repr__(self):
         """Short human-friendly string representation of data set object."""
-        return "<scape.DataSet %s compscans=%d at 0x%x>" % \
-               ("antenna='%s'" % self.antenna.name if self.antenna2 is None else \
-                "baseline='%s - %s'" % (self.antenna.name, self.antenna2.name),
-                len(self.compscans), id(self))
+        return "<scape.DataSet %s %s compscans=%d at 0x%x>" % (self.experiment_id,
+               "antenna='%s'" % self.antenna.name if self.antenna2 is None else
+               "baseline='%s - %s'" % (self.antenna.name, self.antenna2.name),
+               len(self.compscans), id(self))
 
     def save(self, filename, **kwargs):
         """Save data set object to file.
@@ -351,8 +367,10 @@ class DataSet(object):
                     scanlist.append(scan.select(timekeep, freqkeep, copy))
             if scanlist:
                 compscanlist.append(CompoundScan(scanlist, compscan.target))
-        return DataSet(None, compscanlist, self.data_unit, self.corrconf.select(freqkeep),
-                       self.antenna, self.noise_diode_data, self.pointing_model, self.antenna2)
+        return DataSet(None, compscanlist, self.experiment_id, self.observer,
+                       self.description, self.data_unit, self.corrconf.select(freqkeep),
+                       self.antenna, self.antenna2, self.noise_diode_data,
+                       self.enviro_ambient, self.enviro_wind)
 
     def identify_rfi_channels(self, sigma=8.0, min_bad_scans=0.25, extra_outputs=False):
         """Identify potential RFI-corrupted channels.
@@ -428,7 +446,7 @@ class DataSet(object):
         non_rfi = sorted(list(set(range(len(self.freqs))) - set(rfi_channels)))
         d = self.select(freqkeep=non_rfi, copy=True)
         DataSet.__init__(self, None, d.compscans, d.data_unit, d.corrconf,
-                         d.antenna, d.noise_diode_data, d.pointing_model, d.antenna2)
+                         d.antenna, d.antenna2, d.noise_diode_data, d.enviro_ambient, d.enviro_wind)
         return self
 
     def convert_power_to_temperature(self, randomise=False, **kwargs):

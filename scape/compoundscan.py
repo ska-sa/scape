@@ -37,8 +37,9 @@ class CorrelatorConfig(object):
         Sequence of channel/band centre frequencies, in MHz
     bandwidths : real array-like, shape (*F*,)
         Sequence of channel/band bandwidths, in MHz
-    rfi_channels : list of ints
-        RFI-flagged channel indices
+    channel_select : list of ints
+        Indices of selected channels, useful for flagging RFI-corrupted channels
+        or to provide a standard channel mask
     dump_rate : float
         Correlator dump rate, in Hz
 
@@ -52,17 +53,17 @@ class CorrelatorConfig(object):
     its own module.
 
     """
-    def __init__(self, freqs, bandwidths, rfi_channels, dump_rate):
+    def __init__(self, freqs, bandwidths, channel_select, dump_rate):
         # Keep as doubles to prevent precision issues
         self.freqs = np.asarray(freqs, dtype='double')
         self.bandwidths = np.asarray(bandwidths, dtype='double')
-        self.rfi_channels = rfi_channels
+        self.channel_select = channel_select
         self.dump_rate = dump_rate
 
     def __eq__(self, other):
         """Equality comparison operator."""
         return np.all(self.freqs == other.freqs) and np.all(self.bandwidths == other.bandwidths) and \
-               np.all(self.rfi_channels == other.rfi_channels) and (self.dump_rate == other.dump_rate)
+               np.all(self.channel_select == other.channel_select) and (self.dump_rate == other.dump_rate)
 
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -89,9 +90,9 @@ class CorrelatorConfig(object):
         elif np.asarray(freqkeep).dtype == 'bool':
             freqkeep = np.asarray(freqkeep).nonzero()[0]
         # Make sure freqkeep is a list, as we need to call its .index method
-        freqkeep = np.asarray(freqkeep).tolist()
+        freqkeep = list(freqkeep)
         return CorrelatorConfig(self.freqs[freqkeep], self.bandwidths[freqkeep],
-                                [freqkeep.index(n) for n in (set(self.rfi_channels) & set(freqkeep))],
+                                [freqkeep.index(n) for n in (set(self.channel_select) & set(freqkeep))],
                                 self.dump_rate)
 
     def merge(self, channels_per_band):
@@ -101,7 +102,7 @@ class CorrelatorConfig(object):
         Each band centre frequency is the mean of the corresponding channel
         group's frequencies, while the band bandwidth is the sum of the
         corresponding channel group's bandwidths. Any band containing an
-        RFI-flagged channel is RFI-flagged too.
+        selected channel is selected too.
 
         Parameters
         ----------
@@ -115,9 +116,9 @@ class CorrelatorConfig(object):
         # Each band bandwidth is the sum of the corresponding channel bandwidths
         self.bandwidths = np.array([self.bandwidths[chans].sum() for chans in channels_per_band],
                                    dtype='double')
-        # If the band contains *any* RFI-flagged channel, it is RFI-flagged too
-        self.rfi_channels = np.array([(len(set(chans) & set(self.rfi_channels)) > 0)
-                                      for chans in channels_per_band], dtype='bool').nonzero()[0].tolist()
+        # If the band contains *any* selected channel, it is selected too
+        self.channel_select = np.array([(len(set(chans) & set(self.channel_select)) > 0)
+                                        for chans in channels_per_band], dtype='bool').nonzero()[0].tolist()
         return self
 
 #--------------------------------------------------------------------------------------------------
@@ -133,6 +134,8 @@ class CompoundScan(object):
         List of scan objects
     target : :class:`katpoint.Target` object, or string
         The target of this compound scan, or its description string
+    label : string, optional
+        Compound scan label, used to indicate type of compound scan
     beam : :class:`beam_baseline.BeamPatternFit` object, optional
         Object that describes fitted beam
     baseline : :class:`fitting.Polynomial2DFit` object, optional
@@ -141,12 +144,13 @@ class CompoundScan(object):
         Parent data set of which this compound scan forms a part
 
     """
-    def __init__(self, scanlist, target, beam=None, baseline=None, dataset=None):
+    def __init__(self, scanlist, target, label=None, beam=None, baseline=None, dataset=None):
         self.scans = scanlist
         if isinstance(target, katpoint.Target):
             self.target = target
         else:
             self.target = katpoint.construct_target(target)
+        self.label = label if label is not None else ''
         self.beam = beam
         self.baseline = baseline
         self.dataset = dataset
@@ -158,7 +162,7 @@ class CompoundScan(object):
         for self_scan, other_scan in zip(self.scans, other.scans):
             if self_scan != other_scan:
                 return False
-        return (self.target.description == other.target.description)
+        return (self.target.description == other.target.description) and (self.label == other.label)
 
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -166,7 +170,10 @@ class CompoundScan(object):
 
     def __str__(self):
         """Verbose human-friendly string representation of compound scan object."""
-        descr = ["target='%s' [%s]" % (self.target.name, self.target.body_type)]
+        if len(self.label) > 0:
+            descr = ["'%s', target='%s' [%s]" % (self.label, self.target.name, self.target.body_type)]
+        else:
+            descr = ["target='%s' [%s]" % (self.target.name, self.target.body_type)]
         if self.baseline:
             descr[0] += ', initial baseline offset=%f' % (self.baseline.poly[-1],)
         if self.beam:
@@ -177,7 +184,8 @@ class CompoundScan(object):
 
     def __repr__(self):
         """Short human-friendly string representation of compound scan object."""
-        return "<scape.CompoundScan target='%s' scans=%d at 0x%x>" % (self.target.name, len(self.scans), id(self))
+        return "<scape.CompoundScan '%s' target='%s' scans=%d at 0x%x>" % \
+               (self.label, self.target.name, len(self.scans), id(self))
 
     def baseline_height(self):
         """Estimate height of fitted baseline (at fitted beam center).

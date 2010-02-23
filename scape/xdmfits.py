@@ -218,6 +218,14 @@ def load_scan(filename):
         Experiment sequence number associated with scan
     feed_id : int
         Index of feed used (0 for main feed or 1 for offset feed)
+    enviro_ambient : record array, shape (*Ta*,)
+        Slowly-varying environmental measurements, containing *Ta* records.
+        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
+        and the rest of the field names correspond to ambient variables.
+    enviro_wind : record array, shape (*Tw*,)
+        Wind speed and direction measurements, containing *Tw* records.
+        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
+        and the rest of the field names correspond to wind variables.
 
     Raises
     ------
@@ -282,8 +290,8 @@ def load_scan(filename):
     target = acsm_target_description(cPickle.loads(hdu['OBJECTS'].data.field('Target')[0]))
     antenna = acsm_antenna_description(cPickle.loads(hdu['OBJECTS'].data.field('Mount')[0]))
 
-    return Scan(data, timestamps, pointing, flags, enviro_ambient, enviro_wind, label, path), \
-           data_unit, corrconf, target, antenna, exp_seq_num, feed_id
+    return Scan(data, timestamps, pointing, flags, label, path), \
+           data_unit, corrconf, target, antenna, exp_seq_num, feed_id, enviro_ambient, enviro_wind
 
 # pylint: disable-msg=W0613
 def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False, **kwargs):
@@ -321,6 +329,14 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
         Description string of antenna that produced the data set
     nd_data : :class:`NoiseDiodeXDM` object
         Noise diode model
+    enviro_ambient : record array, shape (*Ta*,)
+        Slowly-varying environmental measurements, containing *Ta* records.
+        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
+        and the rest of the field names correspond to ambient variables.
+    enviro_wind : record array, shape (*Tw*,)
+        Wind speed and direction measurements, containing *Tw* records.
+        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
+        and the rest of the field names correspond to wind variables.
 
     Raises
     ------
@@ -352,8 +368,11 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
     # Group all FITS files (= scans) with the same experiment sequence number into a compound scan
     scanlists, targets = {}, {}
     nd_data = None
+    enviro_ambient, enviro_wind = [], []
     for fits_file in filelist:
-        scan, data_unit, corrconf, target, antenna, exp_seq_num, feed_id = load_scan(fits_file)
+        scan, data_unit, corrconf, target, antenna, exp_seq_num, feed_id, ambient, wind = load_scan(fits_file)
+        enviro_ambient.append(ambient)
+        enviro_wind.append(wind)
         if swap_hv:
             scan.swap_h_and_v()
         if scanlists.has_key(exp_seq_num):
@@ -385,6 +404,7 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
         logger.info("Loaded %s: %s '%s' [%s] (%d samps, %d chans, %d pols)" %
                     (os.path.basename(fits_file), scan.label, target.name, target.body_type,
                      scan.data.shape[0], scan.data.shape[1], scan.data.shape[2]))
+    enviro_ambient, enviro_wind = np.hstack(enviro_ambient), np.hstack(enviro_wind)
     # Assemble CompoundScan objects from scan lists
     compscanlist = []
     for esn, scanlist in scanlists.iteritems():
@@ -415,4 +435,4 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
                     logger.warning("No target in catalogue close enough to '%s' (closest is %.1f arcsecs away)" %
                                    (target.name, rad2deg(distance[closest]) * 3600.))
         compscanlist.append(CompoundScan(scanlist, target))
-    return compscanlist, data_unit, corrconf, antenna, nd_data
+    return compscanlist, data_unit, corrconf, antenna, nd_data, enviro_ambient, enviro_wind

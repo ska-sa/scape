@@ -3,6 +3,7 @@
 from __future__ import with_statement
 
 import logging
+import re
 
 import h5py
 import numpy as np
@@ -14,28 +15,80 @@ from .fitting import PiecewisePolynomial1DFit, Independent1DFit
 
 logger = logging.getLogger("scape.hdf5")
 
-# Mapping from scape polarisation component to corresponding HDF5 correlation product
-scape_to_hdf5 = {'HH' : 'AxBx', 'VV' : 'AyBy', 'HV' : 'AxBy', 'VH' : 'AyBx'}
+# Parse baseline string into antenna indices
+baseline_pattern = re.compile('A(\d+)A(\d+)')
+# Parse antenna name
+antenna_name_pattern = re.compile('ant(\d+)')
+
+def remove_duplicates(x, y, xname='timestamps', yname='sensor'):
+    """Remove duplicate x values and their corresponding y values.
+
+    This sorts the *x* array and removes any duplicate values, updating the
+    corresponding *y* array as well. If more than one *x* have the same value,
+    the *y* value of the last of these *x* values are selected. If the *y*
+    values differ for the same *x* value, a warning is logged (and the last one
+    is still picked).
+
+    Parameters
+    ----------
+    x, y : array-like, shape (N,)
+        Sequence of *x* and *y* values
+    xname, yname : string, optional
+        String used to identify *x* and *y* values in warning message
+
+    Returns
+    -------
+    unique_x, unique_y : array-like, shape (M,)
+        Sequence of unique *x* values and the corresponding *y* values (M <= N)
+
+    Notes
+    -----
+    This is typically required to clean up KAT sensor data, which frequently
+    contains duplicate data points. The sensor values are typically functions of
+    time, hence the default *xname* and *yname*.
+
+    """
+    # Sort x via mergesort, as it is usually already sorted and stability is important
+    sort_ind = np.argsort(x, kind='mergesort')
+    x, y = x[sort_ind], y[sort_ind]
+    # Array contains True where an x value is unique or the last of a run of identical x values
+    last_of_run = np.asarray(list(np.diff(x) != 0) + [True])
+    # Discard the False values, as they represent duplicates - simultaneously keep last of each run of duplicates
+    unique_ind = last_of_run.nonzero()[0]
+    # Determine the index of the x value chosen to represent each original x value (used to pick y values too)
+    replacement = unique_ind[len(unique_ind) - np.cumsum(last_of_run[::-1])[::-1]]
+    # All duplicates should have the same y value - complain otherwise, but continue
+    if not np.all(y[replacement] == y):
+        logger.warning('Duplicate %s found with different %s values - last value picked in each case' % (xname, yname))
+    return x[unique_ind], y[unique_ind]
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  load_dataset
 #--------------------------------------------------------------------------------------------------
 
 # pylint: disable-msg=W0613
-def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
+def load_dataset(filename, baseline='A1A1', selected_pointing='pos_actual_scan', noise_diode='coupler', **kwargs):
     """Load data set from HDF5 file.
 
-    This loads a data set from an HDF5 file.
+    This loads a data set from an HDF5 file. The file contains all the baselines
+    for the experiment, but :mod:`scape` only operates on one baseline at a time.
+    The *baseline* parameter selects which one will be loaded from the file.
 
     Parameters
     ----------
     filename : string
         Name of input HDF5 file
+    baseline : string, optional
+        Selected baseline as *AxAy*, where *x* is the number of the first antenna
+        and *y* is the number of the second antenna (1-based), and *x* < *y*.
+        For single-dish data the antenna number is repeated, e.g. 'A1A1'.
     selected_pointing : string, optional
         Identifier of (az, el) sensors that will provide all the pointing data
         of the data set. The actual sensor names are formed by appending '_azim'
         and '_elev' to *selected_pointing*. This is ignored if the data set has
         already been processed to contain a single source of pointing data.
+    noise_diode : {'coupler', 'pin'}, optional
+        Load the model and on/off flags of this noise diode
     kwargs : dict, optional
         Extra keyword arguments are ignored, as they typically apply to other formats
 
@@ -69,118 +122,170 @@ def load_dataset(filename, selected_pointing='actual_scan', **kwargs):
     with h5py.File(filename, 'r') as f:
         # Only continue if file has been properly augmented
         if not 'augment' in f.attrs:
-            raise ValueError('HDF5 file not augmented - please run k7augment/augment2.py on this file')
-        pointing_model = f['pointing_model'].value
+            raise ValueError('HDF5 file not augmented - please run augment3.py (provided by k7augment package)')
+
+        # Get attributes at the data set level
+        experiment_id, observer, description = f.attrs['experiment_id'], f.attrs['observer'], f.attrs['description']
         data_unit = f.attrs['data_unit']
-        if data_unit == 'raw':
-            data_unit = 'counts'
-        data_timestamps_at_sample_centers = f.attrs.get('data_timestamps_at_sample_centers', False)
-        antenna = f.attrs['antenna']
-        # Get second antenna of baseline pair (or set to None for single-dish data)
-        antenna2 = f.attrs.get('antenna2', None)
+        data_timestamps_at_sample_centers = f.attrs['data_timestamps_at_sample_centers']
+
+        # Load antennas group
+        ants_group = f['Antennas']
+        # Select antennas involved in baseline
+        parsed_antenna_indices = baseline_pattern.match(baseline)
+        if parsed_antenna_indices is None:
+            raise ValueError("Please specify baseline with notation 'AxAy', " +
+                             "where x is index of first antenna and y is index of second antenna")
+        antA, antB = ['Antenna' + index for index in parsed_antenna_indices.groups()]
+        # Check that requested antennas are in data set
+        if antA not in ants_group or antB not in ants_group:
+            raise ValueError('Requested antenna pair not found in HDF5 file (wanted %s but file only contains %s)'
+                             % ([antA, antB], ants_group.listnames()))
+        antA_group, antB_group = ants_group[antA], ants_group[antB]
+        # Get antenna description strings (antenna2 is None for single-dish data)
+        antenna, antenna2 = antA_group.attrs['description'], antB_group.attrs['description']
         if antenna2 == antenna:
             antenna2 = None
-        comment = f.attrs['comment'] # TODO return this as well
+        # Use antenna A for noise diode info and environment variables for now
+        temperature_H = antA_group['H']['noise_diode_model'].value if 'H' in antA_group else np.zeros((1, 2))
+        temperature_V = antA_group['V']['noise_diode_model'].value if 'V' in antA_group else np.zeros((1, 2))
+        nd_data = NoiseDiodeModel(temperature_H, temperature_V)
+        # Environment tables are optional
+        enviro_ambient = antA_group['enviro_ambient'].value if 'enviro_ambient' in antA_group else None
+        enviro_wind = antA_group['enviro_wind'].value if 'enviro_wind' in antA_group else None
 
         # Load correlator configuration group
-        corrconf_group = f['CorrelatorConfig']
+        corrconf_group = f['Correlator']
         # If center_freqs dataset is available, use it - otherwise, reconstruct it from DBE attributes
         center_freqs = corrconf_group.get('center_freqs', None)
+        num_chans = corrconf_group.attrs['num_freq_channels']
         if center_freqs:
             center_freqs = center_freqs.value / 1e6
             bandwidths = corrconf_group['bandwidths'].value / 1e6
         else:
             band_center = corrconf_group.attrs['center_frequency_hz'] / 1e6
             channel_bw = corrconf_group.attrs['channel_bandwidth_hz'] / 1e6
-            num_chans = corrconf_group.attrs['num_freq_channels']
             # Assume that lower-sideband downconversion has been used, which flips frequency axis
             # Also subtract half a channel width to get frequencies at center of each channel
             center_freqs = band_center - channel_bw * (np.arange(num_chans) - num_chans / 2 + 0.5)
             bandwidths = np.tile(np.float64(channel_bw), num_chans)
-        rfi_channels = corrconf_group['rfi_channels'].value.nonzero()[0].tolist()
+        channel_select = corrconf_group['channel_select'].value.nonzero()[0].tolist()
         dump_rate = corrconf_group.attrs['dump_rate']
         sample_period = 1.0 / dump_rate
-        corrconf = CorrelatorConfig(center_freqs, bandwidths, rfi_channels, dump_rate)
+        corrconf = CorrelatorConfig(center_freqs, bandwidths, channel_select, dump_rate)
 
-        # Load noise diode model group
-        temperature_x = f['NoiseDiodeModel']['temperature_x'].value
-        temperature_y = f['NoiseDiodeModel']['temperature_y'].value
-        nd_data = NoiseDiodeModel(temperature_x, temperature_y)
+        # Figure out mapping of antennas and feeds to the correlation products involved
+        # Obtain DBE input associated with each polarisation of selected antennas (indicating unavailable feeds)
+        antA_H = antA_group['H'].attrs['dbe_input'] if 'H' in antA_group else 'UNAVAILABLE'
+        antA_V = antA_group['V'].attrs['dbe_input'] if 'V' in antA_group else 'UNAVAILABLE'
+        antB_H = antB_group['H'].attrs['dbe_input'] if 'H' in antB_group else 'UNAVAILABLE'
+        antB_V = antB_group['V'].attrs['dbe_input'] if 'V' in antB_group else 'UNAVAILABLE'
+        # Mapping of polarisation product to DBE input string identifying the pair of inputs multiplied together
+        pol_to_dbestr = {'HH' : antA_H + antB_H, 'VV' : antA_V + antB_V,
+                         'HV' : antA_H + antB_V, 'VH' : antA_V + antB_H}
+        # Correlator mapping of DBE input string to correlation product index (Miriad-style numbering)
+        input_map = corrconf_group['input_map'].value
+        dbestr_to_corr_id = dict(zip(input_map['dbe_inputs'], input_map['correlator_product_id']))
+        # Overall mapping from polarisation product to correlation product index (None for unavailable products)
+        pol_to_corr_id = dict([(pol, dbestr_to_corr_id.get(pol_to_dbestr[pol])) for pol in scape_pol])
 
         # Load each compound scan group
         compscanlist = []
         for compscan in f['Scans']:
             compscan_group = f['Scans'][compscan]
-            compscan_target = compscan_group.attrs['target']
-            compscan_comment = compscan_group.attrs['comment'] # TODO: do something with this
+            compscan_target, compscan_label = compscan_group.attrs['target'], compscan_group.attrs['label']
 
             # Load each scan group within compound scan
             scanlist = []
             for scan in compscan_group:
                 scan_group = compscan_group[scan]
                 data = scan_group['data'].value
-                # Load power data either in float64 (single-dish) form or complex128 (interferometer) form
+                num_times = len(scan_group['timestamps'].value)
+
+                # Load correlation data either in float64 (single-dish) form or complex128 (interferometer) form
                 # Data has already been normalised by number of samples in integration (accum_per_int)
+                # Data of missing feeds are set to zero, as this simplifies the data structure (always 4 products)
                 if antenna2 is None:
-                    scan_data = np.dstack([data[scape_to_hdf5['HH']].real,
-                                           data[scape_to_hdf5['VV']].real,
-                                           data[scape_to_hdf5['HV']].real,
-                                           data[scape_to_hdf5['HV']].imag]).astype(np.float64)
+                    # Single-dish uses HH, VV, Re{HV}, Im{HV}
+                    corr_id = [pol_to_corr_id[pol] for pol in ['HH', 'VV', 'HV', 'HV']]
+                    scan_data = [data[str(cid)] if cid is not None else np.zeros((num_times, num_chans), np.float64)
+                                 for cid in corr_id]
+                    scan_data = np.dstack([scan_data[0].real, scan_data[1].real,
+                                           scan_data[2].real, scan_data[3].imag]).astype(np.float64)
                 else:
-                    scan_data = np.dstack([data[scape_to_hdf5[p]] for p in scape_pol]).astype(np.complex128)
+                    corr_id = [pol_to_corr_id[pol] for pol in scape_pol]
+                    scan_data = [data[str(cid)] if cid is not None else np.zeros((num_times, num_chans), np.complex128)
+                                 for cid in corr_id]
+                    scan_data = np.dstack(scan_data).astype(np.complex128)
                 # Convert from millisecs to secs since Unix epoch, and be sure to use float64 to preserve digits
                 data_timestamps = scan_group['timestamps'].value.astype(np.float64) / 1000.0
                 # Move correlator data timestamps from start of each sample to the middle
                 if not data_timestamps_at_sample_centers:
                     data_timestamps += 0.5 * sample_period
-                # If reduced pointing dataset is available, use it - otherwise, select and interpolate original data
+                # If data timestamps have problems, warn and discard the scan
+                if (np.diff(data_timestamps).min() == 0.0) or np.any(data_timestamps < 1000000000.0):
+                    logger.warning("Discarded %s/%s - bad correlator timestamps (duplicates or way out of date)" %
+                                   (compscan, scan))
+                    continue
+
+                # If per-scan pointing is available, use it - otherwise, select and interpolate original data
                 scan_pointing = scan_group['pointing'].value if 'pointing' in scan_group else None
                 if scan_pointing is None:
-                    # Select appropriate sensor to use for (az, el) data
-                    scan_pointing_field = 'requested_pointing' \
-                                          if selected_pointing.startswith('request_') else 'actual_pointing'
-                    # If scan contains no pointing info (probably because it is very short), warn and discard the scan
-                    if scan_pointing_field not in scan_group:
-                        logger.warning("Discarded %s/%s - no '%s' table found" % (compscan, scan, scan_pointing_field))
-                        continue
-                    scan_pointing = scan_group[scan_pointing_field].value
-                    azel_timestamps = scan_pointing['timestamp']
-                    # If azel timestamps have problems, warn and discard the scan
-                    if (np.diff(azel_timestamps).min() == 0.0) or np.any(azel_timestamps < 1000000000.0):
-                        logger.warning("Discarded %s/%s - bad pointing timestamps" % (compscan, scan))
-                        continue
+                    # Use antenna A for pointing coordinates for now
+                    pointing_group = antA_group['Pointing']
                     try:
-                        original_az = scan_pointing[selected_pointing + '_azim']
-                        original_el = scan_pointing[selected_pointing + '_elev']
+                        az_timestamps = pointing_group[selected_pointing + '_azim']['timestamp']
+                        el_timestamps = pointing_group[selected_pointing + '_elev']['timestamp']
+                        original_az = pointing_group[selected_pointing + '_azim']['value']
+                        original_el = pointing_group[selected_pointing + '_elev']['value']
                     except ValueError:
-                        raise ValueError("The selected pointing sensor '%s_{azim,elev}' was not found in HDF5 file" %
-                                         (selected_pointing))
-                    # Linearly interpolate (az, el) coordinates to correlator data timestamps
-                    interp = Independent1DFit(PiecewisePolynomial1DFit(max_degree=1), axis=1)
-                    interp.fit(azel_timestamps, [original_az, original_el])
-                    scan_pointing = np.rec.fromarrays(interp(data_timestamps).astype(np.float32), names=('az', 'el'))
+                        raise ValueError("The selected sensors '%s_{azim,elev}' were not found in HDF5 file" %
+                                         (selected_pointing,))
+                    # Ensure pointing timestamps are unique
+                    az_timestamps, original_az = remove_duplicates(az_timestamps, original_az,
+                                                                   yname=selected_pointing + '_azim')
+                    el_timestamps, original_el = remove_duplicates(el_timestamps, original_el,
+                                                                   yname=selected_pointing + '_elev')
+                    # Linearly interpolate pointing coordinates to correlator data timestamps
+                    interp = PiecewisePolynomial1DFit(max_degree=1)
+                    interp.fit(el_timestamps, original_el)
+                    interp_el = interp(data_timestamps).astype(np.float32)
+                    # Because azimuth can wrap, special care needs to be taken (not done yet...)
+                    interp.fit(az_timestamps, original_az)
+                    interp_az = interp(data_timestamps).astype(np.float32)
+                    scan_pointing = np.rec.fromarrays([interp_az, interp_el], names=('az', 'el'))
                 # Convert contents of pointing from degrees to radians
                 # pylint: disable-msg=W0612
                 pointing_view = scan_pointing.view(np.float32)
                 pointing_view *= np.float32(np.pi / 180.0)
-                scan_flags = scan_group['flags'].value
-                scan_enviro_ambient = scan_group['enviro_ambient'].value if 'enviro_ambient' in scan_group else None
-                scan_enviro_wind = scan_group['enviro_wind'].value if 'enviro_wind' in scan_group else None
-                scan_label = scan_group.attrs['label']
-                scan_comment = scan_group.attrs['comment'] # TODO: do something with this
 
-                scanlist.append(Scan(scan_data, data_timestamps, scan_pointing, scan_flags, scan_enviro_ambient,
-                                     scan_enviro_wind, scan_label, filename + '/Scans/%s/%s' % (compscan, scan)))
+                # If per-scan flags are available, use it - otherwise, select and interpolate original data
+                scan_flags = scan_group['flags'].value if 'flags' in scan_group else None
+                if scan_flags is None:
+                    # Use antenna A for noise diode flag for now
+                    nd_on = antA_group['nd_' + noise_diode].value
+                    # Ensure noise diode timestamps are unique
+                    nd_timestamps, original_nd_on = remove_duplicates(nd_on['timestamp'], nd_on['value'],
+                                                                      'timestamps', 'nd_%s flag' % (noise_diode,))
+                    # Do step-wise interpolation (as flag is either 0 or 1 and holds its value until it toggles)
+                    interp = PiecewisePolynomial1DFit(max_degree=0)
+                    interp.fit(nd_timestamps, original_nd_on)
+                    scan_flags = np.rec.fromarrays([interp(data_timestamps).astype(bool)], names=('nd_on',))
+                scan_label = scan_group.attrs['label']
+
+                scanlist.append(Scan(scan_data, data_timestamps, scan_pointing, scan_flags, scan_label,
+                                     filename + '/Scans/%s/%s' % (compscan, scan)))
 
             if len(scanlist) > 0:
                 # Sort scans chronologically, as h5py seems to scramble them based on group name
                 scanlist.sort(key=lambda scan: scan.timestamps[0])
-                compscanlist.append(CompoundScan(scanlist, compscan_target))
+                compscanlist.append(CompoundScan(scanlist, compscan_target, compscan_label))
 
         if len(compscanlist) > 0:
             # Sort compound scans chronologically too
             compscanlist.sort(key=lambda compscan: compscan.scans[0].timestamps[0])
-        return compscanlist, data_unit, corrconf, antenna, antenna2, nd_data, pointing_model
+        return compscanlist, experiment_id, observer, description, data_unit, corrconf, antenna, antenna2, \
+               nd_data, enviro_ambient, enviro_wind
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  save_dataset
@@ -200,23 +305,40 @@ def save_dataset(dataset, filename):
 
     """
     with h5py.File(filename, 'w') as f:
-        f['/'].create_dataset('pointing_model', data=dataset.pointing_model.params)
+        # Attributes at data set level
+        f['/'].attrs['augment'] = 'File created by scape'
+        f['/'].attrs['experiment_id'] = dataset.experiment_id
+        f['/'].attrs['observer'] = dataset.observer
+        f['/'].attrs['description'] = dataset.description
         f['/'].attrs['data_unit'] = dataset.data_unit
         f['/'].attrs['data_timestamps_at_sample_centers'] = True
-        f['/'].attrs['antenna'] = dataset.antenna.description
-        if dataset.antenna2 is not None:
-            f['/'].attrs['antenna2'] = dataset.antenna2.description
-        else:
-            f['/'].attrs['antenna2'] = f['/'].attrs['antenna']
-        f['/'].attrs['comment'] = ''
-        f['/'].attrs['augment'] = 'File created by scape'
 
-        corrconf_group = f.create_group('CorrelatorConfig')
+        # Create antennas group
+        ants_group = f.create_group('Antennas')
+        # Assume very specific form of antenna name, to recreate original Antennas group
+        parsed_antenna_index = antenna_name_pattern.match(dataset.antenna.name)
+        if parsed_antenna_index is None:
+            raise ValueError("Antenna name assumed to be 'ant%%d' (%%d is 1-based index of antenna)," +
+                             " found '%s' instead" % (dataset.antenna.name,))
+        # Create first antenna group
+        antA_group = ants_group.create_group('Antenna%d' % parsed_antenna_index.groups())
+        antA_group.attrs['description'] = dataset.antenna.description
+        # Create second antenna group if the data set is interferometric
+        if dataset.antenna2 is not None:
+            parsed_antenna_index = antenna_name_pattern.match(dataset.antenna2.name)
+            if parsed_antenna_index is None:
+                raise ValueError("Antenna name assumed to be 'ant%%d' (%%d is 1-based index of antenna)," +
+                                 " found '%s' instead" % (dataset.antenna2.name,))
+            antB_group = ants_group.create_group('Antenna%d' % parsed_antenna_index.groups())
+            antB_group.attrs['description'] = dataset.antenna2.description
+
+        # Create correlator configuration group
+        corrconf_group = f.create_group('Correlator')
         corrconf_group.create_dataset('center_freqs', data=dataset.corrconf.freqs * 1e6, compression='gzip')
         corrconf_group.create_dataset('bandwidths', data=dataset.corrconf.bandwidths * 1e6, compression='gzip')
-        rfi_flags = np.tile(False, len(dataset.corrconf.freqs))
-        rfi_flags[dataset.corrconf.rfi_channels] = True
-        corrconf_group.create_dataset('rfi_channels', data=rfi_flags)
+        select_flags = np.tile(False, len(dataset.corrconf.freqs))
+        select_flags[dataset.corrconf.channel_select] = True
+        corrconf_group.create_dataset('channel_select', data=select_flags)
         corrconf_group.attrs['dump_rate'] = dataset.corrconf.dump_rate
         sample_period = 1.0 / dataset.corrconf.dump_rate
 
@@ -228,7 +350,6 @@ def save_dataset(dataset, filename):
         for compscan_ind, compscan in enumerate(dataset.compscans):
             compscan_group = scans_group.create_group('CompoundScan%d' % compscan_ind)
             compscan_group.attrs['target'] = compscan.target.description
-            compscan_group.attrs['comment'] = ''
 
             for scan_ind, scan in enumerate(compscan.scans):
                 scan_group = compscan_group.create_group('Scan%d' % scan_ind)
@@ -253,4 +374,3 @@ def save_dataset(dataset, filename):
                     scan_group.create_dataset('enviro_wind', data=scan.enviro_wind, compression='gzip')
 
                 scan_group.attrs['label'] = scan.label
-                scan_group.attrs['comment'] = ''

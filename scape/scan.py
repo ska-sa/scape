@@ -82,14 +82,6 @@ class Scan(object):
     flags : bool record array, shape (*T*,)
         Flags, with one record per integration. The field names correspond to
         the flag names.
-    enviro_ambient : record array, shape (*Ta*,) or None
-        Slowly-varying environmental measurements, containing *Ta* records.
-        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
-        and the rest of the field names correspond to ambient variables.
-    enviro_wind : record array, shape (*Tw*,) or None
-        Wind speed and direction measurements, containing *Tw* records.
-        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
-        and the rest of the field names correspond to wind variables.
     label : string
         Scan label, used to distinguish e.g. normal and cal scans
     path : string
@@ -110,14 +102,12 @@ class Scan(object):
         True if the scan contains autocorrelation data in real single-dish format
 
     """
-    def __init__(self, data, timestamps, pointing, flags, enviro_ambient, enviro_wind, label, path,
+    def __init__(self, data, timestamps, pointing, flags, label, path,
                  target_coords=None, parangle=None, baseline=None, compscan=None):
         self.data = data
         self.timestamps = timestamps
         self.pointing = pointing
         self.flags = flags
-        self.enviro_ambient = enviro_ambient
-        self.enviro_wind = enviro_wind
         self.label = label
         self.path = path
         self.target_coords = target_coords
@@ -133,11 +123,9 @@ class Scan(object):
         # Since pointing is used to calculate target coords, this is also only approximately equal.
         # Timestamps and pointing are also converted to and from the start and middle of each sample,
         # which causes extra approximateness... (pointing should be OK down to 5 arcsecond level,
-        # and time should be OK up to microseconds)
+        # and time should be OK down to microseconds)
         return (self.has_autocorr == other.has_autocorr) and np.all(self.data == other.data) and \
                np.all(self.flags == other.flags) and (self.label == other.label) and \
-               np.all(self.enviro_ambient == other.enviro_ambient) and \
-               np.all(self.enviro_wind == other.enviro_wind) and \
                np.allclose(self.timestamps, other.timestamps, rtol=0, atol=1e-6) and \
                np.allclose(self.pointing.view(np.float32), other.pointing.view(np.float32), rtol=1e-6, atol=0) and \
                np.allclose(self.target_coords, other.target_coords, rtol=1e-7, atol=0) and \
@@ -386,9 +374,8 @@ class Scan(object):
             target_coords = self.target_coords
             if not target_coords is None:
                 target_coords = target_coords[:, timekeep]
-            return Scan(selected_data, self.timestamps[timekeep], self.pointing[timekeep],
-                        self.flags[timekeep], self.enviro_ambient, self.enviro_wind, self.label,
-                        self.path, target_coords, self.baseline, self.compscan)
+            return Scan(selected_data, self.timestamps[timekeep], self.pointing[timekeep], self.flags[timekeep],
+                        self.label, self.path, target_coords, self.baseline, self.compscan)
         # Create a shallow view of data matrix via a masked array or view
         else:
             # If data matrix is kept intact, rather just return a view instead of masked array
@@ -412,6 +399,5 @@ class Scan(object):
                 polkeep3d = np.atleast_3d([True, True, True, True]).transpose((0, 2, 1))
                 keep3d = np.kron(timekeep3d, np.kron(freqkeep3d, polkeep3d))
                 selected_data = np.ma.array(self.data, mask=~keep3d)
-            return Scan(selected_data, self.timestamps, self.pointing, self.flags,
-                        self.enviro_ambient, self.enviro_wind, self.label, self.path,
-                        self.target_coords, self.baseline, self.compscan)
+            return Scan(selected_data, self.timestamps, self.pointing, self.flags, self.label,
+                        self.path, self.target_coords, self.baseline, self.compscan)
