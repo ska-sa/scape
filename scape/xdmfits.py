@@ -24,7 +24,7 @@ acsm_logger.setLevel(logging.ERROR)
 # pylint: disable-msg=W0611
 import acsm
 
-from katpoint import deg2rad, rad2deg, construct_target, construct_antenna, Catalogue
+from katpoint import deg2rad, rad2deg, construct_target, Antenna, Catalogue
 from .scan import Scan
 from .compoundscan import CompoundScan, CorrelatorConfig
 from .gaincal import NoiseDiodeModel, NoiseDiodeNotFound
@@ -401,7 +401,7 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
                             (target.name, new_target.name))
                 target = new_target
             else:
-                ant = construct_antenna(antenna)
+                ant = Antenna(antenna)
                 cat_pos = np.array([t.apparent_radec(scan.timestamps[0], ant) for t in catalogue])
                 targ_pos = np.array(target.astrometric_radec(scan.timestamps[0], ant))
                 pos_error = angle_wrap(cat_pos - targ_pos[np.newaxis, :])

@@ -19,7 +19,7 @@ class PointSourceScanTestCases(unittest.TestCase):
         #--------------------------------------------------------------------------------------------------
 
         # Antenna, target, timestamp
-        ant = katpoint.construct_antenna('Test, -33, 18, 30, 15')
+        ant = katpoint.Antenna('Test, -33, 18, 30, 15')
         target = "J1230+1223 | *Virgo A, radec, 12:30:49.42, 12:23:28.04, (1408.0 10550.0 4.484 -0.603 -0.0280)"
         time_origin = '2009/06/26 20:00:00 SAST'
 

@@ -114,11 +114,11 @@ class DataSet(object):
         if isinstance(antenna, katpoint.Antenna):
             self.antenna = antenna
         else:
-            self.antenna = katpoint.construct_antenna(antenna)
+            self.antenna = katpoint.Antenna(antenna)
         if antenna2 is None or isinstance(antenna2, katpoint.Antenna):
             self.antenna2 = antenna2
         else:
-            self.antenna2 = katpoint.construct_antenna(antenna2)
+            self.antenna2 = katpoint.Antenna(antenna2)
         self.noise_diode_data = nd_data
         if isinstance(pointing_model, katpoint.PointingModel):
             self.pointing_model = pointing_model
