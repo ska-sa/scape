@@ -34,11 +34,11 @@ class DataSet(object):
     """Container for the data of an experiment (single-dish or a single baseline).
 
     This is the top-level container for experimental data, which is either
-    autocorrelation data for a single dish or cross-correlation data for a single
-    interferometer baseline, combined with the appropriate metadata.
+    autocorrelation data for a single dish or cross-correlation data for a
+    single interferometer baseline, combined with the appropriate metadata.
 
-    Given a data filename, the initialiser determines the appropriate file format
-    to use, based on the file extension. If the filename is blank, the
+    Given a data filename, the initialiser determines the appropriate file
+    format to use, based on the file extension. If the filename is blank, the
     :class:`DataSet` can also be directly initialised from its constituent
     parts, which is useful for simulations and creating the data sets from
     scratch. The :class:`DataSet` object contains a list of compound scans, as
@@ -68,16 +68,16 @@ class DataSet(object):
     antenna2 : :class:`katpoint.Antenna` object or string or None, optional
         Second antenna of baseline, as object or description string. This is
         *None* for single-dish autocorrelation data.
-    nd_data : :class:`gaincal.NoiseDiodeModel` object, optional
+    nd_model : :class:`gaincal.NoiseDiodeModel` object, optional
         Noise diode model
-    enviro_ambient : record array, shape (*Ta*,) or None
-        Slowly-varying environmental measurements, containing *Ta* records.
-        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
-        and the rest of the field names correspond to ambient variables.
-    enviro_wind : record array, shape (*Tw*,) or None
-        Wind speed and direction measurements, containing *Tw* records.
-        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
-        and the rest of the field names correspond to wind variables.
+    enviro : dict of record arrays, optional
+        Environmental (weather) measurements. The keys of the dict are strings
+        indicating the type of measurement ('temperature', 'pressure', etc),
+        while the values of the dict are record arrays with three elements per
+        record: 'timestamp', 'value' and 'status'. The 'timestamp' field is a
+        timestamp in UTC seconds since epoch, the 'value' field is the
+        corresponding value and the 'status' field is a string indicating the
+        sensor status.
     kwargs : dict, optional
         Extra keyword arguments are passed to selected :func:`load_dataset` function
 
@@ -87,8 +87,8 @@ class DataSet(object):
         Centre frequency of each channel/band, in MHz (same as in *corrconf*)
     bandwidths : real array, shape (*F*,)
         Bandwidth of each channel/band, in MHz (same as in *corrconf*)
-    rfi_channels : list of ints
-        RFI-flagged channel indices (same as in *corrconf*)
+    channel_select : list of ints
+        Selected channel indices (same as in *corrconf*)
     dump_rate : float
         Correlator dump rate, in Hz (same as in *corrconf*)
     scans : list of :class:`scan.Scan` objects
@@ -103,21 +103,19 @@ class DataSet(object):
 
     """
     def __init__(self, filename, compscanlist=None, experiment_id=None, observer=None, description=None,
-                 data_unit=None, corrconf=None, antenna=None, antenna2=None, nd_data=None,
-                 enviro_ambient=None, enviro_wind=None, **kwargs):
+                 data_unit=None, corrconf=None, antenna=None, antenna2=None, nd_model=None, enviro=None, **kwargs):
         # Load dataset from file
         if filename:
             ext = os.path.splitext(filename)[1]
             if ext == '.fits':
                 if not xdmfits_found:
                     raise ImportError('XDM FITS support could not be loaded - please check xdmfits module')
-                compscanlist, data_unit, corrconf, antenna, \
-                nd_data, enviro_ambient, enviro_wind = xdmfits_load(filename, **kwargs)
+                compscanlist, data_unit, corrconf, antenna, nd_data, enviro = xdmfits_load(filename, **kwargs)
             elif (ext == '.h5') or (ext == '.hdf5'):
                 if not hdf5_found:
                     raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
                 compscanlist, experiment_id, observer, description, data_unit, \
-                corrconf, antenna, antenna2, nd_data, enviro_ambient, enviro_wind = hdf5_load(filename, **kwargs)
+                corrconf, antenna, antenna2, nd_data, enviro = hdf5_load(filename, **kwargs)
             else:
                 raise ValueError("File extension '%s' not understood" % ext)
 
@@ -135,9 +133,8 @@ class DataSet(object):
             self.antenna2 = antenna2
         else:
             self.antenna2 = katpoint.Antenna(antenna2)
-        self.noise_diode_data = nd_data
-        self.enviro_ambient = enviro_ambient
-        self.enviro_wind = enviro_wind
+        self.nd_model = nd_model
+        self.enviro = enviro
 
         # Create global scan list and fill in caches and links in lower-level objects
         self.scans = []
@@ -174,8 +171,7 @@ class DataSet(object):
                ((self.antenna2 == other.antenna2 == None) or \
                 ((self.antenna2 is not None) and (other.antenna2 is not None) and \
                  self.antenna2.description == other.antenna2.description)) and \
-               (self.noise_diode_data == other.noise_diode_data) and \
-               (self.enviro_ambient == other.enviro_ambient) and (self.enviro_wind == other.enviro_wind)
+               (self.nd_model == other.nd_model) and (self.enviro == other.enviro)
 
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -230,7 +226,7 @@ class DataSet(object):
 
     def __str__(self):
         """Verbose human-friendly string representation of data set object."""
-        descr = ["%s | %s" % (self.experiment_id, self.observer), self.description,
+        descr = ["%s | %s" % (self.experiment_id, self.observer), "'%s'" % (self.description,),
                  "%s, data_unit=%s, bands=%d, freqs=%f - %f MHz, total bw=%f MHz, dumprate=%f Hz" %
                  ("antenna='%s'" % self.antenna.name if self.antenna2 is None else \
                   "baseline='%s - %s'" % (self.antenna.name, self.antenna2.name),
@@ -369,8 +365,7 @@ class DataSet(object):
                 compscanlist.append(CompoundScan(scanlist, compscan.target))
         return DataSet(None, compscanlist, self.experiment_id, self.observer,
                        self.description, self.data_unit, self.corrconf.select(freqkeep),
-                       self.antenna, self.antenna2, self.noise_diode_data,
-                       self.enviro_ambient, self.enviro_wind)
+                       self.antenna, self.antenna2, self.nd_model, self.enviro)
 
     def identify_rfi_channels(self, sigma=8.0, min_bad_scans=0.25, extra_outputs=False):
         """Identify potential RFI-corrupted channels.
@@ -445,8 +440,8 @@ class DataSet(object):
             rfi_channels = self.rfi_channels
         non_rfi = sorted(list(set(range(len(self.freqs))) - set(rfi_channels)))
         d = self.select(freqkeep=non_rfi, copy=True)
-        DataSet.__init__(self, None, d.compscans, d.data_unit, d.corrconf,
-                         d.antenna, d.antenna2, d.noise_diode_data, d.enviro_ambient, d.enviro_wind)
+        DataSet.__init__(self, None, d.compscans, d.experiment_id, d.observer, d.description,
+                         d.data_unit, d.corrconf, d.antenna, d.antenna2, d.nd_model, d.enviro)
         return self
 
     def convert_power_to_temperature(self, randomise=False, **kwargs):
@@ -478,7 +473,7 @@ class DataSet(object):
             logger.error("Expected raw power data to convert to temperature, got data with units '" +
                          self.data_unit + "' instead.")
             return self
-        if self.noise_diode_data is None:
+        if self.nd_model is None:
             logger.error('No noise diode model found in data set - calibration aborted')
             return  self
         try:
