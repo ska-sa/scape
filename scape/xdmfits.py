@@ -293,7 +293,8 @@ def load_scan(filename):
     # The FITS file doesn't like empty lists, so an empty list is represented by [-1] (an invalid index)
     # Therefore, remove any invalid indices, as a further safeguard
     rfi_channels = [x for x in rfi_channels if (x >= 0) and (x < len(freqs))]
-    corrconf = CorrelatorConfig(freqs, bandwidths, rfi_channels, dump_rate)
+    channel_select = list(set(range(len(freqs))) - set(rfi_channels))
+    corrconf = CorrelatorConfig(freqs, bandwidths, channel_select, dump_rate)
 
     target = acsm_target_description(cPickle.loads(hdu['OBJECTS'].data.field('Target')[0]))
     antenna = acsm_antenna_description(cPickle.loads(hdu['OBJECTS'].data.field('Mount')[0]))
