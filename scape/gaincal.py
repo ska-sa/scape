@@ -187,7 +187,7 @@ def estimate_gain(dataset, **kwargs):
                np.zeros((0, len(dataset.freqs))), np.zeros((0, len(dataset.freqs)))
     timestamps = np.array(nd_jump_times)
     deltas = np.concatenate([p.mu[np.newaxis] for p in nd_jump_power])
-    temp_nd = dataset.noise_diode_data.temperature(dataset.freqs)
+    temp_nd = dataset.nd_model.temperature(dataset.freqs)
     gain_xx = deltas[:, :, 0] / temp_nd[np.newaxis, :, 0]
     gain_yy = deltas[:, :, 1] / temp_nd[np.newaxis, :, 1]
     phi = -np.arctan2(deltas[:, :, 3], deltas[:, :, 2])
@@ -223,7 +223,7 @@ def calibrate_gain(dataset, randomise=False, **kwargs):
     if randomise:
         gains += np.concatenate([p.sigma[np.newaxis] for p in nd_jump_power]) * \
                  np.random.standard_normal(gains.shape)
-    temp_nd = dataset.noise_diode_data.temperature(dataset.freqs, randomise)
+    temp_nd = dataset.nd_model.temperature(dataset.freqs, randomise)
     gains[:, :, :2] /= temp_nd[np.newaxis, :, :]
     # Do a very simple zeroth-order fitting for now, as gains are usually very stable
     smooth_gains = np.expand_dims(gains.mean(axis=0), axis=0)
