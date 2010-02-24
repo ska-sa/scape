@@ -188,8 +188,11 @@ def acsm_antenna_description(mount):
     if match:
         descr = "%s, %s:%s:%s, %s:%s:%s, %s" % match.groups()
         # Hard-code the XDM dish size, as this is currently not part of ACSM mount object or stored in FITS
+        # FWHM beamwidth for uniformly illuminated circular dish is 1.03 lambda / D
+        # FWHM beamwidth for Gaussian-tapered circular dish is 1.22 lambda / D
+        # We are somewhere in between (the factor 1.178 is based on measurements of XDM)
         if match.groups()[0] == 'XDM':
-            descr += ', 15.0'
+            descr += ', 15.0, , , 1.178'
         return descr
     # This is typically a futile thing to return, but will help debug why the above match failed
     return descr
