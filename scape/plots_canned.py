@@ -391,7 +391,7 @@ def plot_fringes(dataset, pol='I', add_scan_ids=True, ax=None):
     labels = [str(n) for n in xrange(len(dataset.scans))] if add_scan_ids else []
     ylim = (dataset.freqs[0], dataset.freqs[-1])
     clim = [-np.pi, np.pi]
-    grey_rows = dataset.rfi_channels
+    grey_rows = list(set(range(len(dataset.freqs))) - set(dataset.channel_select))
     images, border_lines, text_labels = plot_compacted_images(imdata, xticks, labels, ylim, clim, grey_rows, ax)
     ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
     ax.set_ylabel('Channel frequency (MHz)')

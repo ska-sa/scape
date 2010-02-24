@@ -19,7 +19,7 @@ parser = optparse.OptionParser(usage="%prog [options] <data file>")
 (opts, args) = parser.parse_args()
 
 # Load data set
-d = scape.DataSet(args[0])
+d = scape.DataSet(args[0], baseline='A1A2')
 # Discard 'slew' scans and channels outside the Fringe Finder band
 d = d.select(labelkeep='scan', freqkeep=range(100, 420), copy=True)
 time_origin = np.min([scan.timestamps.min() for scan in d.scans])
@@ -63,6 +63,8 @@ for compscan in d.compscans:
 group_delay = np.hstack(group_delay_per_scan)
 sigma_delay = np.hstack(sigma_delay_per_scan)
 augmented_targetdir = np.hstack(augmented_targetdir_per_scan)
+# Sanitise the uncertainties (can't be too certain...)
+sigma_delay[sigma_delay < 1e-5 * max_sigma_delay] = 1e-5 * max_sigma_delay
 
 # Construct design matrix, containing weighted basis functions
 A = augmented_targetdir / sigma_delay

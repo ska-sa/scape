@@ -76,14 +76,11 @@ for dataset in datasets:
 
         # Augmented file has a bit more info
         if 'augment' in f.attrs:
-            ant1 = f.attrs['antenna'].split(",")[0]
-            ant2 = f.attrs['antenna2'].split(",")[0] if 'antenna2' in f.attrs else ''
-            is_autocorr = not ant2 or (ant2 == ant1)
-            antennas = ant1 + ' ' * (3 + len(ant1)) if is_autocorr else "%s - %s" % (ant1, ant2)
-            centre_freq = f['CorrelatorConfig'].attrs['center_frequency_hz'] / 1e6
-            dump_rate = f['CorrelatorConfig'].attrs['dump_rate']
+            ants = [f['Antennas'][ant].attrs['description'].partition(',')[0] for ant in f['Antennas']]
+            centre_freq = f['Correlator'].attrs['center_frequency_hz'] / 1e6
+            dump_rate = f['Correlator'].attrs['dump_rate_hz']
             print "%s: %s, %s, %s MHz, %2d compscans, %3d scans, %4d samples, %d chans, %s, %.3f GB" % \
-                  (dataset, start, antennas, centre_freq, num_compscans,
+                  (dataset, start, ' '.join(ants), centre_freq, num_compscans,
                    num_scans, num_samples, num_chans, target, filesize)
         else:
             print "%s: %s, UNAUGMENTED, %2d compscans, %3d scans, %4d samples, %d chans, %s, %.3f GB" % \

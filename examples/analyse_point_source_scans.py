@@ -105,7 +105,7 @@ def load_reduce(index):
 
     filename = datasets[index]
     logger.info("Loading dataset '%s'" % (filename,))
-    current_dataset = scape.DataSet(filename, catalogue=cat, pointing_model=pm)
+    current_dataset = scape.DataSet(filename, catalogue=cat)
 
     # Skip data set if antenna differs from the first antenna found, or no scans found
     if antenna is None or (antenna.name == current_dataset.antenna.name):
@@ -117,11 +117,14 @@ def load_reduce(index):
     if len(current_dataset.compscans) == 0:
         logger.warning('No scan data found, skipping data set')
         return False
+    # Override pointing model if it is specified
+    if pm is not None:
+        antenna.pointing_model = katpoint.PointingModel(pm, strict=False)
 
     # Standard reduction
-    current_dataset.remove_rfi_channels()
+    current_dataset = current_dataset.select(freqkeep=current_dataset.channel_select)
     current_dataset.convert_power_to_temperature()
-    current_dataset = current_dataset.select(labelkeep='scan')
+    current_dataset = current_dataset.select(labelkeep='scan', copy=False)
     # Save original channel frequencies before averaging
     channel_freqs = current_dataset.freqs
     current_dataset.average()
@@ -168,7 +171,8 @@ def next_load_reduce_plot(fig=None):
     if current_dataset is not None:
         compscan_index += 1
     # Load next data set if last compscan has been reached
-    if compscan_index - compscans_in_previous_datasets >= len(beam_data[dataset_index]):
+    if (dataset_index >= len(datasets)) or \
+       (compscan_index - compscans_in_previous_datasets >= len(beam_data[dataset_index])):
         if current_dataset is not None:
             dataset_index += 1
         # If there are no more data sets, save output data to file and exit
@@ -179,8 +183,9 @@ def next_load_reduce_plot(fig=None):
                     'beam_height_I, beam_width_I, baseline_height_I, refined_I, beam_height_HH, beam_width_HH, ' +
                     'baseline_height_HH, refined_HH, beam_height_VV, beam_width_VV, baseline_height_VV, refined_VV, ' +
                     'frequency, flux, temperature, pressure, humidity, wind_speed, wind_direction\n')
-            f.writelines([(('%s, %s, %s, %.7f, %.7f, %.7f, %.7f, %s, %.7f, %.7f, %.7f, %d, %.7f, %.7f, %.7f, %d, %.7f, ' +
-                            '%.7f, %.7f, %d, %.7f, %.4f, %.2f, %.2f, %.2f, %.2f, %.2f\n') % p) for p in output_data if p])
+            f.writelines([(('%s, %s, %s, %.7f, %.7f, %.7f, %.7f, %s, %.7f, %.7f, %.7f, %d, %.7f, %.7f, %.7f, %d, ' +
+                            '%.7f, %.7f, %.7f, %d, %.7f, %.4f, %.2f, %.2f, %.2f, %.2f, %.2f\n') % tuple(p))
+                          for p in output_data if p])
             f.close()
             sys.exit(0)
         # Load next data set
@@ -208,23 +213,21 @@ def next_load_reduce_plot(fig=None):
     # Obtain middle timestamp of compound scan, where all pointing calculations are done
     middle_time = np.median(np.hstack([scan.timestamps for scan in compscan.scans]), axis=None)
     # Obtain average environmental data
-    temperature = np.mean(np.hstack([scan.enviro_ambient['temperature'] for scan in compscan.scans
-                                     if (scan.enviro_ambient is not None) and
-                                        scan.enviro_ambient.dtype.fields.has_key('temperature')]))
-    pressure = np.mean(np.hstack([scan.enviro_ambient['pressure'] for scan in compscan.scans
-                                  if (scan.enviro_ambient is not None) and
-                                     scan.enviro_ambient.dtype.fields.has_key('pressure')]))
-    humidity = np.mean(np.hstack([scan.enviro_ambient['humidity'] for scan in compscan.scans
-                                  if (scan.enviro_ambient is not None) and
-                                     scan.enviro_ambient.dtype.fields.has_key('humidity')]))
-    wind_speed = np.hstack([scan.enviro_wind['wind_speed'] for scan in compscan.scans
-                            if (scan.enviro_wind is not None) and
-                               scan.enviro_wind.dtype.fields.has_key('wind_speed')])
-    wind_direction = katpoint.deg2rad(np.hstack([scan.enviro_wind['wind_direction'] for scan in compscan.scans
-                                                 if (scan.enviro_wind is not None) and
-                                                    scan.enviro_wind.dtype.fields.has_key('wind_direction')]))
-    wind_n, wind_e = np.mean(wind_speed * np.cos(wind_direction)), np.mean(wind_speed * np.sin(wind_direction))
-    wind_speed, wind_direction = np.sqrt(wind_n ** 2 + wind_e ** 2), katpoint.rad2deg(np.arctan2(wind_e, wind_n))
+    temperature = np.mean(current_dataset.enviro['temperature']['value']
+                          if 'temperature' in current_dataset.enviro else [])
+    pressure = np.mean(current_dataset.enviro['pressure']['value'] if 'pressure' in current_dataset.enviro else [])
+    humidity = np.mean(current_dataset.enviro['humidity']['value'] if 'humidity' in current_dataset.enviro else [])
+    if 'wind_speed' in current_dataset.enviro and 'wind_direction' in current_dataset.enviro:
+        wind_speed = current_dataset.enviro['wind_speed']
+        wind_direction = current_dataset.enviro['wind_direction']
+        interp = scape.fitting.PiecewisePolynomial1DFit(max_degree=1)
+        interp.fit(wind_speed['timestamp'], wind_speed['value'])
+        wind_speed = interp(wind_direction['timestamp'])
+        wind_direction = katpoint.deg2rad(wind_direction['value'])
+        wind_n, wind_e = np.mean(wind_speed * np.cos(wind_direction)), np.mean(wind_speed * np.sin(wind_direction))
+        wind_speed, wind_direction = np.sqrt(wind_n ** 2 + wind_e ** 2), katpoint.rad2deg(np.arctan2(wind_e, wind_n))
+    else:
+        wind_speed = wind_direction = np.nan
     # Defaults if all else fails
     if np.isnan(temperature):
         temperature = 35.0
@@ -252,7 +255,7 @@ def next_load_reduce_plot(fig=None):
         # Now correct the measured (az, el) for refraction and then apply the old pointing model
         # to get a "raw" measured (az, el) at the output of the pointing model
         beam_center_azel = [beam_center_azel[0], rc.apply(beam_center_azel[1], temperature, pressure, humidity)]
-        beam_center_azel = current_dataset.pointing_model.apply(*beam_center_azel)
+        beam_center_azel = current_dataset.antenna.pointing_model.apply(*beam_center_azel)
         beam_center_azel = katpoint.rad2deg(np.array(beam_center_azel))
         # Make sure the offset is a small angle around 0 degrees
         offset_azel = scape.stats.angle_wrap(beam_center_azel - requested_azel, 360.)
