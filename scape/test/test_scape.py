@@ -19,7 +19,7 @@ class PointSourceScanTestCases(unittest.TestCase):
         #--------------------------------------------------------------------------------------------------
 
         # Antenna, target, timestamp
-        ant = katpoint.Antenna('Test, -33, 18, 30, 15')
+        ant = katpoint.Antenna('Test, -33, 18, 30, 15, , , 1.15')
         target = "J1230+1223 | *Virgo A, radec, 12:30:49.42, 12:23:28.04, (1408.0 10550.0 4.484 -0.603 -0.0280)"
         time_origin = '2009/06/26 20:00:00 SAST'
 
@@ -31,14 +31,15 @@ class PointSourceScanTestCases(unittest.TestCase):
         center_freq_MHz = 1.5e3
         channelwidth_MHz = 10.
         rfi_channels = [2, 3, num_channels - 4, num_channels - 3]
+        channel_select = list(set(range(num_channels)) - set(rfi_channels))
         dump_rate = 10.
 
         freqs = center_freq_MHz + np.arange(-num_channels // 2, num_channels // 2) * channelwidth_MHz
-        corrconf = scape.CorrelatorConfig(freqs, np.tile(channelwidth_MHz, num_channels), rfi_channels, dump_rate)
+        corrconf = scape.CorrelatorConfig(freqs, np.tile(channelwidth_MHz, num_channels), channel_select, dump_rate)
 
         # Source structure setup
         self.peak_flux = target.flux_density(center_freq_MHz)
-        self.expected_width = 1.15 * katpoint.lightspeed / (center_freq_MHz * 1e6) / ant.diameter
+        self.expected_width = ant.beamwidth * katpoint.lightspeed / (center_freq_MHz * 1e6) / ant.diameter
         sigma = scape.beam_baseline.fwhm_to_sigma(self.expected_width)
         flux = lambda x, y: self.peak_flux * np.exp(-0.5 * (x ** 2 + y ** 2) / (sigma ** 2))
 
@@ -71,20 +72,23 @@ class PointSourceScanTestCases(unittest.TestCase):
             pointing = np.rec.fromarrays([az, el], names='az,el')
             flags = np.rec.fromarrays([np.tile(True, samples_per_scan),
                                        np.tile(False, samples_per_scan)], names='valid,nd_on')
-            enviro_ambient = np.rec.array([(timestamps[0], 35.1, 1020.4, 31.0)],
-                                          dtype=[('timestamp', np.float64), ('temperature', np.float32),
-                                                 ('pressure', np.float32), ('humidity', np.float32)])
-            enviro_wind = np.rec.array([(timestamps[0], 2.0, 45.3)],
-                                       dtype=[('timestamp', np.float64),
-                                              ('wind_speed', np.float32), ('wind_direction', np.float32)])
             time_start += samples_per_scan / dump_rate + 10.
-            scanlist.append(scape.Scan(data, timestamps, pointing, flags,
-                                       enviro_ambient, enviro_wind, 'scan', ('scan_%d' % (n,))))
+            scanlist.append(scape.Scan(data, timestamps, pointing, flags, 'scan', ('scan_%d' % (n,))))
 
         # Construct data set
-        nd_data = scape.gaincal.NoiseDiodeModel(np.array([[center_freq_MHz, 10.]]), np.array([[center_freq_MHz, 10.]]))
-        pm = np.ones(20)
-        self.dataset = scape.DataSet('', [scape.CompoundScan(scanlist, target)], 'Jy', corrconf, ant, nd_data, pm)
+        enviro = {'temperature' : np.rec.array([timestamps[0], np.float32(35.4), 'nominal'],
+                                               names=('timestamp', 'value', 'status')),
+                  'pressure' : np.rec.array([timestamps[0], np.float32(1020.6), 'nominal'],
+                                            names=('timestamp', 'value', 'status')),
+                  'humidity' : np.rec.array([timestamps[0], np.float32(21.1), 'nominal'],
+                                            names=('timestamp', 'value', 'status')),
+                  'wind_speed' : np.rec.array([timestamps[0], np.float32(2.6), 'nominal'],
+                                               names=('timestamp', 'value', 'status')),
+                  'wind_direction' : np.rec.array([timestamps[0], np.float32(45.2), 'nominal'],
+                                                  names=('timestamp', 'value', 'status'))}
+        nd_model = scape.gaincal.NoiseDiodeModel(np.array([[center_freq_MHz, 10.]]), np.array([[center_freq_MHz, 10.]]))
+        self.dataset = scape.DataSet('', [scape.CompoundScan(scanlist, target, 'compscan')],
+                                     '008', 'tester', 'Unit test.', 'Jy', corrconf, ant, None, nd_model, enviro)
 
     def test_beam_fit(self):
         """Check if beam fitting is successful."""

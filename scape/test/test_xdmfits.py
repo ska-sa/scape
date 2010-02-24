@@ -25,11 +25,11 @@ class XDMFitsTestCases(unittest.TestCase):
         self.average_flux = 1513.4451
         self.temperature = 2.00
         self.pressure = 875.00
-        self.humidity = 56.67
+        self.humidity = 56.60
         self.az = 29.5937309
-        self.el = 14.1074753
+        self.el = 14.1074702
         self.delta_az = -0.1430513
-        self.delta_el = -0.0676433
+        self.delta_el = -0.0676434
 
     def test_beam_fit(self):
         """Load XDM FITS data set and do point source scan analysis on it."""
@@ -44,9 +44,9 @@ class XDMFitsTestCases(unittest.TestCase):
                 return
 
         # Standard continuum reduction
-        d.remove_rfi_channels()
+        d = d.select(freqkeep=d.channel_select)
         d.convert_power_to_temperature()
-        d = d.select(labelkeep='scan')
+        d = d.select(labelkeep='scan', copy=False)
         # Save original channel frequencies before averaging
         channel_freqs = d.freqs
         d.average()
@@ -62,12 +62,9 @@ class XDMFitsTestCases(unittest.TestCase):
         # Obtain middle timestamp of compound scan, where all pointing calculations are done
         middle_time = np.median([scan.timestamps for scan in compscan.scans], axis=None)
         # Obtain average environmental data
-        temperature = np.mean([scan.enviro_ambient['temperature'] for scan in d.scans]) \
-                      if scan.enviro_ambient.dtype.fields.has_key('temperature') else np.nan
-        pressure = np.mean([scan.enviro_ambient['pressure'] for scan in d.scans]) \
-                   if scan.enviro_ambient.dtype.fields.has_key('pressure') else np.nan
-        humidity = np.mean([scan.enviro_ambient['humidity'] for scan in d.scans]) \
-                   if scan.enviro_ambient.dtype.fields.has_key('humidity') else np.nan
+        temperature = np.mean(d.enviro['temperature']['value']) if 'temperature' in d.enviro else np.nan
+        pressure = np.mean(d.enviro['pressure']['value']) if 'pressure' in d.enviro else np.nan
+        humidity = np.mean(d.enviro['humidity']['value']) if 'humidity' in d.enviro else np.nan
         # Calculate pointing offset
         # Start with requested (az, el) coordinates, as they apply at the middle time for a moving target
         requested_azel = compscan.target.azel(middle_time)
@@ -82,7 +79,7 @@ class XDMFitsTestCases(unittest.TestCase):
         # Now correct the measured (az, el) for refraction and then apply the old pointing model
         # to get a "raw" measured (az, el) at the output of the pointing model
         beam_center_azel = [beam_center_azel[0], rc.apply(beam_center_azel[1], temperature, pressure, humidity)]
-        beam_center_azel = d.pointing_model.apply(*beam_center_azel)
+        beam_center_azel = d.antenna.pointing_model.apply(*beam_center_azel)
         beam_center_azel = katpoint.rad2deg(np.array(beam_center_azel))
         # Make sure the offset is a small angle around 0 degrees
         offset_azel = scape.stats.angle_wrap(beam_center_azel - requested_azel, 360.)

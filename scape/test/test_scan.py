@@ -196,20 +196,12 @@ class ScanTestCases(unittest.TestCase):
         pointing = np.rec.fromarrays([az, el], names='az,el')
         flags = np.rec.fromarrays([np.tile(True, samples_per_scan),
                                    np.tile(False, samples_per_scan)], names='valid,nd_on')
-        enviro_ambient = np.rec.array([(timestamps[0], 35.2, 1020.5, 31.1)],
-                                      dtype=[('timestamp', np.float64), ('temperature', np.float32),
-                                             ('pressure', np.float32), ('humidity', np.float32)])
-        enviro_wind = np.rec.array([(timestamps[0], 2.1, 45.4)],
-                                   dtype=[('timestamp', np.float64),
-                                          ('wind_speed', np.float32), ('wind_direction', np.float32)])
         target_coords = np.zeros((2, samples_per_scan))
         parangle = katpoint.deg2rad(np.arange(-180., 180., 360. / samples_per_scan))
         # Scan containing single-dish data
-        self.scan_sd = scape.Scan(self.data_sd, timestamps, pointing, flags,
-                                  enviro_ambient, enviro_wind, 'scan', 'scan', target_coords, parangle)
+        self.scan_sd = scape.Scan(self.data_sd, timestamps, pointing, flags, 'scan', 'scan', target_coords, parangle)
         # Scan containing interferometer data
-        self.scan_if = scape.Scan(self.data_if, timestamps, pointing, flags,
-                                  enviro_ambient, enviro_wind, 'scan', 'scan', target_coords, parangle)
+        self.scan_if = scape.Scan(self.data_if, timestamps, pointing, flags, 'scan', 'scan', target_coords, parangle)
 
     def test_pol(self):
         """Test Scan polarisation transforms and extraction."""
