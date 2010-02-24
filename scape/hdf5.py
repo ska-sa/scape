@@ -51,7 +51,9 @@ def remove_duplicates(sensor, name):
         Sensor data with duplicate timestamps removed (M <= N)
 
     """
-    x, y, z = sensor['timestamp'], sensor['value'], sensor['status']
+    x = np.atleast_1d(sensor['timestamp'])
+    y = np.atleast_1d(sensor['value'])
+    z = np.atleast_1d(sensor['status'])
     # Sort x via mergesort, as it is usually already sorted and stability is important
     sort_ind = np.argsort(x, kind='mergesort')
     x, y = x[sort_ind], y[sort_ind]
@@ -352,21 +354,17 @@ def save_dataset(dataset, filename):
 
         # Create antennas group
         ants_group = f.create_group('Antennas')
-        # Assume very specific form of antenna name, to recreate original Antennas group
-        parsed_antenna_index = antenna_name_pattern.match(dataset.antenna.name)
-        if parsed_antenna_index is None:
-            raise ValueError("Antenna name assumed to be 'ant%%d' (%%d is 1-based index of antenna)," +
-                             " found '%s' instead" % (dataset.antenna.name,))
+        # If antenna names follow standard pattern, number antenna groups appropriately - otherwise number them 1 and 2
+        antenna_index = antenna_name_pattern.match(dataset.antenna.name)
+        antA_name = ('Antenna%s' % antenna_index.groups()) if antenna_index is not None else 'Antenna1'
         # Create first antenna group
-        antA_group = ants_group.create_group('Antenna%s' % parsed_antenna_index.groups())
+        antA_group = ants_group.create_group(antA_name)
         antA_group.attrs['description'] = dataset.antenna.description
         # Create second antenna group if the data set is interferometric
         if dataset.antenna2 is not None:
-            parsed_antenna_index = antenna_name_pattern.match(dataset.antenna2.name)
-            if parsed_antenna_index is None:
-                raise ValueError("Antenna name assumed to be 'ant%%d' (%%d is 1-based index of antenna)," +
-                                 " found '%s' instead" % (dataset.antenna2.name,))
-            antB_group = ants_group.create_group('Antenna%d' % parsed_antenna_index.groups())
+            antenna_index = antenna_name_pattern.match(dataset.antenna2.name)
+            antB_name = ('Antenna%s' % antenna_index.groups()) if antenna_index is not None else 'Antenna2'
+            antB_group = ants_group.create_group(antB_name)
             antB_group.attrs['description'] = dataset.antenna2.description
 
         # Create receiver chain groups and enviro sensors for first antenna (other antenna left blank)
