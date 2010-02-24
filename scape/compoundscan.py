@@ -150,7 +150,7 @@ class CompoundScan(object):
             self.target = target
         else:
             self.target = katpoint.construct_target(target)
-        self.label = label
+        self.label = label if label is not None else ''
         self.beam = beam
         self.baseline = baseline
         self.dataset = dataset
@@ -170,8 +170,10 @@ class CompoundScan(object):
 
     def __str__(self):
         """Verbose human-friendly string representation of compound scan object."""
-        descr = ["'%s', target='%s' [%s]" % (self.label if self.label is not None else 'No label',
-                                             self.target.name, self.target.body_type)]
+        if len(self.label) > 0:
+            descr = ["'%s', target='%s' [%s]" % (self.label, self.target.name, self.target.body_type)]
+        else:
+            descr = ["target='%s' [%s]" % (self.target.name, self.target.body_type)]
         if self.baseline:
             descr[0] += ', initial baseline offset=%f' % (self.baseline.poly[-1],)
         if self.beam:
@@ -183,7 +185,7 @@ class CompoundScan(object):
     def __repr__(self):
         """Short human-friendly string representation of compound scan object."""
         return "<scape.CompoundScan '%s' target='%s' scans=%d at 0x%x>" % \
-               (self.label if self.label is not None else 'No label', self.target.name, len(self.scans), id(self))
+               (self.label, self.target.name, len(self.scans), id(self))
 
     def baseline_height(self):
         """Estimate height of fitted baseline (at fitted beam center).
