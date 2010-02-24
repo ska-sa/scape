@@ -164,30 +164,50 @@ def load_dataset(filename, baseline='A1A1', selected_pointing='pos_actual_scan',
         if antenna2 == antenna:
             antenna2 = None
 
-        # Use antenna A for noise diode info and weather + pointing sensors for now
-        nd_model = 'nd_%s_model' % noise_diode
-        temperature_H = antA_group['H'][nd_model].value if 'H' in antA_group else np.zeros((1, 2))
-        temperature_V = antA_group['V'][nd_model].value if 'V' in antA_group else np.zeros((1, 2))
-        nd_model = NoiseDiodeModel(temperature_H, temperature_V)
-        # Environment sensors are optional
+        # Use antenna A for noise diode info and weather + pointing sensors
         sensors_group = antA_group['Sensors']
         enviro = {}
         for quantity in ['temperature', 'pressure', 'humidity', 'wind_speed', 'wind_direction']:
             sensor = sensor_name[quantity]
+            # Environment sensors are optional
             if sensor in sensors_group:
                 enviro[quantity] = remove_duplicates(sensors_group[sensor], sensor)
+        # First try to load generic noise diode model (typically found in processed / intermediate file)
+        try:
+            temperature_H = antA_group['H']['nd_model'].value if 'H' in antA_group else np.ones((1, 2))
+            temperature_V = antA_group['V']['nd_model'].value if 'V' in antA_group else np.ones((1, 2))
+        except KeyError:
+            # Now try to load selected noise diode
+            try:
+                nd_model = noise_diode + '_nd_model'
+                temperature_H = antA_group['H'][nd_model].value if 'H' in antA_group else np.ones((1, 2))
+                temperature_V = antA_group['V'][nd_model].value if 'V' in antA_group else np.ones((1, 2))
+            except KeyError:
+                # Find noise diode model datasets common to both 'H' and 'V' (if these feeds exist)
+                nd_set = None
+                if 'H' in antA_group:
+                    nd_set = set([name.rpartition('_nd_model')[0] for name in antA_group['H'].listnames()])
+                    nd_set.discard('')
+                if 'V' in antA_group:
+                    nd_set2 = set([name.rpartition('_nd_model')[0] for name in antA_group['V'].listnames()])
+                    nd_set2.discard('')
+                    nd_set = nd_set2 if nd_set is None else nd_set.intersection(nd_set2)
+                raise ValueError("Unknown noise diode '%s', found the following models instead: %s" %
+                                 (noise_diode, list(nd_set)))
+        nd_model = NoiseDiodeModel(temperature_H, temperature_V)
 
         # Load correlator configuration group
         corrconf_group = f['Correlator']
         # If center_freqs dataset is available, use it - otherwise, reconstruct it from DBE attributes
         center_freqs = corrconf_group.get('center_freqs', None)
-        num_chans = corrconf_group.attrs['num_freq_channels']
         if center_freqs:
             center_freqs = center_freqs.value / 1e6
             bandwidths = corrconf_group['bandwidths'].value / 1e6
+            num_chans = len(center_freqs)
         else:
             band_center = corrconf_group.attrs['center_frequency_hz'] / 1e6
             channel_bw = corrconf_group.attrs['channel_bandwidth_hz'] / 1e6
+            num_chans = corrconf_group.attrs['num_freq_channels']
             # Assume that lower-sideband downconversion has been used, which flips frequency axis
             # Also subtract half a channel width to get frequencies at center of each channel
             center_freqs = band_center - channel_bw * (np.arange(num_chans) - num_chans / 2 + 0.5)
@@ -198,19 +218,23 @@ def load_dataset(filename, baseline='A1A1', selected_pointing='pos_actual_scan',
         corrconf = CorrelatorConfig(center_freqs, bandwidths, channel_select, dump_rate)
 
         # Figure out mapping of antennas and feeds to the correlation products involved
-        # Obtain DBE input associated with each polarisation of selected antennas (indicating unavailable feeds)
-        antA_H = antA_group['H'].attrs['dbe_input'] if 'H' in antA_group else 'UNAVAILABLE'
-        antA_V = antA_group['V'].attrs['dbe_input'] if 'V' in antA_group else 'UNAVAILABLE'
-        antB_H = antB_group['H'].attrs['dbe_input'] if 'H' in antB_group else 'UNAVAILABLE'
-        antB_V = antB_group['V'].attrs['dbe_input'] if 'V' in antB_group else 'UNAVAILABLE'
-        # Mapping of polarisation product to DBE input string identifying the pair of inputs multiplied together
-        pol_to_dbestr = {'HH' : antA_H + antB_H, 'VV' : antA_V + antB_V,
-                         'HV' : antA_H + antB_V, 'VH' : antA_V + antB_H}
-        # Correlator mapping of DBE input string to correlation product index (Miriad-style numbering)
-        input_map = corrconf_group['input_map'].value
-        dbestr_to_corr_id = dict(zip(input_map['dbe_inputs'], input_map['correlator_product_id']))
-        # Overall mapping from polarisation product to correlation product index (None for unavailable products)
-        pol_to_corr_id = dict([(pol, dbestr_to_corr_id.get(pol_to_dbestr[pol])) for pol in scape_pol])
+        if 'input_map' in corrconf_group:
+            # Obtain DBE input associated with each polarisation of selected antennas (indicating unavailable feeds)
+            antA_H = antA_group['H'].attrs['dbe_input'] if 'H' in antA_group else 'UNAVAILABLE'
+            antA_V = antA_group['V'].attrs['dbe_input'] if 'V' in antA_group else 'UNAVAILABLE'
+            antB_H = antB_group['H'].attrs['dbe_input'] if 'H' in antB_group else 'UNAVAILABLE'
+            antB_V = antB_group['V'].attrs['dbe_input'] if 'V' in antB_group else 'UNAVAILABLE'
+            # Mapping of polarisation product to DBE input string identifying the pair of inputs multiplied together
+            pol_to_dbestr = {'HH' : antA_H + antB_H, 'VV' : antA_V + antB_V,
+                             'HV' : antA_H + antB_V, 'VH' : antA_V + antB_H}
+            # Correlator mapping of DBE input string to correlation product index (Miriad-style numbering)
+            input_map = corrconf_group['input_map'].value
+            dbestr_to_corr_id = dict(zip(input_map['dbe_inputs'], input_map['correlator_product_id']))
+            # Overall mapping from polarisation product to correlation product index (None for unavailable products)
+            pol_to_corr_id = dict([(pol, dbestr_to_corr_id.get(pol_to_dbestr[pol])) for pol in scape_pol])
+        else:
+            # Simplified mapping, used in processed / intermediate files
+            pol_to_corr_id = dict([(pol, n) for n, pol in enumerate(scape_pol)])
 
         # Load each compound scan group
         compscanlist = []
@@ -258,7 +282,7 @@ def load_dataset(filename, baseline='A1A1', selected_pointing='pos_actual_scan',
                     for coord in ('azim', 'elev'):
                         sensor = '%s_%s' % (selected_pointing, coord)
                         if sensor not in sensors_group:
-                            raise ValueError("The selected sensor '%s' was not found in HDF5 file" % (sensor,))
+                            raise ValueError("Selected pointing sensor '%s' was not found in HDF5 file" % (sensor,))
                         # Ensure pointing timestamps are unique before interpolation
                         original_coord = remove_duplicates(sensors_group[sensor], sensor)
                         # Linearly interpolate pointing coordinates to correlator data timestamps
@@ -277,12 +301,12 @@ def load_dataset(filename, baseline='A1A1', selected_pointing='pos_actual_scan',
                 if scan_flags is None:
                     sensor = sensor_name[noise_diode + '_nd_on']
                     if sensor not in sensors_group:
-                        raise ValueError("The selected sensor '%s' was not found in HDF5 file" % (sensor,))
+                        raise ValueError("Selected noise diode sensor '%s' was not found in HDF5 file" % (sensor,))
                     # Ensure noise diode timestamps are unique before interpolation
                     nd_on = remove_duplicates(sensors_group[sensor], sensor)
                     # Do step-wise interpolation (as flag is either 0 or 1 and holds its value until it toggles)
                     interp = PiecewisePolynomial1DFit(max_degree=0)
-                    interp.fit(nd_on['timestamp'], nd_on['value'])
+                    interp.fit(nd_on['timestamp'], nd_on['value'].astype(int))
                     scan_flags = np.rec.fromarrays([interp(data_timestamps).astype(bool)], names=('nd_on',))
                 scan_label = scan_group.attrs['label']
 
@@ -334,7 +358,7 @@ def save_dataset(dataset, filename):
             raise ValueError("Antenna name assumed to be 'ant%%d' (%%d is 1-based index of antenna)," +
                              " found '%s' instead" % (dataset.antenna.name,))
         # Create first antenna group
-        antA_group = ants_group.create_group('Antenna%d' % parsed_antenna_index.groups())
+        antA_group = ants_group.create_group('Antenna%s' % parsed_antenna_index.groups())
         antA_group.attrs['description'] = dataset.antenna.description
         # Create second antenna group if the data set is interferometric
         if dataset.antenna2 is not None:
@@ -345,6 +369,19 @@ def save_dataset(dataset, filename):
             antB_group = ants_group.create_group('Antenna%d' % parsed_antenna_index.groups())
             antB_group.attrs['description'] = dataset.antenna2.description
 
+        # Create receiver chain groups and enviro sensors for first antenna (other antenna left blank)
+        sensors_group = antA_group.create_group('Sensors')
+        for quantity in ['temperature', 'pressure', 'humidity', 'wind_speed', 'wind_direction']:
+            sensor = sensor_name[quantity]
+            # Environment sensors are optional
+            if quantity in dataset.enviro:
+                sensors_group.create_dataset(sensor, data=dataset.enviro[quantity], compression='gzip')
+        # For now, both H and V are created, even if original dataset had only a single feed, to keep things simple
+        # The correlator data for the missing feed are already zeros in this situation
+        h_group, v_group = antA_group.create_group('H'), antA_group.create_group('V')
+        h_group.create_dataset('nd_model', data=dataset.nd_model.temperature_x, compression='gzip')
+        v_group.create_dataset('nd_model', data=dataset.nd_model.temperature_y, compression='gzip')
+
         # Create correlator configuration group
         corrconf_group = f.create_group('Correlator')
         corrconf_group.create_dataset('center_freqs', data=dataset.corrconf.freqs * 1e6, compression='gzip')
@@ -352,25 +389,23 @@ def save_dataset(dataset, filename):
         select_flags = np.tile(False, len(dataset.corrconf.freqs))
         select_flags[dataset.corrconf.channel_select] = True
         corrconf_group.create_dataset('channel_select', data=select_flags)
-        corrconf_group.attrs['dump_rate'] = dataset.corrconf.dump_rate
+        corrconf_group.attrs['dump_rate_hz'] = dataset.corrconf.dump_rate
         sample_period = 1.0 / dataset.corrconf.dump_rate
-
-        nd_group = f.create_group('NoiseDiodeModel')
-        nd_group.create_dataset('temperature_x', data=dataset.noise_diode_data.temperature_x, compression='gzip')
-        nd_group.create_dataset('temperature_y', data=dataset.noise_diode_data.temperature_y, compression='gzip')
+        # Simplified correlator ID lookup
+        pol_to_corr_id = dict([(pol, n) for n, pol in enumerate(scape_pol)])
 
         scans_group = f.create_group('Scans')
         for compscan_ind, compscan in enumerate(dataset.compscans):
             compscan_group = scans_group.create_group('CompoundScan%d' % compscan_ind)
             compscan_group.attrs['target'] = compscan.target.description
+            compscan_group.attrs['label'] = compscan.label
 
             for scan_ind, scan in enumerate(compscan.scans):
                 scan_group = compscan_group.create_group('Scan%d' % scan_ind)
-
-                # Always save power data in complex64 form
-                hdf5_pol = [scape_to_hdf5[key] for key in scape_pol]
+                # Always save power data in complex128 form
+                corr_id = [str(pol_to_corr_id[pol]) for pol in scape_pol]
                 complex_data = np.rec.fromarrays([scan.pol(key) for key in scape_pol],
-                                                 names=hdf5_pol, formats=['complex64'] * 4)
+                                                 names=corr_id, formats=['complex128'] * 4)
                 scan_group.create_dataset('data', data=complex_data, compression='gzip')
                 # Save data timestamps in milliseconds
                 scan_group.create_dataset('timestamps', data=1000.0 * scan.timestamps, compression='gzip')
@@ -381,9 +416,4 @@ def save_dataset(dataset, filename):
                 pointing_view *= np.float32(180.0 / np.pi)
                 scan_group.create_dataset('pointing', data=pointing, compression='gzip')
                 scan_group.create_dataset('flags', data=scan.flags, compression='gzip')
-                if scan.enviro_ambient:
-                    scan_group.create_dataset('enviro_ambient', data=scan.enviro_ambient, compression='gzip')
-                if scan.enviro_wind:
-                    scan_group.create_dataset('enviro_wind', data=scan.enviro_wind, compression='gzip')
-
                 scan_group.attrs['label'] = scan.label
