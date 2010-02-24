@@ -117,6 +117,14 @@ def load_dataset(filename, baseline='A1A1', selected_pointing='pos_actual_scan',
         Description string of second antenna of baseline pair (None for single-dish)
     nd_model : :class:`NoiseDiodeModel` object
         Noise diode model
+    enviro : dict of record arrays
+        Environmental (weather) measurements. The keys of the dict are strings
+        indicating the type of measurement ('temperature', 'pressure', etc),
+        while the values of the dict are record arrays with three elements per
+        record: 'timestamp', 'value' and 'status'. The 'timestamp' field is a
+        timestamp in UTC seconds since epoch, the 'value' field is the
+        corresponding value and the 'status' field is a string indicating the
+        sensor status.
 
     Raises
     ------

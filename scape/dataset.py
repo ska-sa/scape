@@ -110,12 +110,12 @@ class DataSet(object):
             if ext == '.fits':
                 if not xdmfits_found:
                     raise ImportError('XDM FITS support could not be loaded - please check xdmfits module')
-                compscanlist, data_unit, corrconf, antenna, nd_data, enviro = xdmfits_load(filename, **kwargs)
+                compscanlist, data_unit, corrconf, antenna, nd_model, enviro = xdmfits_load(filename, **kwargs)
             elif (ext == '.h5') or (ext == '.hdf5'):
                 if not hdf5_found:
                     raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
                 compscanlist, experiment_id, observer, description, data_unit, \
-                corrconf, antenna, antenna2, nd_data, enviro = hdf5_load(filename, **kwargs)
+                corrconf, antenna, antenna2, nd_model, enviro = hdf5_load(filename, **kwargs)
             else:
                 raise ValueError("File extension '%s' not understood" % ext)
 
@@ -226,7 +226,9 @@ class DataSet(object):
 
     def __str__(self):
         """Verbose human-friendly string representation of data set object."""
-        descr = ["%s | %s" % (self.experiment_id, self.observer), "'%s'" % (self.description,),
+        descr = ["%s | %s" % (self.experiment_id if self.experiment_id is not None else 'No experiment ID',
+                              self.observer if self.observer is not None else 'No observer'),
+                 "'%s'" % (self.description if self.description is not None else 'No description',),
                  "%s, data_unit=%s, bands=%d, freqs=%f - %f MHz, total bw=%f MHz, dumprate=%f Hz" %
                  ("antenna='%s'" % self.antenna.name if self.antenna2 is None else \
                   "baseline='%s - %s'" % (self.antenna.name, self.antenna2.name),

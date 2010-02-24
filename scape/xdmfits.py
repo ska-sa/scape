@@ -218,14 +218,14 @@ def load_scan(filename):
         Experiment sequence number associated with scan
     feed_id : int
         Index of feed used (0 for main feed or 1 for offset feed)
-    enviro_ambient : record array, shape (*Ta*,)
-        Slowly-varying environmental measurements, containing *Ta* records.
-        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
-        and the rest of the field names correspond to ambient variables.
-    enviro_wind : record array, shape (*Tw*,)
-        Wind speed and direction measurements, containing *Tw* records.
-        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
-        and the rest of the field names correspond to wind variables.
+    enviro : dict of record arrays
+        Environmental (weather) measurements. The keys of the dict are strings
+        indicating the type of measurement ('temperature', 'pressure', etc),
+        while the values of the dict are record arrays with three elements per
+        record: 'timestamp', 'value' and 'status'. The 'timestamp' field is a
+        timestamp in UTC seconds since epoch, the 'value' field is the
+        corresponding value and the 'status' field is a string indicating the
+        sensor status.
 
     Raises
     ------
@@ -269,11 +269,16 @@ def load_scan(filename):
                               names=['valid', 'nd_on', 'rx_on'])
     # The environmental variables are sampled when the FITS file is written to disk,
     # so it is more appropriate to associate the last timestamp with them
-    enviro_ambient = np.rec.array([(timestamps[-1], np.float32(header['Temp']),
-                                    np.float32(header['Pressure']), np.float32(header['Humidity']))],
-                                  names='timestamp,temperature,pressure,humidity')
-    enviro_wind = np.rec.array([(timestamps[-1], np.float32(header['WindSpd']), np.float32(header['WindDir']))],
-                               names='timestamp,wind_speed,wind_direction')
+    enviro = {'temperature' : np.rec.array([timestamps[-1], np.float32(header['Temp']), 'nominal'],
+                                           names=('timestamp', 'value', 'status')),
+              'pressure' : np.rec.array([timestamps[-1], np.float32(header['Pressure']), 'nominal'],
+                                        names=('timestamp', 'value', 'status')),
+              'humidity' : np.rec.array([timestamps[-1], np.float32(header['Humidity']), 'nominal'],
+                                        names=('timestamp', 'value', 'status')),
+              'wind_speed' : np.rec.array([timestamps[-1], np.float32(header['WindSpd']), 'nominal'],
+                                           names=('timestamp', 'value', 'status')),
+              'wind_direction' : np.rec.array([timestamps[-1], np.float32(header['WindDir']), 'nominal'],
+                                              names=('timestamp', 'value', 'status'))}
     data_header = hdu['MSDATA'].header
     label = str(data_header['ID'+str(data_header['DATAID'])])
     path = filename
@@ -291,7 +296,7 @@ def load_scan(filename):
     antenna = acsm_antenna_description(cPickle.loads(hdu['OBJECTS'].data.field('Mount')[0]))
 
     return Scan(data, timestamps, pointing, flags, label, path), \
-           data_unit, corrconf, target, antenna, exp_seq_num, feed_id, enviro_ambient, enviro_wind
+           data_unit, corrconf, target, antenna, exp_seq_num, feed_id, enviro
 
 # pylint: disable-msg=W0613
 def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False, **kwargs):
@@ -327,16 +332,16 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
         Correlator configuration object
     antenna : string
         Description string of antenna that produced the data set
-    nd_data : :class:`NoiseDiodeXDM` object
+    nd_model : :class:`NoiseDiodeXDM` object
         Noise diode model
-    enviro_ambient : record array, shape (*Ta*,)
-        Slowly-varying environmental measurements, containing *Ta* records.
-        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
-        and the rest of the field names correspond to ambient variables.
-    enviro_wind : record array, shape (*Tw*,)
-        Wind speed and direction measurements, containing *Tw* records.
-        The first field ('timestamp') is a timestamp in UTC seconds since epoch,
-        and the rest of the field names correspond to wind variables.
+    enviro : dict of record arrays
+        Environmental (weather) measurements. The keys of the dict are strings
+        indicating the type of measurement ('temperature', 'pressure', etc),
+        while the values of the dict are record arrays with three elements per
+        record: 'timestamp', 'value' and 'status'. The 'timestamp' field is a
+        timestamp in UTC seconds since epoch, the 'value' field is the
+        corresponding value and the 'status' field is a string indicating the
+        sensor status.
 
     Raises
     ------
@@ -367,12 +372,11 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
         raise IOError("Data file '%s' not found" % data_filename)
     # Group all FITS files (= scans) with the same experiment sequence number into a compound scan
     scanlists, targets = {}, {}
-    nd_data = None
-    enviro_ambient, enviro_wind = [], []
+    nd_model = None
+    enviro_list = []
     for fits_file in filelist:
-        scan, data_unit, corrconf, target, antenna, exp_seq_num, feed_id, ambient, wind = load_scan(fits_file)
-        enviro_ambient.append(ambient)
-        enviro_wind.append(wind)
+        scan, data_unit, corrconf, target, antenna, exp_seq_num, feed_id, scan_enviro = load_scan(fits_file)
+        enviro_list.append(scan_enviro)
         if swap_hv:
             scan.swap_h_and_v()
         if scanlists.has_key(exp_seq_num):
@@ -383,11 +387,11 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
                "Each scan in a compound scan is required to have the same target"
         targets[exp_seq_num] = target
         # Load noise diode characteristics if available
-        if nd_data is None:
+        if nd_model is None:
             # Alternate cal FITS file overrides the data set version
             if nd_filename:
                 try:
-                    nd_data = NoiseDiodeXDM(nd_filename, feed_id)
+                    nd_model = NoiseDiodeXDM(nd_filename, feed_id)
                     logger.info("Loaded alternate noise diode characteristics from %s" % nd_filename)
                 except NoiseDiodeNotFound:
                     logger.warning("Could not load noise diode data from " + nd_filename)
@@ -396,7 +400,7 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
             # Fall back to noise diode data in data FITS file
             if nd_filename is None:
                 try:
-                    nd_data = NoiseDiodeXDM(data_filename)
+                    nd_model = NoiseDiodeXDM(data_filename)
                     logger.info("Loaded noise diode characteristics from %s" % fits_file)
                 except NoiseDiodeNotFound:
                     pass
@@ -404,7 +408,9 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
         logger.info("Loaded %s: %s '%s' [%s] (%d samps, %d chans, %d pols)" %
                     (os.path.basename(fits_file), scan.label, target.name, target.body_type,
                      scan.data.shape[0], scan.data.shape[1], scan.data.shape[2]))
-    enviro_ambient, enviro_wind = np.hstack(enviro_ambient), np.hstack(enviro_wind)
+    enviro = {}
+    for quantity in ['temperature', 'pressure', 'humidity', 'wind_speed', 'wind_direction']:
+        enviro[quantity] = np.hstack([env[quantity] for env in enviro_list])
     # Assemble CompoundScan objects from scan lists
     compscanlist = []
     for esn, scanlist in scanlists.iteritems():
@@ -435,4 +441,4 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
                     logger.warning("No target in catalogue close enough to '%s' (closest is %.1f arcsecs away)" %
                                    (target.name, rad2deg(distance[closest]) * 3600.))
         compscanlist.append(CompoundScan(scanlist, target))
-    return compscanlist, data_unit, corrconf, antenna, nd_data, enviro_ambient, enviro_wind
+    return compscanlist, data_unit, corrconf, antenna, nd_model, enviro
