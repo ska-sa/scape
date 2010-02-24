@@ -11,7 +11,7 @@ import numpy as np
 from .gaincal import NoiseDiodeModel
 from .scan import Scan, scape_pol
 from .compoundscan import CorrelatorConfig, CompoundScan
-from .fitting import PiecewisePolynomial1DFit, Independent1DFit
+from .fitting import PiecewisePolynomial1DFit
 
 logger = logging.getLogger("scape.hdf5")
 
@@ -388,7 +388,6 @@ def save_dataset(dataset, filename):
         select_flags[dataset.corrconf.channel_select] = True
         corrconf_group.create_dataset('channel_select', data=select_flags)
         corrconf_group.attrs['dump_rate_hz'] = dataset.corrconf.dump_rate
-        sample_period = 1.0 / dataset.corrconf.dump_rate
         # Simplified correlator ID lookup
         pol_to_corr_id = dict([(pol, n) for n, pol in enumerate(scape_pol)])
 
