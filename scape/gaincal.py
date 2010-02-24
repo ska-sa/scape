@@ -21,10 +21,10 @@ class NoiseDiodeModel(object):
 
     Parameters
     ----------
-    temperature_x : real array, shape (N, 2)
+    temperature_x : real array, shape (N, 2), optional
         Table containing frequencies [MHz] in the first column and measured
         temperatures [K] in the second column, for port 1 or V (X polarisation)
-    temperature_y : real array, shape (N, 2)
+    temperature_y : real array, shape (N, 2), optional
         Table containing frequencies [MHz] in the first column and measured
         temperatures [K] in the second column, for port 2 or H (Y polarisation)
 

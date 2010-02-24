@@ -171,7 +171,9 @@ class DataSet(object):
                ((self.antenna2 == other.antenna2 == None) or \
                 ((self.antenna2 is not None) and (other.antenna2 is not None) and \
                  self.antenna2.description == other.antenna2.description)) and \
-               (self.nd_model == other.nd_model) and (self.enviro == other.enviro)
+               (self.nd_model == other.nd_model) and \
+               np.all([key == key2 for key, key2 in zip(self.enviro.iterkeys(), other.enviro.iterkeys())]) and \
+               np.all([np.all(val == val2) for val, val2 in zip(self.enviro.itervalues(), other.enviro.itervalues())])
 
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -287,7 +289,7 @@ class DataSet(object):
         else:
             raise ValueError("File extension '%s' not understood" % ext)
 
-    def select(self, labelkeep=None, flagkeep=None, freqkeep=None, copy=False):
+    def select(self, labelkeep=None, flagkeep=None, freqkeep=None, copy=True):
         """Select subset of data set, based on scan label, flags and frequency.
 
         This returns a data set with a possibly reduced number of time samples,
@@ -317,8 +319,10 @@ class DataSet(object):
             Sequence of indicators of which frequency channels/bands to keep
             (either integer indices or booleans that are True for the values to
             be kept). The default is None, which keeps all channels/bands.
-        copy : {False, True}, optional
-            True if the new scan is a copy, False if it is a view
+        copy : {True, False}, optional
+            True if the new scan is a copy, False if it is a view, The default
+            currently is True, because views do not always behave as expected
+            when using freqkeep or flagkeep (safe for labelkeep).
 
         Returns
         -------
@@ -425,26 +429,10 @@ class DataSet(object):
                 rfi_data.append((norm_power, template, expected_std))
         # Count the number of bad scans per channel, and threshold it
         rfi_channels = (rfi_count > max(min_bad_scans * len(self.scans), 1.0)).nonzero()[0]
-        self.rfi_channels = rfi_channels
         if extra_outputs:
             return rfi_channels, rfi_count, rfi_data
         else:
             return rfi_channels
-
-    def remove_rfi_channels(self, rfi_channels=None):
-        """Remove RFI-flagged channels from data set, returning a copy.
-
-        This is a convenience function that selects all the non-RFI-flagged
-        frequency channels in the data set and returns a copy.
-
-        """
-        if rfi_channels is None:
-            rfi_channels = self.rfi_channels
-        non_rfi = sorted(list(set(range(len(self.freqs))) - set(rfi_channels)))
-        d = self.select(freqkeep=non_rfi, copy=True)
-        DataSet.__init__(self, None, d.compscans, d.experiment_id, d.observer, d.description,
-                         d.data_unit, d.corrconf, d.antenna, d.antenna2, d.nd_model, d.enviro)
-        return self
 
     def convert_power_to_temperature(self, randomise=False, **kwargs):
         """Convert raw power into temperature (K) based on noise injection.
@@ -598,9 +586,8 @@ class DataSet(object):
             compscans = [self.compscans[compscan]]
         # FWHM beamwidth for uniformly illuminated circular dish is 1.03 lambda / D
         # FWHM beamwidth for Gaussian-tapered circular dish is 1.22 lambda / D
-        # We are somewhere in between (the factor 1.178 is based on measurements of XDM)
-        # TODO: this factor needs to be associated with the antenna
-        expected_width = 1.178 * katpoint.lightspeed / (self.freqs[band] * 1e6) / self.antenna.diameter
+        # The antenna beamwidth factor is somewhere between 1.03 and 1.22
+        expected_width = self.antenna.beamwidth * katpoint.lightspeed / (self.freqs[band]*1e6) / self.antenna.diameter
         if not circular_beam:
             expected_width = [expected_width, expected_width]
         # Degrees of freedom is time-bandwidth product (2 * BW * t_dump) of each sample
