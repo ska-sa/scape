@@ -302,14 +302,17 @@ def load_dataset(filename, baseline='A1A1', selected_pointing='pos_actual_scan',
                 scan_flags = scan_group['flags'].value if 'flags' in scan_group else None
                 if scan_flags is None:
                     sensor = sensor_name[noise_diode + '_nd_on']
-                    if sensor not in sensors_group:
-                        raise ValueError("Selected noise diode sensor '%s' was not found in HDF5 file" % (sensor,))
-                    # Ensure noise diode timestamps are unique before interpolation
-                    nd_on = remove_duplicates(sensors_group[sensor], sensor)
-                    # Do step-wise interpolation (as flag is either 0 or 1 and holds its value until it toggles)
-                    interp = PiecewisePolynomial1DFit(max_degree=0)
-                    interp.fit(nd_on['timestamp'], nd_on['value'].astype(int))
-                    scan_flags = np.rec.fromarrays([interp(data_timestamps).astype(bool)], names=('nd_on',))
+                    if sensor in sensors_group:
+                        # Ensure noise diode timestamps are unique before interpolation
+                        nd_on = remove_duplicates(sensors_group[sensor], sensor)
+                        # Do step-wise interpolation (as flag is either 0 or 1 and holds its value until it toggles)
+                        interp = PiecewisePolynomial1DFit(max_degree=0)
+                        interp.fit(nd_on['timestamp'], nd_on['value'].astype(int))
+                        scan_flags = np.rec.fromarrays([interp(data_timestamps).astype(bool)], names=('nd_on',))
+                    else:
+                        logger.warning(("Selected noise diode sensor '%s'" % (sensor,)) +
+                                       " not found in HDF5 file - setting nd_on to False")
+                        scan_flags = np.rec.fromarrays([np.tile(False, data_timestamps.shape)], names=('nd_on',))
                 scan_label = scan_group.attrs['label']
 
                 scanlist.append(Scan(scan_data, data_timestamps, scan_pointing, scan_flags, scan_label,
