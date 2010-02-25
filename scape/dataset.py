@@ -249,7 +249,7 @@ class DataSet(object):
 
     def __repr__(self):
         """Short human-friendly string representation of data set object."""
-        return "<scape.DataSet %s %s compscans=%d at 0x%x>" % (self.experiment_id,
+        return "<scape.DataSet '%s' %s compscans=%d at 0x%x>" % (self.experiment_id,
                "antenna='%s'" % self.antenna.name if self.antenna2 is None else
                "baseline='%s - %s'" % (self.antenna.name, self.antenna2.name),
                len(self.compscans), id(self))
