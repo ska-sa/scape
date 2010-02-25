@@ -57,7 +57,7 @@ data = data[noise_diode_fired]
 # Also focus on the stronger sources with better signal-to-noise ratio
 strong_sources = data['flux'] > 40.
 # Work with data points where all three scans across source were used in beam fitting
-all_scans_good = (data['refined_XX'] == 3) & (data['refined_YY'] == 3)
+all_scans_good = (data['refined_HH'] == 3) & (data['refined_VV'] == 3)
 good = strong_sources & all_scans_good
 
 # Extract desired fields from data
@@ -92,7 +92,7 @@ plt.figure(1)
 plt.clf()
 ylimits = np.zeros((4, 4))
 
-for pol_ind, pol in enumerate(['XX', 'YY']):
+for pol_ind, pol in enumerate(['HH', 'VV']):
     # Antenna temperature Tant (due to source) for each polarisation [K]
     Tant = data['beam_height_' + pol]
     # System temperature Tsys for each polarisation can be estimated from the baseline height [K]
