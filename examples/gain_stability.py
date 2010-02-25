@@ -61,9 +61,9 @@ for filename in datasets:
     freqs = d.freqs
     if len(t) > 0:
         timestamps.append(t)
-        # Mask out RFI-flagged channels
-        mask = np.tile(False, len(freqs))
-        mask[d.rfi_channels] = True
+        # Mask out unselected channels
+        mask = np.tile(True, len(freqs))
+        mask[d.channel_select] = False
         gain_xx.append(np.ma.masked_array(gx, np.tile(mask, (gx.shape[0], 1))))
         gain_yy.append(np.ma.masked_array(gy, np.tile(mask, (gy.shape[0], 1))))
         phase_yx.append(np.ma.masked_array(phi, np.tile(mask, (phi.shape[0], 1))))

@@ -157,7 +157,6 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
         return
     channel_freqs_MHz = dataset.freqs
     channel_bandwidths_MHz = dataset.bandwidths
-    rfi_channels = dataset.rfi_channels
     num_channels = len(channel_freqs_MHz)
     data_min = {'HH': np.tile(np.inf, (len(scans), num_channels)),
                 'VV': np.tile(np.inf, (len(scans), num_channels))}
@@ -189,9 +188,11 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
             for scan in compscan.scans:
                 # Grey out RFI-tagged channels using alpha transparency
                 if scan.label == 'scan':
-                    colors = [(0.0, 0.0, 1.0, 1.0 - 0.6 * (chan in dataset.rfi_channels)) for chan in channel_list]
+                    colors = [(0.0, 0.0, 1.0, 1.0 - 0.6 * (chan not in dataset.channel_select))
+                              for chan in channel_list]
                 else:
-                    colors = [(0.0, 0.0, 0.0, 1.0 - 0.6 * (chan in dataset.rfi_channels)) for chan in channel_list]
+                    colors = [(0.0, 0.0, 0.0, 1.0 - 0.6 * (chan not in dataset.channel_select))
+                              for chan in channel_list]
                 time_line = scan.timestamps - time_origin
                 # Normalise the data in each channel to lie between 0 and (channel bandwidth * scale)
                 norm_power = scale * channel_bandwidths_MHz[np.newaxis, :] * \
@@ -337,7 +338,7 @@ def plot_spectrogram(dataset, pol='I', add_scan_ids=True, dB=True, ax=None):
         else:
             smoothed_power = db_func(remove_spikes(np.abs(scan.pol(pol))))
         clim = [min(clim[0], smoothed_power.min()), max(clim[1], smoothed_power.max())]
-    grey_rows = dataset.rfi_channels
+    grey_rows = list(set(range(len(dataset.freqs))) - set(dataset.channel_select))
     images, border_lines, text_labels = plot_compacted_images(imdata, xticks, labels, ylim, clim, grey_rows, ax)
     ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
     ax.set_ylabel('Channel frequency (MHz)')

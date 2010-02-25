@@ -85,5 +85,5 @@ for dataset in datasets:
         else:
             print "%s: %s, UNAUGMENTED, %2d compscans, %3d scans, %4d samples, %d chans, %s, %.3f GB" % \
                   (dataset, start, num_compscans, num_scans, num_samples, num_chans, target, filesize)
-    except h5py.H5Error:
-        print "%s: Error reading file (bad format?)" % (dataset,)
+    except h5py.H5Error, e:
+        print "%s: Error reading file (bad format?): %s" % (dataset, e)
