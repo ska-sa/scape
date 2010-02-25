@@ -60,7 +60,7 @@ strong_sources = data['flux'] > 40.
 all_scans_good = (data['refined_HH'] == 3) & (data['refined_VV'] == 3)
 good = strong_sources & all_scans_good
 if not np.any(good):
-    print 'No good data was found (either sources are too weak or beam fits are all bad)'
+    print 'No good data was found (no noise diode fired, sources too weak or beam fits all bad)'
     sys.exit(1)
 
 # Extract desired fields from data
