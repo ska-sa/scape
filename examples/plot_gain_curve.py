@@ -59,6 +59,9 @@ strong_sources = data['flux'] > 40.
 # Work with data points where all three scans across source were used in beam fitting
 all_scans_good = (data['refined_HH'] == 3) & (data['refined_VV'] == 3)
 good = strong_sources & all_scans_good
+if not np.any(good):
+    print 'No good data was found (either sources are too weak or beam fits are all bad)'
+    sys.exit(1)
 
 # Extract desired fields from data
 elev = data['elevation']
