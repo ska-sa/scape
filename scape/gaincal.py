@@ -114,17 +114,20 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
     nd_jump_times, nd_jump_power = [], []
     min_samples = dataset.dump_rate * min_duration
     for scan in dataset.scans:
+        num_times = len(scan.timestamps)
+        # In absence of valid flag, all data is valid
+        valid_flag = scan.flags['valid'] if 'valid' in scan.flags.dtype.names else np.tile(True, num_times)
         # Find indices where noise diode flag changes value
         jumps = (np.diff(scan.flags['nd_on']).nonzero()[0] + 1).tolist()
         if jumps:
             before_jump = [0] + jumps[:-1]
             at_jump = jumps
-            after_jump = jumps[1:] + [len(scan.timestamps)]
+            after_jump = jumps[1:] + [num_times]
             # For every jump, obtain segments before and after jump with constant noise diode state
             for start, mid, end in zip(before_jump, at_jump, after_jump):
                 # Restrict these segments to indices where data is valid
-                before_segment = scan.flags['valid'][start:mid].nonzero()[0] + start
-                after_segment = scan.flags['valid'][mid:end].nonzero()[0] + mid
+                before_segment = valid_flag[start:mid].nonzero()[0] + start
+                after_segment = valid_flag[mid:end].nonzero()[0] + mid
                 if (len(before_segment) > min_samples) and (len(after_segment) > min_samples):
                     # Utilise both off -> on and on -> off transitions
                     # (mid is the first sample of the segment after the jump)
