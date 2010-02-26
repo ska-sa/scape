@@ -16,16 +16,24 @@ def ordinal_suffix(n):
         return {1 : 'st', 2 : 'nd', 3 : 'rd'}.get(n % 10, 'th')
 
 #--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_compacted_line_segments
+#--- FUNCTION :  plot_line_segments
 #--------------------------------------------------------------------------------------------------
 
-def plot_compacted_line_segments(segments, labels=None, ylim=None, ax=None, **kwargs):
-    """Plot sequence of line segments in compacted form.
+def plot_line_segments(segments, labels=None, width=0.0, compact=True, add_breaks=True,
+                       monotonic_axis='x', ax=None, **kwargs):
+    """Plot sequence of line segments.
 
     This plots a sequence of line segments (of possibly varying length) on a
-    single set of axes, with no gaps between the segments along the *x* axis.
-    The tick labels on the *x* axis are modified to reflect the original (padded)
-    values, and the breaks between segments are indicated by vertical lines.
+    single set of axes. Usually, one of the axes is considered *monotonic*,
+    which means that the line segment coordinates along that axis increase
+    monotonically through the sequence of segments. The classic example of such
+    a plot is when the line segments represent time series data with time on the
+    monotonic x-axis. Each segment may be labelled by a text string.
+
+    If *compact* is True, there will be no gaps between the segments along the
+    monotonic axis. The tick labels on this axis are modified to reflect the
+    original (padded) values. If *add_breaks* is True, the breaks between
+    segments along the monotonic axis are indicated by dashed lines.
 
     Parameters
     ----------
@@ -40,9 +48,17 @@ def plot_compacted_line_segments(segments, labels=None, ylim=None, ax=None, **kw
         identical to the *segments* parameter of
         :class:`matplotlib.collections.LineCollection`.
     labels : sequence of strings, optional
-        Corresponding sequence of text labels to add below each segment
-    ylim : sequence of 2 floats, or None, optional
-        Shared *y* limit of segments, as (*ymin*, *ymax*) (default is data limits)
+        Corresponding sequence of text labels to add below (or to the left of)
+        each segment
+    width : float, optional
+        If non-zero, replace contiguous line with staircase levels of specified
+        width along x-axis
+    compact : {True, False}, optional
+        Plot with no gaps between segments
+    add_breaks : {True, False}, optional
+        Add vertical (or horizontal) lines to indicate breaks between segments
+    monotonic_axis : {'x', 'y', None}, optional
+        Monotonic axis, along which segment coordinate increases monotonically
     ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
     kwargs : dict, optional
@@ -52,55 +68,85 @@ def plot_compacted_line_segments(segments, labels=None, ylim=None, ax=None, **kw
     -------
     segment_lines : :class:`matplotlib.collections.LineCollection` object
         Collection of segment lines
-    border_lines : :class:`matplotlib.collections.LineCollection` object
-        Collection of vertical lines separating the segments
+    break_lines : :class:`matplotlib.collections.LineCollection` object, or None
+        Collection of break lines separating the segments
     text_labels : list of :class:`matplotlib.text.Text` objects
         List of added text labels
 
     """
     if ax is None:
         ax = plt.gca()
-    if ylim is None:
-        ymin = np.min([np.asarray(segm)[:, 1].min() for segm in segments])
-        ymax = np.max([np.asarray(segm)[:, 1].max() for segm in segments])
-        yrange = ymax - ymin
-        if yrange == 0.0:
-            yrange = 1.0
-        ylim = (ymin - 0.05 * yrange, ymax + 0.05 * yrange)
     if labels is None:
         labels = []
-    start = np.array([np.asarray(segm)[:, 0].min() for segm in segments])
-    end = np.array([np.asarray(segm)[:, 0].max() for segm in segments])
-    compacted_start = [0.0] + np.cumsum(end - start).tolist()
-    compacted_segments = [np.column_stack((np.asarray(segm)[:, 0] - start[n] + compacted_start[n],
-                                           np.asarray(segm)[:, 1])) for n, segm in enumerate(segments)]
+    if (compact or add_breaks) and monotonic_axis is None:
+        logger.warning('Compacting and adding breaks do not make sense if there is no monotonic axis - set to False')
+        compact = add_breaks = False
+
+    # Get segment startpoints and endpoints along monotonic axis
+    if monotonic_axis == 'x':
+        start = np.array([np.asarray(segm)[:, 0].min() for segm in segments])
+        end = np.array([np.asarray(segm)[:, 0].max() for segm in segments])
+    else:
+        start = np.array([np.asarray(segm)[:, 1].min() for segm in segments])
+        end = np.array([np.asarray(segm)[:, 1].max() for segm in segments])
+
+    if compact:
+        # Calculate offset between original and compacted coordinate, and adjust coordinates accordingly
+        compacted_end = np.cumsum(end - start)
+        compacted_start = np.array([0.0] + compacted_end[:-1].tolist())
+        offset = start - compacted_start
+        start, end = compacted_start, compacted_end
+        # Redefine monotonic axis label formatter to add appropriate offset to label value, depending on segment
+        class SegmentedScalarFormatter(mpl.ticker.ScalarFormatter):
+            """Expand x axis value to correct segment before labelling."""
+            def __init__(self, useOffset=True, useMathText=False):
+                mpl.ticker.ScalarFormatter.__init__(self, useOffset, useMathText)
+            def __call__(self, x, pos=None):
+                segment = max(start.searchsorted(x, side='right') - 1, 0)
+                return mpl.ticker.ScalarFormatter.__call__(self, x + offset[segment], pos)
+        # Subtract segment offsets from appropriate coordinate
+        if monotonic_axis == 'x':
+            segments = [np.column_stack((np.asarray(segm)[:, 0] - offset[n], np.asarray(segm)[:, 1]))
+                        for n, segm in enumerate(segments)]
+            ax.xaxis.set_major_formatter(SegmentedScalarFormatter())
+        else:
+            segments = [np.column_stack((np.asarray(segm)[:, 0], np.asarray(segm)[:, 1] - offset[n]))
+                        for n, segm in enumerate(segments)]
+            ax.yaxis.set_major_formatter(SegmentedScalarFormatter())
+
     # Plot the segment lines as a collection
-    segment_lines = mpl.collections.LineCollection(compacted_segments, **kwargs)
+    segment_lines = mpl.collections.LineCollection(segments, **kwargs)
     ax.add_collection(segment_lines)
-    # These border lines have x coordinates fixed to the data and y coordinates fixed to the axes (like axvline)
-    transFixedY = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
-    border_lines = mpl.collections.LineCollection([[(s, 0), (s, 1)] for s in compacted_start[1:-1]],
-                                                  colors='k', linewidths=0.5, linestyles='dotted',
-                                                  transform=transFixedY)
-    ax.add_collection(border_lines)
-    ax.set_xlim(0.0, compacted_start[-1])
-    text_labels = []
-    for n, label in enumerate(labels):
-        text_labels.append(ax.text(np.mean(compacted_start[n:n+2]), 0.02, label, transform=transFixedY,
-                                   ha='center', va='bottom', clip_on=True))
-    # Redefine x-axis label formatter to display the correct time for each segment
-    class SegmentedScalarFormatter(mpl.ticker.ScalarFormatter):
-        """Expand x axis value to correct segment before labelling."""
-        def __init__(self, useOffset=True, useMathText=False):
-            mpl.ticker.ScalarFormatter.__init__(self, useOffset, useMathText)
-        def __call__(self, x, pos=None):
-            if x > compacted_start[0]:
-                segment = (compacted_start[:-1] < x).nonzero()[0][-1]
-                x = x - compacted_start[segment] + start[segment]
-            return mpl.ticker.ScalarFormatter.__call__(self, x, pos)
-    ax.xaxis.set_major_formatter(SegmentedScalarFormatter())
-    ax.set_ylim(ylim)
-    return segment_lines, border_lines, text_labels
+
+    segment_centers, breaks = (start + end) / 2, (start[1:] + end[:-1]) / 2
+    break_lines, text_labels = None, []
+    if monotonic_axis == 'x':
+        # Break lines and labels have x coordinates fixed to data and y coordinates fixed to axes (like axvline)
+        transFixedY = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
+        for n, label in enumerate(labels):
+            text_labels.append(ax.text(segment_centers[n], 0.02, label, transform=transFixedY,
+                                       ha='center', va='bottom', clip_on=True))
+        if add_breaks:
+            break_lines = mpl.collections.LineCollection([[(s, 0), (s, 1)] for s in breaks], colors='k',
+                                                         linewidths=0.5, linestyles='dotted', transform=transFixedY)
+            ax.add_collection(break_lines)
+        # Only set monotonic axis limits
+        ax.set_xlim(start[0], end[-1])
+        ax.autoscale_view(scalex=False)
+    else:
+        # Break lines and labels have x coordinates fixed to axes and y coordinates fixed to data (like axhline)
+        transFixedX = mpl.transforms.blended_transform_factory(ax.transAxes, ax.transData)
+        for n, label in enumerate(labels):
+            text_labels.append(ax.text(0.02, segment_centers[n], label, transform=transFixedX,
+                                       ha='left', va='center', clip_on=True))
+        if add_breaks:
+            break_lines = mpl.collections.LineCollection([[(0, s), (1, s)] for s in breaks], colors='k',
+                                                         linewidths=0.5, linestyles='dotted', transform=transFixedX)
+            ax.add_collection(break_lines)
+        ax.set_ylim(start[0], end[-1])
+        ax.autoscale_view(scaley=False)
+
+    return segment_lines, break_lines, text_labels
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_compacted_images

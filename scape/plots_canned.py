@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from katpoint import rad2deg
 from .stats import robust_mu_sigma, remove_spikes, minimise_angle_wrap
 from .beam_baseline import fwhm_to_sigma, extract_measured_beam, interpolate_measured_beam
-from .plots_basic import plot_compacted_line_segments, plot_compacted_images, plot_marker_3d, \
+from .plots_basic import plot_line_segments, plot_compacted_images, plot_marker_3d, \
                          gaussian_ellipses, plot_db_contours, ordinal_suffix
 
 logger = logging.getLogger("scape.plots_canned")
@@ -436,7 +436,8 @@ def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=N
         ax.fill_between(timeline, upper, lower, edgecolor='0.7', facecolor='0.7', lw=0)
         data_segments = [np.column_stack((timeline, rfi_data[s][0][:, n])) for n in non_rfi_channels]
         ax.add_collection(mpl.collections.LineCollection(data_segments))
-    plot_compacted_line_segments(template, labels, ylim=(-0.05, 1.05), ax=ax, lw=2, color='k')
+    plot_line_segments(template, labels, ax=ax, lw=2, color='k')
+    ax.set_ylim(-0.05, 1.05)
     ax.set_ylabel('Normalised power')
     # do RFI display
     ax = axes_list[1]
@@ -447,7 +448,8 @@ def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=N
         ax.fill_between(timeline, upper, lower, edgecolor='0.7', facecolor='0.7', lw=0)
         data_segments = [np.column_stack((timeline, rfi_data[s][0][:, n])) for n in rfi_channels]
         ax.add_collection(mpl.collections.LineCollection(data_segments))
-    plot_compacted_line_segments(template, labels, ylim=(-0.05, 1.05), ax=ax, lw=2, color='k')
+    plot_line_segments(template, labels, ax=ax, lw=2, color='k')
+    ax.set_ylim(-0.05, 1.05)
     ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
     ax.set_ylabel('Normalised power')
     return axes_list
@@ -526,18 +528,18 @@ def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, band=0, ax=
     power_range = max(power_limits) - min(power_limits)
     if power_range == 0.0:
         power_range = 1.0
-    ylim = (min(power_limits) - 0.05 * power_range, max(power_limits) + 0.05 * power_range)
     # Plot segments from back to front
     labels = [str(n) for n in xrange(len(compscan.scans))] if add_scan_ids else []
-    plot_compacted_line_segments(data_segments, labels, ylim=ylim, ax=ax, color='b', lw=1)
+    plot_line_segments(data_segments, labels, ax=ax, color='b', lw=1)
     beam_color = ('r' if compscan.beam.refined else 'g') if compscan.beam and compscan.beam.is_valid else 'y'
     baseline_colors = [('r' if scan.baseline else 'g') for scan in compscan.scans]
-    plot_compacted_line_segments(baseline_segments, ylim=ylim, ax=ax, color=baseline_colors, lw=2)
+    plot_line_segments(baseline_segments, ax=ax, color=baseline_colors, lw=2)
     if compscan.beam and compscan.beam.refined:
-        plot_compacted_line_segments(beam_segments, ylim=ylim, ax=ax, color=beam_color, lw=2, linestyles='dashed')
-        plot_compacted_line_segments(inner_beam_segments, ylim=ylim, ax=ax, color=beam_color, lw=2)
+        plot_line_segments(beam_segments, ax=ax, color=beam_color, lw=2, linestyles='dashed')
+        plot_line_segments(inner_beam_segments, ax=ax, color=beam_color, lw=2)
     else:
-        plot_compacted_line_segments(beam_segments, ylim=ylim, ax=ax, color=beam_color, lw=2)
+        plot_line_segments(beam_segments, ax=ax, color=beam_color, lw=2)
+    ax.set_ylim(min(power_limits) - 0.05 * power_range, max(power_limits) + 0.05 * power_range)
     # Format axes
     ax.set_xlabel('Time (s), since %s' % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time_origin)))
     ax.set_ylabel('Pol %s' % pol)
