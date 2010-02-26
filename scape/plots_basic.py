@@ -28,12 +28,14 @@ def plot_line_segments(segments, labels=None, width=0.0, compact=True, add_break
     which means that the line segment coordinates along that axis increase
     monotonically through the sequence of segments. The classic example of such
     a plot is when the line segments represent time series data with time on the
-    monotonic x-axis. Each segment may be labelled by a text string.
+    monotonic x-axis.
 
-    If *compact* is True, there will be no gaps between the segments along the
-    monotonic axis. The tick labels on this axis are modified to reflect the
-    original (padded) values. If *add_breaks* is True, the breaks between
-    segments along the monotonic axis are indicated by dashed lines.
+    Each segment may be labelled by a text string next to it. If *compact* is
+    True, there will be no gaps between the segments along the monotonic axis.
+    The tick labels on this axis are modified to reflect the original (padded)
+    values. If *add_breaks* is True, the breaks between segments along the
+    monotonic axis are indicated by dashed lines. If there is no monotonic axis,
+    all these features (text labels, compaction and break lines) are disabled.
 
     Parameters
     ----------
@@ -48,15 +50,17 @@ def plot_line_segments(segments, labels=None, width=0.0, compact=True, add_break
         identical to the *segments* parameter of
         :class:`matplotlib.collections.LineCollection`.
     labels : sequence of strings, optional
-        Corresponding sequence of text labels to add below (or to the left of)
-        each segment
+        Corresponding sequence of text labels to add next to each segment along
+        monotonic axis (only makes sense if there is such an axis)
     width : float, optional
         If non-zero, replace contiguous line with staircase levels of specified
         width along x-axis
     compact : {True, False}, optional
-        Plot with no gaps between segments
+        Plot with no gaps between segments along monotonic axis (only makes
+        sense if there is such an axis)
     add_breaks : {True, False}, optional
         Add vertical (or horizontal) lines to indicate breaks between segments
+        along monotonic axis (only makes sense if there is such an axis)
     monotonic_axis : {'x', 'y', None}, optional
         Monotonic axis, along which segment coordinate increases monotonically
     ax : :class:`matplotlib.axes.Axes` object, optional
@@ -78,9 +82,9 @@ def plot_line_segments(segments, labels=None, width=0.0, compact=True, add_break
         ax = plt.gca()
     if labels is None:
         labels = []
-    if (compact or add_breaks) and monotonic_axis is None:
-        logger.warning('Compacting and adding breaks do not make sense if there is no monotonic axis - set to False')
-        compact = add_breaks = False
+    # Disable features that depend on a monotonic axis
+    if monotonic_axis is None:
+        labels, compact, add_breaks = [], False, False
 
     # Get segment startpoints and endpoints along monotonic axis
     if monotonic_axis == 'x':
@@ -133,7 +137,7 @@ def plot_line_segments(segments, labels=None, width=0.0, compact=True, add_break
         # Only set monotonic axis limits
         ax.set_xlim(start[0], end[-1])
         ax.autoscale_view(scalex=False)
-    else:
+    elif monotonic_axis == 'y':
         # Break lines and labels have x coordinates fixed to axes and y coordinates fixed to data (like axhline)
         transFixedX = mpl.transforms.blended_transform_factory(ax.transAxes, ax.transData)
         for n, label in enumerate(labels):
@@ -145,6 +149,8 @@ def plot_line_segments(segments, labels=None, width=0.0, compact=True, add_break
             ax.add_collection(break_lines)
         ax.set_ylim(start[0], end[-1])
         ax.autoscale_view(scaley=False)
+    else:
+        ax.autoscale_view()
 
     return segment_lines, break_lines, text_labels
 
