@@ -16,6 +16,29 @@ from .plots_basic import plot_line_segments, plot_compacted_images, plot_marker_
 logger = logging.getLogger("scape.plots_canned")
 
 #--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  plot_xy
+#--------------------------------------------------------------------------------------------------
+
+def plot_xy(data, x='time', y='amp', z=None, pol='I', ax=None, **kwargs):
+    """Generic 2-D plotting."""
+    if ax is None:
+        ax = plt.gca()
+    # Create list of scans from whatever input form the data takes (DataSet and CompoundScan have .scans)
+    scans = getattr(data, 'scans', [data])
+    monotonic = 'x' if x == 'time' else 'y' if y == 'time' else None
+    # Create dict of plottable data types and the corresponding functions that will extract them from a Scan object
+    func = {'time'  : lambda scan: scan.timestamps,
+            'freq'  : lambda scan: scan.dataset.freqs,
+            'amp'   : lambda scan: np.abs(scan.pol(pol)).squeeze(),
+            'phase' : lambda scan: np.angle(scan.pol(pol)).squeeze(),
+            'real'  : lambda scan: scan.pol(pol).real.squeeze(),
+            'imag'  : lambda scan: scan.pol(pol).imag.squeeze(),
+            'az'    : lambda scan: rad2deg(scan.pointing['az']),
+            'el'    : lambda scan: rad2deg(scan.pointing['el'])}
+    segments = [zip(func[x](s), func[y](s)) for s in scans]
+    plot_line_segments(segments, range(len(scans)), ax=ax, monotonic_axis=monotonic, **kwargs)
+
+#--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_spectrum
 #--------------------------------------------------------------------------------------------------
 
