@@ -1,7 +1,5 @@
 """Statistics routines."""
 
-import copy
-
 import numpy as np
 import scipy.signal as signal
 import scipy.stats as stats
@@ -17,418 +15,6 @@ def angle_wrap(angle, period=2.0 * np.pi):
 
     """
     return (angle + 0.5 * period) % period - 0.5 * period
-
-#--------------------------------------------------------------------------------------------------
-#--- CLASS :  MuSigmaArray
-#--------------------------------------------------------------------------------------------------
-
-class MuSigmaArray(np.ndarray):
-    """Container that bundles mean and standard deviation of N-dimensional data.
-
-    This is a subclass of numpy.ndarray, which adds a :attr:`sigma` data member.
-    The idea is that the main array is the mean, while :atrr:`sigma` contains
-    the standard deviation of each corresponding element of the main array.
-    Sigma should therefore have the same shape as the main array (mean). This
-    approach allows the object itself to be the mean (e.g. ``x``), while the
-    standard deviation can be accessed as ``x.sigma``. This makes the standard
-    use of the mean (required in most calculations) cleaner, while still
-    allowing the mean and standard deviation to travel together instead of as
-    two arrays. The mean is also accessible as ``x.mu``.
-
-    Alternative solutions:
-    - A class with .mu and .sigma arrays (cumbersome when using mu)
-    - A dict with 'mu' and 'sigma' keys and array values (ditto)
-    - A tuple containing two arrays (mean still has to be extracted first)
-    - Extending the mu array to contain another dimension (can be misleading)
-
-    Parameters
-    ----------
-    mu : array-like
-        The mean array (which becomes the main array of this object)
-    sigma : array-like, optional
-        The standard deviation array (default=None)
-
-    Raises
-    ------
-    TypeError
-        If *sigma* does not have the same shape as *mu*
-
-    Notes
-    -----
-    The class has both a creator (__new__) and initialiser (__init__) method.
-    The former casts the *mu* parameter to the :class:`MuSigmaArray` class,
-    while the latter stores the *sigma* parameter and verifies that its
-    shape is the same as that of *mu*. The :attr:`mu` and :attr:`sigma`
-    attributes are actually handled via properties.
-
-    """
-    def __init__(self, mu, sigma=None):
-        # Standard deviation of each element in main array (internal variable set via property).
-        self._sigma = None
-        # Standard deviation of each element in main array (property).
-        self.sigma = sigma
-
-    def __new__(cls, mu, sigma=None):
-        """Object creation, which casts the mu array to the current subclass."""
-        return np.asarray(mu).view(cls)
-
-    # pylint: disable-msg=E0211,E0202,W0612,W0142,W0613
-    def mu():
-        """Class method which creates mean property.
-
-        This is a nice way to create Python properties. It prevents clutter of
-        the class namespace with getter and setter methods, while being more
-        readable than lambda notation. The function below is effectively hidden
-        by giving it the same name as the eventual property. Pylint gets queasy
-        here, for obvious reasons.
-
-        Returns
-        -------
-        local : dict
-            Dictionary with property getter and setter methods, and doc string
-
-        """
-        doc = 'Mean array.'
-        def fget(self):
-            return self.view(np.ndarray)
-        def fset(self, value):
-            self = value
-        return locals()
-    # Mean array. This is merely for convenience, to restrict the object to be an numpy.ndarray.
-    # Normal access to the object also provides the mean.
-    mu = property(**mu())
-
-    # pylint: disable-msg=E0211,E0202,W0612,W0142,W0212
-    def sigma():
-        """Class method which creates sigma property.
-
-        See the docstring of :meth:`mu` for more details.
-
-        Returns
-        -------
-        local : dict
-            Dictionary with property getter and setter methods, and doc string
-
-        """
-        doc = 'Standard deviation of each element in main array.'
-        def fget(self):
-            return self._sigma
-        def fset(self, value):
-            if not value is None:
-                value = np.asarray(value)
-                if value.shape != self.shape:
-                    raise TypeError("X.sigma should have the same shape as X (i.e. %s instead of %s )" %
-                                    (self.shape, value.shape))
-            self._sigma = value
-        return locals()
-    # Standard deviation of each element in main array (property).
-    sigma = property(**sigma())
-
-    def __repr__(self):
-        """Official string representation."""
-        return self.__class__.__name__ + '(' + repr(self.mu) + ',' + repr(self.sigma) + ')'
-
-    def __str__(self):
-        """Informal string representation."""
-        if self.sigma is None:
-            return str(self.mu)
-        else:
-            str_array = np.array(['%s(%s)' % (m, s)
-                                  for m, s in zip(self.mu.ravel(), self.sigma.ravel())]).reshape(self.shape)
-            return str(str_array).replace("'", '')
-
-    def __getitem__(self, value):
-        """Index both arrays at the same time."""
-        if self.sigma is None:
-            return MuSigmaArray(self.mu[value], None)
-        else:
-            return MuSigmaArray(self.mu[value], self.sigma[value])
-
-    def __getslice__(self, first, last):
-        """Index both arrays at the same time."""
-        if self.sigma is None:
-            return MuSigmaArray(self.mu[first:last], None)
-        else:
-            return MuSigmaArray(self.mu[first:last], self.sigma[first:last])
-
-    def __add__(self, other):
-        """Perform self + other."""
-        if isinstance(other, MuSigmaArray):
-            if self.sigma is None:
-                new_sigma = None
-            else:
-                other_sigma = np.zeros(other.mu.shape) if other.sigma is None else other.sigma
-                new_sigma = np.sqrt(self.sigma ** 2 + other_sigma ** 2)
-            return MuSigmaArray(self.mu + other.mu, new_sigma)
-        else:
-            return MuSigmaArray(self.mu + other, self.sigma)
-
-    def __sub__(self, other):
-        """Perform self - other."""
-        if isinstance(other, MuSigmaArray):
-            if self.sigma is None:
-                new_sigma = None
-            else:
-                other_sigma = np.zeros(other.mu.shape) if other.sigma is None else other.sigma
-                new_sigma = np.sqrt(self.sigma ** 2 + other_sigma ** 2)
-            return MuSigmaArray(self.mu - other.mu, new_sigma)
-        else:
-            return MuSigmaArray(self.mu - other, self.sigma)
-
-    def __mul__(self, other):
-        """Perform self * other."""
-        return MuSigmaArray(self.mu * other, None if self.sigma is None else self.sigma * np.abs(other))
-
-    def __div__(self, other):
-        """Perform self / other."""
-        return MuSigmaArray(self.mu / other, None if self.sigma is None else self.sigma / np.abs(other))
-
-    def __radd__(self, other):
-        """Perform other + self."""
-        return self.__add__(other)
-
-    def __rsub__(self, other):
-        """Perform other - self."""
-        return self.__sub__(other)
-
-    def __rmul__(self, other):
-        """Perform other * self."""
-        return self.__mul__(other)
-
-    def __iadd__(self, other):
-        """Perform self += other."""
-        if isinstance(other, MuSigmaArray):
-            if self.sigma is None:
-                new_sigma = None
-            else:
-                other_sigma = np.zeros(other.mu.shape) if other.sigma is None else other.sigma
-                new_sigma = np.sqrt(self.sigma ** 2 + other_sigma ** 2)
-            self.mu += other.mu
-            self.sigma = new_sigma
-        else:
-            self.mu += other
-        return self
-
-    def __isub__(self, other):
-        """Perform self -= other."""
-        if isinstance(other, MuSigmaArray):
-            if self.sigma is None:
-                new_sigma = None
-            else:
-                other_sigma = np.zeros(other.mu.shape) if other.sigma is None else other.sigma
-                new_sigma = np.sqrt(self.sigma ** 2 + other_sigma ** 2)
-            self.mu -= other.mu
-            self.sigma = new_sigma
-        else:
-            self.mu -= other
-        return self
-
-    def __imul__(self, other):
-        """Perform self *= other."""
-        self.mu *= other
-        if not self.sigma is None:
-            self.sigma *= np.abs(other)
-        return self
-
-    def __idiv__(self, other):
-        """Perform self /= other."""
-        self.mu /= other
-        if not self.sigma is None:
-            self.sigma /= np.abs(other)
-        return self
-
-    def __copy__(self):
-        """Shallow copy operation."""
-        return MuSigmaArray(self.mu, self.sigma)
-
-    def __deepcopy__(self, memo):
-        """Deep copy operation."""
-        return MuSigmaArray(copy.deepcopy(self.mu, memo), copy.deepcopy(self.sigma, memo))
-
-def ms_concatenate(msa_list):
-    """Concatenate MuSigmaArrays.
-
-    Parameters
-    ----------
-    msa_list : list of :class:`MuSigmaArray` objects
-        List of MuSigmaArrays to concatenate
-
-    Returns
-    -------
-    msa : :class:`MuSigmaArray` object
-        MuSigmaArray that is concatenation of list
-
-    """
-    mu_list = [msa.mu for msa in msa_list]
-    sigma_list = [msa.sigma for msa in msa_list]
-    # If any sigma is None, discard the rest
-    if None in sigma_list:
-        return MuSigmaArray(np.concatenate(mu_list), None)
-    else:
-        return MuSigmaArray(np.concatenate(mu_list), np.concatenate(sigma_list))
-
-def ms_hstack(msa_list):
-    """Stack MuSigmaArrays horizontally.
-
-    Parameters
-    ----------
-    msa_list : list of :class:`MuSigmaArray` objects
-        List of MuSigmaArrays to stack
-
-    Returns
-    -------
-    msa : :class:`MuSigmaArray` object
-        MuSigmaArray that is horizontal stack of list
-
-    """
-    mu_list = [msa.mu for msa in msa_list]
-    sigma_list = [msa.sigma for msa in msa_list]
-    # If any sigma is None, discard the rest
-    if None in sigma_list:
-        return MuSigmaArray(np.hstack(mu_list), None)
-    else:
-        return MuSigmaArray(np.hstack(mu_list), np.hstack(sigma_list))
-
-def ms_vstack(msa_list):
-    """Stack MuSigmaArrays vertically.
-
-    Parameters
-    ----------
-    msa_list : list of :class:`MuSigmaArray` objects
-        List of MuSigmaArrays to stack
-
-    Returns
-    -------
-    msa : :class:`MuSigmaArray` object
-        MuSigmaArray that is vertical stack of list
-
-    """
-    mu_list = [msa.mu for msa in msa_list]
-    sigma_list = [msa.sigma for msa in msa_list]
-    # If any sigma is None, discard the rest
-    if None in sigma_list:
-        return MuSigmaArray(np.vstack(mu_list), None)
-    else:
-        return MuSigmaArray(np.vstack(mu_list), np.vstack(sigma_list))
-
-def mu_sigma(data, axis=0):
-    """Determine second-order statistics from data.
-
-    Convenience function to return second-order statistics of data along given
-    axis as a MuSigmaArray.
-
-    Parameters
-    ----------
-    data : array
-        Numpy data array of arbitrary shape
-    axis : int, optional
-        Index of axis along which stats are calculated (will be averaged away
-        in the process) [default=0]
-
-    Returns
-    -------
-    msa : :class:`MuSigmaArray` object
-        MuSigmaArray containing data stats, of same dimension as data, but
-        without given axis
-
-    """
-    return MuSigmaArray(data.mean(axis=axis), data.std(axis=axis))
-
-def robust_mu_sigma(data, axis=0):
-    """Determine second-order statistics from data, using robust statistics.
-
-    Convenience function to return second-order statistics of data along given
-    axis as a MuSigmaArray. These are determined via the median and
-    interquartile range.
-
-    Parameters
-    ----------
-    data : array
-        Numpy data array of arbitrary shape
-    axis : int, optional
-        Index of axis along which stats are calculated (will be averaged away
-        in the process) [default=0]
-
-    Returns
-    -------
-    msa : :class:`MuSigmaArray` object
-        MuSigmaArray containing data stats, of same dimension as data, but
-        without given axis
-
-    """
-    data = np.asarray(data)
-    # Create sequence of axis indices with specified axis at the front, and the rest following it
-    move_axis_to_front = range(len(data.shape))
-    move_axis_to_front.remove(axis)
-    move_axis_to_front = [axis] + move_axis_to_front
-    # Create copy of data sorted along specified axis, and reshape so that the specified axis becomes the first one
-    sorted_data = np.sort(data, axis=axis).transpose(move_axis_to_front)
-    # Obtain quartiles
-    perc25 = sorted_data[int(0.25 * len(sorted_data))]
-    perc50 = sorted_data[int(0.50 * len(sorted_data))]
-    perc75 = sorted_data[int(0.75 * len(sorted_data))]
-    # Conversion factor from interquartile range to standard deviation (based on normal pdf)
-    iqr_to_std = 0.741301109253
-    return MuSigmaArray(perc50, iqr_to_std * (perc75 - perc25))
-
-def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
-    """Determine second-order statistics of periodic (angular, directional) data.
-
-    Convenience function to return second-order statistics of data along given
-    axis as a MuSigmaArray. This handles periodic variables, which exhibit the
-    problem of wrap-around and therefore are unsuited for the normal mu_sigma
-    function. The period with which the values repeat can be explicitly
-    specified, otherwise the data is assumed to be radians. The mean is in the
-    range -period/2 ... period/2, and the maximum standard deviation is about
-    period/4. The approach in [1]_ is used.
-
-    .. [1] R. J. Yamartino, "A Comparison of Several 'Single-Pass' Estimators
-       of the Standard Deviation of Wind Direction," Journal of Climate and
-       Applied Meteorology, vol. 23, pp. 1362-1366, 1984.
-
-    Parameters
-    ----------
-    data : array
-        Numpy array of arbitrary shape, containing angles (typically in radians)
-    axis : int, optional
-        Index of axis along which stats are calculated (will be averaged away
-        in the process) [default=0]
-    period : float, optional
-        Period with which data values repeat [default is 2.0 * pi]
-
-    Returns
-    -------
-    msa : :class:`MuSigmaArray` object
-        MuSigmaArray containing data stats, of same dimension as data, but
-        without given axis
-
-    Notes
-    -----
-    The approach in [1]_ is used.
-
-    .. [1] R. J. Yamartino, "A Comparison of Several 'Single-Pass' Estimators
-       of the Standard Deviation of Wind Direction," Journal of Climate and
-       Applied Meteorology, vol. 23, pp. 1362-1366, 1984.
-
-    """
-    data = np.asarray(data, dtype='double')
-    # Create sequence of axis indices with specified axis at the front, and the rest following it
-    move_axis_to_front = range(len(data.shape))
-    move_axis_to_front.remove(axis)
-    move_axis_to_front = [axis] + move_axis_to_front
-    # Create copy of data, and reshape so that the specified axis becomes the first one
-    data = data.copy().transpose(move_axis_to_front)
-    # Scale data so that one period becomes 2*pi, the natural period for angles
-    scale = 2.0 * np.pi / period
-    data *= scale
-    # Calculate a "safe" mean on the unit circle
-    mu = np.arctan2(np.sin(data).mean(axis=0), np.cos(data).mean(axis=0))
-    # Wrap angle differences into interval -pi ... pi
-    delta_ang = angle_wrap(data - mu)
-    # Calculate variance using standard formula with a second correction term
-    sigma2 = (delta_ang ** 2.0).mean(axis=0) - (delta_ang.mean(axis=0) ** 2.0)
-    # Scale answers back to original data range
-    return MuSigmaArray(mu / scale, np.sqrt(sigma2) / scale)
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  minimise_angle_wrap
@@ -460,6 +46,131 @@ def minimise_angle_wrap(angles, axis=0):
     # Wrap angle differences into interval -pi ... pi
     delta_ang = angle_wrap(angles - np.expand_dims(mu, axis))
     return delta_ang + np.expand_dims(mu, axis)
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  mu_sigma
+#--------------------------------------------------------------------------------------------------
+
+def mu_sigma(data, axis=0):
+    """Determine second-order statistics from data.
+
+    Convenience function to return second-order statistics of data along given
+    axis.
+
+    Parameters
+    ----------
+    data : array-like
+        Numpy data array (or equivalent) of arbitrary shape
+    axis : int, optional
+        Index of axis along which stats are calculated (will be averaged away
+        in the process)
+
+    Returns
+    -------
+    mu, sigma : array
+        Mean and standard deviation as arrays of same shape as *data*, but
+        without given axis
+
+    """
+    return np.mean(data, axis=axis), np.std(data, axis=axis)
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  robust_mu_sigma
+#--------------------------------------------------------------------------------------------------
+
+def robust_mu_sigma(data, axis=0):
+    """Determine second-order statistics from data, using robust statistics.
+
+    Convenience function to return second-order statistics of data along given
+    axis. These are determined via the median and interquartile range.
+
+    Parameters
+    ----------
+    data : array-like
+        Numpy data array (or equivalent) of arbitrary shape
+    axis : int, optional
+        Index of axis along which stats are calculated (will be averaged away
+        in the process)
+
+    Returns
+    -------
+    mu, sigma : array
+        Mean and standard deviation as arrays of same shape as *data*, but
+        without given axis
+
+    """
+    data = np.asarray(data)
+    # Create sequence of axis indices with specified axis at the front, and the rest following it
+    move_axis_to_front = range(len(data.shape))
+    move_axis_to_front.remove(axis)
+    move_axis_to_front = [axis] + move_axis_to_front
+    # Create copy of data sorted along specified axis, and reshape so that the specified axis becomes the first one
+    sorted_data = np.sort(data, axis=axis).transpose(move_axis_to_front)
+    # Obtain quartiles
+    perc25 = sorted_data[int(0.25 * len(sorted_data))]
+    perc50 = sorted_data[int(0.50 * len(sorted_data))]
+    perc75 = sorted_data[int(0.75 * len(sorted_data))]
+    # Conversion factor from interquartile range to standard deviation (based on normal pdf)
+    iqr_to_std = 0.741301109253
+    return perc50, iqr_to_std * (perc75 - perc25)
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  periodic_mu_sigma
+#--------------------------------------------------------------------------------------------------
+
+def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
+    """Determine second-order statistics of periodic (angular, directional) data.
+
+    Convenience function to return second-order statistics of data along given
+    axis. This handles periodic variables, which exhibit the problem of
+    wrap-around and therefore are unsuited for the normal mu_sigma function. The
+    period with which the values repeat can be explicitly specified, otherwise
+    the data is assumed to be radians. The mean is in the range -period/2 ...
+    period/2, and the maximum standard deviation is about period/4.
+
+    Parameters
+    ----------
+    data : array-like
+        Numpy array (or equivalent) of arbitrary shape, containing angles
+    axis : int, optional
+        Index of axis along which stats are calculated (will be averaged away
+        in the process)
+    period : float, optional
+        Period with which data values repeat
+
+    Returns
+    -------
+    mu, sigma : array
+        Mean and standard deviation as arrays of same shape as *data*, but
+        without given axis
+
+    Notes
+    -----
+    The approach in [1]_ is used.
+
+    .. [1] R. J. Yamartino, "A Comparison of Several 'Single-Pass' Estimators
+       of the Standard Deviation of Wind Direction," Journal of Climate and
+       Applied Meteorology, vol. 23, pp. 1362-1366, 1984.
+
+    """
+    data = np.asarray(data, dtype='double')
+    # Create sequence of axis indices with specified axis at the front, and the rest following it
+    move_axis_to_front = range(len(data.shape))
+    move_axis_to_front.remove(axis)
+    move_axis_to_front = [axis] + move_axis_to_front
+    # Create copy of data, and reshape so that the specified axis becomes the first one
+    data = data.copy().transpose(move_axis_to_front)
+    # Scale data so that one period becomes 2*pi, the natural period for angles
+    scale = 2.0 * np.pi / period
+    data *= scale
+    # Calculate a "safe" mean on the unit circle
+    mu = np.arctan2(np.sin(data).mean(axis=0), np.cos(data).mean(axis=0))
+    # Wrap angle differences into interval -pi ... pi
+    delta_ang = angle_wrap(data - mu)
+    # Calculate variance using standard formula with a second correction term
+    sigma2 = (delta_ang ** 2.0).mean(axis=0) - (delta_ang.mean(axis=0) ** 2.0)
+    # Scale answers back to original data range
+    return mu / scale, np.sqrt(sigma2) / scale
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  remove_spikes

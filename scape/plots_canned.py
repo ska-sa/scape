@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from katpoint import rad2deg
 from .stats import robust_mu_sigma, remove_spikes, minimise_angle_wrap
 from .beam_baseline import fwhm_to_sigma, extract_measured_beam, interpolate_measured_beam
-from .plots_basic import plot_line_segments, plot_compacted_images, plot_marker_3d, \
+from .plots_basic import plot_segments, plot_line_segments, plot_compacted_images, plot_marker_3d, \
                          gaussian_ellipses, plot_db_contours, ordinal_suffix
 
 logger = logging.getLogger("scape.plots_canned")
@@ -71,6 +71,8 @@ def plot_xy(data, x='time', y='amp', z=None, pol='I', sigma=1.0, ax=None, **kwar
         plot_segments(xx.max(axis=0), yy, add_breaks=False, monotonic_axis='y', ax=ax, linestyles='dashed', **kwargs)
     else:
         plot_segments(xx, yy, labels=range(len(scans)), ax=ax, **kwargs)
+    ax.set_xlabel(labelx)
+    ax.set_ylabel(labely)
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_spectrum
@@ -123,14 +125,14 @@ def plot_spectrum(dataset, pol='I', scan=-1, sigma=1.0, vertical=True, dB=True, 
         data = np.abs(dataset.scans[scan].pol(pol))
     else:
         data = np.vstack([np.abs(s.pol(pol)) for s in dataset.scans])
-    power = robust_mu_sigma(data)
+    power_mu, power_sigma = robust_mu_sigma(data)
     power_min, power_max = data.min(axis=0), data.max(axis=0)
     del data
 
     # Form makeshift rectangular patches indicating power variation in each channel
-    power_mean = np.repeat(power.mu, 3)
-    power_upper = np.repeat(np.clip(power.mu + sigma * power.sigma, -np.inf, power_max), 3)
-    power_lower = np.repeat(np.clip(power.mu - sigma * power.sigma, power_min, np.inf), 3)
+    power_mean = np.repeat(power_mu, 3)
+    power_upper = np.repeat(np.clip(power_mu + sigma * power_sigma, -np.inf, power_max), 3)
+    power_lower = np.repeat(np.clip(power_mu - sigma * power_sigma, power_min, np.inf), 3)
     power_min, power_max = np.repeat(power_min, 3), np.repeat(power_max, 3)
     if dB:
         power_mean = 10 * np.log10(power_mean)

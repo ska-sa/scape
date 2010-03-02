@@ -4,7 +4,7 @@ import numpy as np
 
 from .fitting import Spline1DFit
 from .fitting import randomise as fitting_randomise
-from .stats import MuSigmaArray, robust_mu_sigma, minimise_angle_wrap
+from .stats import robust_mu_sigma, minimise_angle_wrap
 
 #--------------------------------------------------------------------------------------------------
 #--- CLASS :  NoiseDiodeModel
@@ -106,12 +106,15 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
     -------
     nd_jump_times : list of floats
         Timestamps at which jumps occur
-    nd_jump_power : list of :class:`stats.MuSigmaArray` objects, shape (*F*, 4)
-        Power level changes at each jump, stored as a :class:`stats.MuSigmaArray`
-        object of shape (*F*, 4), where *F* is the number of channels/bands
+    nd_jump_power_mu : list of arrays, shape (*F*, 4)
+        Mean power level changes at each jump, stored as an array of shape
+        (*F*, 4), where *F* is the number of channels/bands
+    nd_jump_power_sigma : list of arrays, shape (*F*, 4)
+        Standard deviation of power level changes at each jump, stored as an
+        array of shape (*F*, 4), where *F* is the number of channels/bands
 
     """
-    nd_jump_times, nd_jump_power = [], []
+    nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma = [], [], []
     min_samples = dataset.dump_rate * min_duration
     for scan in dataset.scans:
         num_times = len(scan.timestamps)
@@ -138,23 +141,23 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
                     # Calculate mean and standard deviation of the *averaged* power data in the two segments.
                     # Use robust estimators to suppress spikes and transients in data. Since the estimated mean
                     # of data is less variable than the data itself, we have to divide the data sigma by sqrt(N).
-                    nd_off = robust_mu_sigma(scan.data[off_segment, :, :])
-                    nd_off.sigma /= np.sqrt(len(off_segment))
-                    nd_on = robust_mu_sigma(scan.data[on_segment, :, :])
-                    nd_on.sigma /= np.sqrt(len(on_segment))
+                    nd_off_mu, nd_off_sigma = robust_mu_sigma(scan.data[off_segment, :, :])
+                    nd_off_sigma /= np.sqrt(len(off_segment))
+                    nd_on_mu, nd_on_sigma = robust_mu_sigma(scan.data[on_segment, :, :])
+                    nd_on_sigma /= np.sqrt(len(on_segment))
                     # Obtain mean and standard deviation of difference between averaged power in the segments
-                    nd_delta = MuSigmaArray(nd_on.mu - nd_off.mu,
-                                            np.sqrt(nd_on.sigma ** 2 + nd_off.sigma ** 2))
+                    nd_delta_mu, nd_delta_sigma = nd_on_mu - nd_off_mu, np.sqrt(nd_on_sigma ** 2 + nd_off_sigma ** 2)
                     # Only keep jumps with significant *increase* in power (focus on the positive HH/VV)
                     # This discards segments where noise diode did not fire as expected
-                    norm_jump = nd_delta.mu / nd_delta.sigma
+                    norm_jump = nd_delta_mu / nd_delta_sigma
                     norm_jump = norm_jump[:, :2]
                     # Remove NaNs which typically occur with perfect simulated data (zero mu and zero sigma)
                     norm_jump[np.isnan(norm_jump)] = 0.0
                     if np.mean(norm_jump, axis=0).max() > jump_significance:
                         nd_jump_times.append(scan.timestamps[mid])
-                        nd_jump_power.append(nd_delta)
-    return nd_jump_times, nd_jump_power
+                        nd_jump_power_mu.append(nd_delta_mu)
+                        nd_jump_power_sigma.append(nd_delta_sigma)
+    return nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma
 
 def estimate_gain(dataset, **kwargs):
     """Estimate gain and relative phase of both polarisations via injected noise.
@@ -184,12 +187,12 @@ def estimate_gain(dataset, **kwargs):
         Phase of Y relative to X, per measurement and channel, in radians
 
     """
-    nd_jump_times, nd_jump_power = estimate_nd_jumps(dataset, **kwargs)
+    nd_jump_times, nd_jump_power_mu = estimate_nd_jumps(dataset, **kwargs)[:2]
     if not nd_jump_times:
         return np.zeros((0)), np.zeros((0, len(dataset.freqs))), \
                np.zeros((0, len(dataset.freqs))), np.zeros((0, len(dataset.freqs)))
     timestamps = np.array(nd_jump_times)
-    deltas = np.concatenate([p.mu[np.newaxis] for p in nd_jump_power])
+    deltas = np.concatenate([p[np.newaxis] for p in nd_jump_power_mu])
     temp_nd = dataset.nd_model.temperature(dataset.freqs)
     gain_xx = deltas[:, :, 0] / temp_nd[np.newaxis, :, 0]
     gain_yy = deltas[:, :, 1] / temp_nd[np.newaxis, :, 1]
@@ -219,12 +222,12 @@ def calibrate_gain(dataset, randomise=False, **kwargs):
         If no suitable noise diode on/off blocks were found in data set
 
     """
-    nd_jump_power = estimate_nd_jumps(dataset, **kwargs)[1]
-    if not nd_jump_power:
+    nd_jump_power_mu, nd_jump_power_sigma = estimate_nd_jumps(dataset, **kwargs)[1:]
+    if not nd_jump_power_mu:
         raise NoSuitableNoiseDiodeDataFound
-    gains = np.concatenate([p.mu[np.newaxis] for p in nd_jump_power])
+    gains = np.concatenate([p[np.newaxis] for p in nd_jump_power_mu])
     if randomise:
-        gains += np.concatenate([p.sigma[np.newaxis] for p in nd_jump_power]) * \
+        gains += np.concatenate([p[np.newaxis] for p in nd_jump_power_sigma]) * \
                  np.random.standard_normal(gains.shape)
     temp_nd = dataset.nd_model.temperature(dataset.freqs, randomise)
     gains[:, :, :2] /= temp_nd[np.newaxis, :, :]

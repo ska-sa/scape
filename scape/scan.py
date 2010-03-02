@@ -226,6 +226,7 @@ class Scan(object):
             If *key* is not one of the allowed polarisation terms
 
         """
+        # pylint: disable-msg=C0103
         # Mount coherencies are the easiest to extract - simply pick correct subarray (mostly)
         if key in scape_pol:
             if self.has_autocorr and key in ('HV', 'VH'):

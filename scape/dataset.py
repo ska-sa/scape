@@ -180,8 +180,8 @@ class DataSet(object):
         return not self.__eq__(other)
 
     # Provide properties to access the attributes of the correlator configuration directly
-    # This uses the same trick as in stats.MuSigmaArray to create the properties, which
-    # leads to less class namespace clutter, but more pylint uneasiness (shame).
+    # This uses a standard trick to create the properties, which leads to less class namespace clutter,
+    # but more pylint uneasiness (shame).
     # pylint: disable-msg=E0211,E0202,W0612,W0142
     def freqs():
         """Class method which creates freqs property."""
