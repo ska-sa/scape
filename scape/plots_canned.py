@@ -19,24 +19,58 @@ logger = logging.getLogger("scape.plots_canned")
 #--- FUNCTION :  plot_xy
 #--------------------------------------------------------------------------------------------------
 
-def plot_xy(data, x='time', y='amp', z=None, pol='I', ax=None, **kwargs):
+def plot_xy(data, x='time', y='amp', z=None, pol='I', sigma=1.0, ax=None, **kwargs):
     """Generic 2-D plotting."""
     if ax is None:
         ax = plt.gca()
     # Create list of scans from whatever input form the data takes (DataSet and CompoundScan have .scans)
     scans = getattr(data, 'scans', [data])
-    monotonic = 'x' if x == 'time' else 'y' if y == 'time' else None
-    # Create dict of plottable data types and the corresponding functions that will extract them from a Scan object
-    func = {'time'  : lambda scan: scan.timestamps,
-            'freq'  : lambda scan: scan.dataset.freqs,
-            'amp'   : lambda scan: np.abs(scan.pol(pol)).squeeze(),
-            'phase' : lambda scan: np.angle(scan.pol(pol)).squeeze(),
-            'real'  : lambda scan: scan.pol(pol).real.squeeze(),
-            'imag'  : lambda scan: scan.pol(pol).imag.squeeze(),
-            'az'    : lambda scan: rad2deg(scan.pointing['az']),
-            'el'    : lambda scan: rad2deg(scan.pointing['el'])}
-    segments = [zip(func[x](s), func[y](s)) for s in scans]
-    plot_line_segments(segments, range(len(scans)), ax=ax, monotonic_axis=monotonic, **kwargs)
+    if len(scans) == 0:
+        raise ValueError('No scans found to plot')
+    # Extract earliest timestamp, used if one of axes is 'time', and associated dataset
+    time_origin = np.min([s.timestamps.min() for s in scans])
+    dataset = scans[0].compscan.dataset
+    # Create dict of plottable data types and the corresponding functions that will extract them from a Scan object,
+    # plus their axis labels
+    func = {'time'     : ('Time (s), since %s' % (time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime(time_origin)),),
+                          lambda scan: scan.timestamps - time_origin),
+            'freq'     : ('Frequency (MHz)', lambda scan: scan.compscan.dataset.freqs),
+            'chan'     : ('Channel index', lambda scan: range(len(scan.compscan.dataset.freqs))),
+            'amp'      : ('%s amplitude (%s)' % (pol, dataset.data_unit), lambda scan: np.abs(scan.pol(pol))),
+            'phase'    : ('%s phase (deg)' % (pol,), lambda scan: rad2deg(np.angle(scan.pol(pol)))),
+            'real'     : ('Real part of %s (%s)' % (pol, dataset.data_unit), lambda scan: scan.pol(pol).real),
+            'imag'     : ('Imaginary part of %s (%s)' % (pol, dataset.data_unit),
+                          lambda scan: scan.pol(pol).imag),
+            'az'       : ('Azimuth angle (deg)', lambda scan: rad2deg(scan.pointing['az'])),
+            'el'       : ('Elevation angle (deg)', lambda scan: rad2deg(scan.pointing['el'])),
+            'parangle' : ('Parallactic angle (deg)', lambda scan: rad2deg(scan.parangle))}
+    try:
+        labelx, fx = func[x] if isinstance(x, basestring) else x
+        labely, fy = func[y] if isinstance(y, basestring) else y
+    except KeyError:
+        raise ValueError("Unknown quantity to plot - choose one of %s" % (func.keys(),))
+    xx, yy = [fx(s) for s in scans], [fy(s) for s in scans]
+    num_chans = len(dataset.freqs)
+    # Plot of correlator data (y) vs frequency or similar (x)
+    if np.shape(xx[0]) == (num_chans,) and np.ndim(yy[0]) == 2 and np.shape(yy[0])[1] == num_chans:
+        xx, yy = xx[0], np.vstack(yy)
+        y_mean, y_stdev = robust_mu_sigma(yy, axis=0)
+        plot_segments(xx, np.vstack((y_mean - sigma * y_stdev, y_mean + sigma * y_stdev)).transpose(),
+                      monotonic_axis='x', ax=ax, **kwargs)
+        plot_segments(xx, y_mean, add_breaks=False, monotonic_axis='x', ax=ax, **kwargs)
+        plot_segments(xx, yy.min(axis=0), add_breaks=False, monotonic_axis='x', ax=ax, linestyles='dashed', **kwargs)
+        plot_segments(xx, yy.max(axis=0), add_breaks=False, monotonic_axis='x', ax=ax, linestyles='dashed', **kwargs)
+    # Plot of frequency or similar (y) vs correlator data (x)
+    elif np.shape(yy[0]) == (num_chans,) and np.ndim(xx[0]) == 2 and np.shape(xx[0])[1] == num_chans:
+        yy, xx = yy[0], np.vstack(xx)
+        x_mean, x_stdev = robust_mu_sigma(xx, axis=0)
+        plot_segments(np.vstack((x_mean - sigma * x_stdev, x_mean + sigma * x_stdev)).transpose(), yy,
+                      monotonic_axis='y', ax=ax, **kwargs)
+        plot_segments(x_mean, yy, add_breaks=False, monotonic_axis='y', ax=ax, **kwargs)
+        plot_segments(xx.min(axis=0), yy, add_breaks=False, monotonic_axis='y', ax=ax, linestyles='dashed', **kwargs)
+        plot_segments(xx.max(axis=0), yy, add_breaks=False, monotonic_axis='y', ax=ax, linestyles='dashed', **kwargs)
+    else:
+        plot_segments(xx, yy, labels=range(len(scans)), ax=ax, **kwargs)
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_spectrum
