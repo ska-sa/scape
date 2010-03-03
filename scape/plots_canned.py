@@ -149,14 +149,19 @@ def plot_xy(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, ba
         std_range = [np.column_stack((np.clip(tf_mean - sigma * tf_stdev, tf_min, np.inf),
                                       np.clip(tf_mean + sigma * tf_stdev, -np.inf, tf_max)))
                      for tf_mean, tf_stdev, tf_min, tf_max in tf_stats]
+        old_add_breaks, old_color = kwargs.get('add_breaks', True), kwargs.pop('color', None)
+        kwargs['add_breaks'] = False
         if xy_types.index('tf') == 0:
-            plot_segments(min_max, data[1], width=width, add_breaks=False, ax=ax, color='0.8', **kwargs)
-            plot_segments(std_range, data[1], width=width, add_breaks=False, ax=ax, color='0.6', **kwargs)
+            plot_segments(min_max, data[1], width=width, monotonic_axis=monotonic_axis, ax=ax, color='0.8', **kwargs)
+            plot_segments(std_range, data[1], width=width, monotonic_axis=monotonic_axis, ax=ax, color='0.6', **kwargs)
         else:
-            plot_segments(data[0], min_max, width=width, add_breaks=False, ax=ax, color='0.8', **kwargs)
-            plot_segments(data[0], std_range, width=width, add_breaks=False, ax=ax, color='0.6', **kwargs)
+            plot_segments(data[0], min_max, width=width, monotonic_axis=monotonic_axis, ax=ax, color='0.8', **kwargs)
+            plot_segments(data[0], std_range, width=width, monotonic_axis=monotonic_axis, ax=ax, color='0.6', **kwargs)
+        kwargs['add_breaks'] = old_add_breaks
+        if old_color is not None:
+            kwargs['color'] = old_color
     # Plot main line or image segments
-    plot_segments(data[0], data[1], data[2], width=width, ax=ax, **kwargs)
+    plot_segments(data[0], data[1], data[2], width=width, monotonic_axis=monotonic_axis, ax=ax, **kwargs)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     return ax
