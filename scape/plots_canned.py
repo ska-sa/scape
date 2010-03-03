@@ -15,64 +15,151 @@ from .plots_basic import plot_segments, plot_line_segments, plot_compacted_image
 
 logger = logging.getLogger("scape.plots_canned")
 
+def extract_scan_data(scans, quantity, pol):
+    """Extract data from list of Scan objects for plotting purposes.
+
+    Parameters
+    ----------
+    scans : list of :class:`Scan` objects
+        List of Scan objects from which to extract data (assumed to be non-empty)
+    quantity : string, or tuple (label, function)
+        Quantity to extract from scans, given as either a standard name or a
+        tuple containing the axis label and function which will produce the data
+        when run on a Scan object
+    pol : {'HH', 'VV', 'VH', 'HV', 'XX', 'YY', 'XY', 'YX', 'I', 'Q', 'U', 'V'}
+        Polarisation term to extract in the case of visibility data
+
+    Returns
+    -------
+    data : list of arrays
+        Extracted data, as a list with one element per scan
+    data_type : {'t', 'f', 'tf'}
+        Type of data, as inferred from shapes of returned arrays, which can be
+        either time-like ('t'), frequency-like ('f') or time-frequency-like ('tf')
+    label : string
+        Axis label for data
+
+    Raises
+    ------
+    ValueError
+        If quantity name is unknown
+
+    """
+    # Assume all scans come from the same dataset
+    dataset = scans[0].compscan.dataset
+    # Extract earliest timestamp, used if quantity is 'time' (assumes timestamps are ordered within a scan)
+    time_origin = np.min([s.timestamps[0] for s in scans])
+    # Create dict of standard quantities and the corresponding functions that will extract them from a Scan object,
+    # plus their axis labels
+    lf = {# Time-like quantities
+          'time'     : ('Time (s), since %s' % (time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime(time_origin)),),
+                        lambda scan: scan.timestamps - time_origin),
+          'az'       : ('Azimuth angle (deg)', lambda scan: rad2deg(scan.pointing['az'])),
+          'el'       : ('Elevation angle (deg)', lambda scan: rad2deg(scan.pointing['el'])),
+          'parangle' : ('Parallactic angle (deg)', lambda scan: rad2deg(scan.parangle)),
+          # Frequency-like quantities
+          'freq'     : ('Frequency (MHz)', lambda scan: dataset.freqs),
+          'chan'     : ('Channel index', lambda scan: np.arange(len(dataset.freqs))),
+          # Time-frequency-like quantities
+          'amp'      : ('%s amplitude (%s)' % (pol, dataset.data_unit), lambda scan: np.abs(scan.pol(pol))),
+          'phase'    : ('%s phase (deg)' % (pol,), lambda scan: rad2deg(np.angle(scan.pol(pol)))),
+          'real'     : ('Real part of %s (%s)' % (pol, dataset.data_unit), lambda scan: scan.pol(pol).real),
+          'imag'     : ('Imaginary part of %s (%s)' % (pol, dataset.data_unit), lambda scan: scan.pol(pol).imag)}
+    # Obtain axis label and extraction function
+    try:
+        label, func = lf[quantity] if isinstance(quantity, basestring) else quantity
+    except KeyError:
+        raise ValueError("Unknown quantity '%s' - choose one of %s (or define your own...)" % (quantity, lf.keys(),))
+    # Extract data from scans
+    data = [func(s) for s in scans]
+    # Infer data type by comparing shape of data to that of timestamps, frequency channels and visibility data
+    dt = {tuple([s.data.shape[:2] for s in scans]) : 'tf',
+          tuple([dataset.freqs.shape for s in scans]) : 'f',
+          tuple([s.timestamps.shape for s in scans]) : 't'}
+    return data, dt.get(tuple([np.shape(segm) for segm in data])), label
+
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_xy
 #--------------------------------------------------------------------------------------------------
 
-def plot_xy(data, x='time', y='amp', z=None, pol='I', sigma=1.0, ax=None, **kwargs):
-    """Generic 2-D plotting."""
-    if ax is None:
-        ax = plt.gca()
+def plot_xy(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, band='all',
+            monotonic_axis='auto', ax=None, **kwargs):
+    """Generic 2-D plotting.
+
+    band : 'all' or integer, optional
+        Single frequency channel/band to select from visibility data (the default
+        is to select all channels)
+
+    Returns
+    -------
+    ax : :class:`matplotlib.axes.Axes` object
+        Matplotlib Axes object representing plot
+
+    """
     # Create list of scans from whatever input form the data takes (DataSet and CompoundScan have .scans)
     scans = getattr(data, 'scans', [data])
     if len(scans) == 0:
         raise ValueError('No scans found to plot')
-    # Extract earliest timestamp, used if one of axes is 'time', and associated dataset
-    time_origin = np.min([s.timestamps.min() for s in scans])
     dataset = scans[0].compscan.dataset
-    # Create dict of plottable data types and the corresponding functions that will extract them from a Scan object,
-    # plus their axis labels
-    func = {'time'     : ('Time (s), since %s' % (time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime(time_origin)),),
-                          lambda scan: scan.timestamps - time_origin),
-            'freq'     : ('Frequency (MHz)', lambda scan: scan.compscan.dataset.freqs),
-            'chan'     : ('Channel index', lambda scan: range(len(scan.compscan.dataset.freqs))),
-            'amp'      : ('%s amplitude (%s)' % (pol, dataset.data_unit), lambda scan: np.abs(scan.pol(pol))),
-            'phase'    : ('%s phase (deg)' % (pol,), lambda scan: rad2deg(np.angle(scan.pol(pol)))),
-            'real'     : ('Real part of %s (%s)' % (pol, dataset.data_unit), lambda scan: scan.pol(pol).real),
-            'imag'     : ('Imaginary part of %s (%s)' % (pol, dataset.data_unit),
-                          lambda scan: scan.pol(pol).imag),
-            'az'       : ('Azimuth angle (deg)', lambda scan: rad2deg(scan.pointing['az'])),
-            'el'       : ('Elevation angle (deg)', lambda scan: rad2deg(scan.pointing['el'])),
-            'parangle' : ('Parallactic angle (deg)', lambda scan: rad2deg(scan.parangle))}
-    try:
-        labelx, fx = func[x] if isinstance(x, basestring) else x
-        labely, fy = func[y] if isinstance(y, basestring) else y
-    except KeyError:
-        raise ValueError("Unknown quantity to plot - choose one of %s" % (func.keys(),))
-    xx, yy = [fx(s) for s in scans], [fy(s) for s in scans]
-    num_chans = len(dataset.freqs)
-    # Plot of correlator data (y) vs frequency or similar (x)
-    if np.shape(xx[0]) == (num_chans,) and np.ndim(yy[0]) == 2 and np.shape(yy[0])[1] == num_chans:
-        xx, yy = xx[0], np.vstack(yy)
-        y_mean, y_stdev = robust_mu_sigma(yy, axis=0)
-        plot_segments(xx, np.vstack((y_mean - sigma * y_stdev, y_mean + sigma * y_stdev)).transpose(),
-                      monotonic_axis='x', ax=ax, **kwargs)
-        plot_segments(xx, y_mean, add_breaks=False, monotonic_axis='x', ax=ax, **kwargs)
-        plot_segments(xx, yy.min(axis=0), add_breaks=False, monotonic_axis='x', ax=ax, linestyles='dashed', **kwargs)
-        plot_segments(xx, yy.max(axis=0), add_breaks=False, monotonic_axis='x', ax=ax, linestyles='dashed', **kwargs)
-    # Plot of frequency or similar (y) vs correlator data (x)
-    elif np.shape(yy[0]) == (num_chans,) and np.ndim(xx[0]) == 2 and np.shape(xx[0])[1] == num_chans:
-        yy, xx = yy[0], np.vstack(xx)
-        x_mean, x_stdev = robust_mu_sigma(xx, axis=0)
-        plot_segments(np.vstack((x_mean - sigma * x_stdev, x_mean + sigma * x_stdev)).transpose(), yy,
-                      monotonic_axis='y', ax=ax, **kwargs)
-        plot_segments(x_mean, yy, add_breaks=False, monotonic_axis='y', ax=ax, **kwargs)
-        plot_segments(xx.min(axis=0), yy, add_breaks=False, monotonic_axis='y', ax=ax, linestyles='dashed', **kwargs)
-        plot_segments(xx.max(axis=0), yy, add_breaks=False, monotonic_axis='y', ax=ax, linestyles='dashed', **kwargs)
-    else:
-        plot_segments(xx, yy, labels=range(len(scans)), ax=ax, **kwargs)
-    ax.set_xlabel(labelx)
-    ax.set_ylabel(labely)
+    # If there is only one frequency channel/band in the data set, select it
+    if (band == 'all') and (len(dataset.freqs) == 1):
+        band = 0
+    # Hardwire standard monotonic axes and leave auto selection for user-specified axes only
+    if monotonic_axis == 'auto':
+        monotonic_axis = 'x' if x in ('time', 'freq', 'chan') else 'y' if y in ('time', 'freq', 'chan') else 'auto'
+    # Extract appropriate data from scans
+    xdata, xtype, xlabel = extract_scan_data(scans, x, pol)
+    ydata, ytype, ylabel = extract_scan_data(scans, y, pol)
+    data, xy_types, tf_stats = [xdata, ydata, None], [xtype, ytype], None
+    if z is not None:
+        zdata, ztype, zlabel = extract_scan_data(scans, z, pol)
+
+    # Process data if the combination of data types demand it (e.g. average time-frequency data in time or frequency)
+    if 'tf' in xy_types:
+        tf, other = xy_types.index('tf'), 1 - xy_types.index('tf')
+        if xy_types[other] == 't':
+            if band == 'all':
+                tf_stats = [list(robust_mu_sigma(d, axis=1)) + [d.min(axis=1), d.max(axis=1)] for d in data[tf]]
+                data[tf] = [stats[0] for stats in tf_stats]
+            else:
+                data[tf] = [d[:, band] for d in data[tf]]
+                xy_types[tf] = 't'
+        elif xy_types[other] == 'f':
+            data[tf], data[other] = np.vstack(data[tf]), [data[other][0]]
+            tf_stats = [list(robust_mu_sigma(data[tf], axis=0)) + [data[tf].min(axis=0), data[tf].max(axis=0)]]
+            data[tf] = [tf_stats[0][0]]
+        elif xy_types[other] == 'tf':
+            if band == 'all':
+                raise ValueError('Please pick single frequency band when plotting visibility data against itself')
+            data[tf], data[other] = [d[:, band] for d in data[tf]], [d[:, band] for d in data[other]]
+            xy_types = ['t', 't']
+        else:
+            raise ValueError('Unsure how to plot time-frequency-like quantity against an unrecognized quantity')
+    # The segment widths are set for standard quantities
+    width = 1.0 / dataset.dump_rate if 'time' in (x, y) else \
+            dataset.bandwidths if 'freq' in (x, y) else 1.0 if 'chan' in (x, y) else 0.0
+
+    # Only now get ready to plot...
+    if ax is None:
+        ax = plt.gca()
+    # If data still has a time-freq x or y component, plot bars indicating data min-max and standard deviation ranges
+    if 'tf' in xy_types:
+        min_max = [np.column_stack((tf_min, tf_max)) for tf_mean, tf_stdev, tf_min, tf_max in tf_stats]
+        # Clip the stdev range to stay within min-max range
+        std_range = [np.column_stack((np.clip(tf_mean - sigma * tf_stdev, tf_min, np.inf),
+                                      np.clip(tf_mean + sigma * tf_stdev, -np.inf, tf_max)))
+                     for tf_mean, tf_stdev, tf_min, tf_max in tf_stats]
+        if xy_types.index('tf') == 0:
+            plot_segments(min_max, data[1], width=width, add_breaks=False, ax=ax, color='0.8', **kwargs)
+            plot_segments(std_range, data[1], width=width, add_breaks=False, ax=ax, color='0.6', **kwargs)
+        else:
+            plot_segments(data[0], min_max, width=width, add_breaks=False, ax=ax, color='0.8', **kwargs)
+            plot_segments(data[0], std_range, width=width, add_breaks=False, ax=ax, color='0.6', **kwargs)
+    # Plot main line or image segments
+    plot_segments(data[0], data[1], data[2], width=width, ax=ax, **kwargs)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    return ax
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_spectrum
