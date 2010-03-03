@@ -286,7 +286,9 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
         xxx = np.array([x - 0.999 * width / 2, x + 0.999 * width / 2, x]).transpose().ravel()
         yyy1, yyy2 = np.repeat(y1, 3), np.repeat(y2, 3)
         mask = np.arange(len(xxx)) % 3 == 2
-        segments = ax.fill_between(xxx, yyy1, yyy2, where=~mask, facecolors='0.8', edgecolors='0.8', **kwargs)
+        if 'color' in kwargs:
+            kwargs['facecolors'] = kwargs['edgecolors'] = kwargs.pop('color')
+        segments = ax.fill_between(xxx, yyy1, yyy2, where=~mask, **kwargs)
     elif plot_type == 'barh':
         x1 = np.hstack([np.asarray(xsegm)[:, 0] for xsegm in x])
         x2 = np.hstack([np.asarray(xsegm)[:, 1] for xsegm in x])
@@ -295,7 +297,9 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
         yyy = np.array([y - 0.999 * width / 2, y + 0.999 * width / 2, y]).transpose().ravel()
         xxx1, xxx2 = np.repeat(x1, 3), np.repeat(x2, 3)
         mask = np.arange(len(yyy)) % 3 == 2
-        segments = ax.fill_betweenx(yyy, xxx1, xxx2, where=~mask, facecolors='0.8', edgecolors='0.8', **kwargs)
+        if 'color' in kwargs:
+            kwargs['facecolors'] = kwargs['edgecolors'] = kwargs.pop('color')
+        segments = ax.fill_betweenx(yyy, xxx1, xxx2, where=~mask, **kwargs)
 
     text_labels, break_lines = [], None
     if monotonic_axis == 'x':
