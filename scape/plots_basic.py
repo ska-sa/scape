@@ -159,7 +159,7 @@ def plot_line_segments(segments, labels=None, width=0.0, compact=True, add_break
 #--------------------------------------------------------------------------------------------------
 
 def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks=True,
-                  monotonic_axis='auto', ax=None, **kwargs):
+                  monotonic_axis='auto', color=None, marker=None, ax=None, **kwargs):
     """Plot sequence of line segments, bars or images.
 
     This plots a sequence of line segments, bars or images. Usually, the *x* or
@@ -216,7 +216,7 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
     # Ensure that inputs are sequences of coordinate sequences
     x = [x] if np.isscalar(x[0]) else x
     y = [y] if np.isscalar(y[0]) else y
-    # Attempt to detect monotonic axis if requested - look for axis with 1-dimensional data that is sorted too
+    # Attempt to detect monotonic axis if requested - look for axis with 1-dimensional data that is sorted
     if monotonic_axis == 'auto':
         if np.all(np.array([np.ndim(xsegm) for xsegm in x]) == 1) and \
            np.abs(np.sign(np.diff(np.hstack(x))).sum()) == np.sum([len(xsegm) for xsegm in x]) - 1:
@@ -275,9 +275,19 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
             y = [np.asarray(ysegm) - offset[n] for n, ysegm in enumerate(y)]
             ax.yaxis.set_major_formatter(SegmentedScalarFormatter())
 
+    # Markers only allowed for line segment plots
+    if marker is not None and plot_type != 'line':
+        marker = None
     if plot_type == 'line':
+        if color is not None:
+            kwargs['color'] = color
         segments = mpl.collections.LineCollection([zip(xsegm, ysegm) for xsegm, ysegm in zip(x, y)], **kwargs)
         ax.add_collection(segments)
+        if marker is not None:
+            if color is not None:
+                marker = ax.plot(np.hstack(x), np.hstack(y), linestyle='None', marker=marker, color=color)
+            else:
+                marker = ax.plot(np.hstack(x), np.hstack(y), linestyle='None', marker=marker)
     elif plot_type == 'barv':
         x = np.hstack(x)
         y1 = np.hstack([np.asarray(ysegm)[:, 0] for ysegm in y])
@@ -286,8 +296,8 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
         xxx = np.array([x - 0.999 * width / 2, x + 0.999 * width / 2, x]).transpose().ravel()
         yyy1, yyy2 = np.repeat(y1, 3), np.repeat(y2, 3)
         mask = np.arange(len(xxx)) % 3 == 2
-        if 'color' in kwargs:
-            kwargs['facecolors'] = kwargs['edgecolors'] = kwargs.pop('color')
+        if color is not None:
+            kwargs['facecolors'] = kwargs['edgecolors'] = color
         segments = ax.fill_between(xxx, yyy1, yyy2, where=~mask, **kwargs)
     elif plot_type == 'barh':
         x1 = np.hstack([np.asarray(xsegm)[:, 0] for xsegm in x])
@@ -297,8 +307,8 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
         yyy = np.array([y - 0.999 * width / 2, y + 0.999 * width / 2, y]).transpose().ravel()
         xxx1, xxx2 = np.repeat(x1, 3), np.repeat(x2, 3)
         mask = np.arange(len(yyy)) % 3 == 2
-        if 'color' in kwargs:
-            kwargs['facecolors'] = kwargs['edgecolors'] = kwargs.pop('color')
+        if color is not None:
+            kwargs['facecolors'] = kwargs['edgecolors'] = color
         segments = ax.fill_betweenx(yyy, xxx1, xxx2, where=~mask, **kwargs)
 
     text_labels, break_lines = [], None
@@ -335,7 +345,7 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
                                ha='center', va='center', clip_on=True, backgroundcolor='w'))
         ax.autoscale_view()
 
-    return segments, text_labels, break_lines
+    return segments, text_labels, break_lines, marker
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_compacted_images
