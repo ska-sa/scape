@@ -24,7 +24,7 @@ acsm_logger.setLevel(logging.ERROR)
 # pylint: disable-msg=W0611
 import acsm
 
-from katpoint import deg2rad, rad2deg, construct_target, Antenna, Catalogue
+from katpoint import deg2rad, rad2deg, Target, Antenna, Catalogue
 from .scan import Scan
 from .compoundscan import CompoundScan, CorrelatorConfig
 from .gaincal import NoiseDiodeModel, NoiseDiodeNotFound
@@ -408,7 +408,7 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
                     logger.info("Loaded noise diode characteristics from %s" % fits_file)
                 except NoiseDiodeNotFound:
                     pass
-        target = construct_target(target)
+        target = Target(target)
         logger.info("Loaded %s: %s '%s' [%s] (%d samps, %d chans, %d pols)" %
                     (os.path.basename(fits_file), scan.label, target.name, target.body_type,
                      scan.data.shape[0], scan.data.shape[1], scan.data.shape[2]))
@@ -418,7 +418,7 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
     # Assemble CompoundScan objects from scan lists
     compscanlist = []
     for esn, scanlist in scanlists.iteritems():
-        target = construct_target(targets[esn])
+        target = Target(targets[esn])
         # Refine radec target to replace its apparent ra/dec coords with astrometric ones
         if catalogue and (target.body_type == 'radec'):
             # A string argument for catalogue is assumed to be a file name - try to open it blindly

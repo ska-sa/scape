@@ -162,11 +162,11 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
                   monotonic_axis='auto', ax=None, **kwargs):
     """Plot sequence of line segments, bars or images.
 
-    This plots a sequence of bars. Usually, one of the axes is considered *monotonic*,
-    which means that the line segment coordinates along that axis increase
-    monotonically through the sequence of segments. The classic example of such
-    a plot is when the line segments represent time series data with time on the
-    monotonic x-axis.
+    This plots a sequence of line segments, bars or images. Usually, the *x* or
+    *y* axis is considered *monotonic*, which means that the coordinates along
+    that axis increase monotonically through the sequence of data segments. The
+    classic example of such a plot is when the y data segments represent time
+    series data with time on the monotonic x-axis.
 
     Each segment may be labelled by a text string next to it. If *compact* is
     True, there will be no gaps between the segments along the monotonic axis.

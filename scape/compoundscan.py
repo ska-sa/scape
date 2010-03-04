@@ -149,7 +149,7 @@ class CompoundScan(object):
         if isinstance(target, katpoint.Target):
             self.target = target
         else:
-            self.target = katpoint.construct_target(target)
+            self.target = katpoint.Target(target)
         self.label = label if label is not None else ''
         self.beam = beam
         self.baseline = baseline

@@ -124,7 +124,7 @@ phase_yx_range = [phase_yx_nospikes.min(), phase_yx_nospikes.max()]
 # Calculate time ticks and Sun positions
 hours_since_start = (timestamps - timestamps.min()) / 3600.
 time_grid = np.linspace(timestamps.min(), timestamps.max(), 400)
-sun = katpoint.construct_target('Sun, special', antenna=d.antenna)
+sun = katpoint.Target('Sun, special', antenna=d.antenna)
 sun_el = katpoint.rad2deg(sun.azel(time_grid)[1])
 dist_to_sun = np.array([sun.separation(katpoint.construct_azel_target(az, el), t)
                         for az, el, t in zip(azim, elev, timestamps)])
