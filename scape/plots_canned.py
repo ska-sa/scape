@@ -77,8 +77,8 @@ def extract_scan_data(scans, quantity, pol):
           'time'     : ('Time (s), since %s' % (Timestamp(start).local(),), lambda scan: scan.timestamps - start),
           'az'       : ('Azimuth angle (deg)', lambda scan: rad2deg(scan.pointing['az'])),
           'el'       : ('Elevation angle (deg)', lambda scan: rad2deg(scan.pointing['el'])),
-          'targetx'  : ('Target coordinate x (deg)', lambda scan: rad2deg(scan.target_coords[0])),
-          'targety'  : ('Target coordinate y (deg)', lambda scan: rad2deg(scan.target_coords[1])),
+          'target_x' : ('Target coordinate x (deg)', lambda scan: rad2deg(scan.target_coords[0])),
+          'target_y' : ('Target coordinate y (deg)', lambda scan: rad2deg(scan.target_coords[1])),
           'parangle' : ('Parallactic angle (deg)', lambda scan: rad2deg(scan.parangle)),
           'temperature'    : ('Temperature (deg C)', create_enviro_extractor(dataset, 'temperature')),
           'pressure'       : ('Pressure (mbar)', create_enviro_extractor(dataset, 'pressure')),
@@ -111,8 +111,59 @@ def extract_scan_data(scans, quantity, pol):
 #--------------------------------------------------------------------------------------------------
 
 def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, band='all',
-             monotonic_axis='auto', ax=None, **kwargs):
+             compact=True, monotonic_axis='auto', ax=None, **kwargs):
     """Generic plotting of 2 or 3 quantities extracted from sequence of scans.
+
+    This is a very generic plotting routine that plots quantities extracted from
+    a sequence of scans against each other. The scans may be specified by a
+    :class:`DataSet` or :class:`CompoundScan` object (both of which contain a
+    list of scans) or a single :class:`Scan` object. The quantities are specified
+    either by name (for standard quantities such as time, frequency and
+    visibility amplitude), or as a function that will extract the relevant
+    quantity from a :class:`Scan` object (which is extremely flexible).
+
+    If two (*x* and *y*) quantities are given, a two-dimensional plot will
+    result (typically a line or bar plot). If three (*x*, *y* and *z*) quantities
+    are given, a three-dimensional plot will result (typically a series of images
+    or a 3-D marker plot).
+
+    The function compares the shape of the extracted quantity data with that of
+    the scan timestamps, channel frequencies and visibility data to decide
+    whether each quantity is time-like, frequency-like or time-frequency-like.
+    Based on this classification and a few rules, the data is processed into
+    line plots, bar plots, image plots and marker plots (by e.g. selecting a
+    frequency channel or averaging over frequency or time).
+
+    For visibility data only a single polarisation term is plotted, as specified
+    in the *pol* parameter. A single frequency channel may be selected via the
+    *band* parameter, which is useful for fringe phase plots. The plot may be
+    added to an existing plot by giving an *ax* parameter, else it will be added
+    to the current plot. If no current plot exists, a new plot will be created.
+
+    Some quick examples::
+
+       d = scape.DataSet(filename)
+       # The default plot is visibility amplitude vs time as a 2-D plot
+       # If the data set contains more than one frequency channel, the data is
+       # averaged in frequency and plotted with error bars to indicate spread
+       # over frequency channels
+       scape.plot_xyz(d)
+       # Total power spectrum plot of entire data set, which averages the data
+       # in time and plots it with error bars to indicate the spread over time
+       scape.plot_xyz(d, 'freq', 'amp')
+       # Spectrogram of first scan, which shows all the time-frequency data in
+       # the form of an image (with false colours indicating amplitude)
+       scape.plot_xyz(d.scans[0], 'time', 'freq', 'amp')
+       # Plot of antenna coordinates as it scanned across the sky
+       scape.plot_xyz(d, 'az', 'el')
+       # Plot of total power in projected coordinates relative to the target
+       # being scanned across, for the first compound scan
+       scape.plot_xyz(d.compscans[0], 'target_x', 'target_y', 'amp')
+       # Plot temperature vs time for entire data set
+       scape.plot_xyz(d, 'time', 'temperature')
+       # If d is an interferometric (single-baseline) data set, this will produce
+       # a fringe plot for the specified frequency channel and compound scan
+       scape.plot_xyz(d.compscans[0], 'real', 'imag', band=250)
 
     Parameters
     ----------
@@ -132,6 +183,9 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, b
     band : 'all' or integer, optional
         Single frequency channel/band to select from visibility data (the default
         is to select all channels)
+    compact : {True, False}, optional
+        Plot with no gaps between segments along monotonic axis (only makes
+        sense if there is such an axis)
     monotonic_axis : {'auto', 'x', 'y', None}, optional
         This overrides the automatic detection of monotonic axis in underlying
         :func:`plot_segments` function - only needed if detection fails
@@ -240,11 +294,15 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, b
         old_add_breaks, old_color = kwargs.get('add_breaks', True), kwargs.pop('color', None)
         kwargs['add_breaks'] = False
         if xy_types.index('tf') == 0:
-            plot_segments(min_max, data[1], width=width, monotonic_axis=monotonic_axis, ax=ax, color='0.8', **kwargs)
-            plot_segments(std_range, data[1], width=width, monotonic_axis=monotonic_axis, ax=ax, color='0.6', **kwargs)
+            plot_segments(min_max, data[1], width=width, compact=compact,
+                          monotonic_axis=monotonic_axis, ax=ax, color='0.8', **kwargs)
+            plot_segments(std_range, data[1], width=width, compact=compact,
+                          monotonic_axis=monotonic_axis, ax=ax, color='0.6', **kwargs)
         else:
-            plot_segments(data[0], min_max, width=width, monotonic_axis=monotonic_axis, ax=ax, color='0.8', **kwargs)
-            plot_segments(data[0], std_range, width=width, monotonic_axis=monotonic_axis, ax=ax, color='0.6', **kwargs)
+            plot_segments(data[0], min_max, width=width, compact=compact,
+                          monotonic_axis=monotonic_axis, ax=ax, color='0.8', **kwargs)
+            plot_segments(data[0], std_range, width=width, compact=compact,
+                          monotonic_axis=monotonic_axis, ax=ax, color='0.6', **kwargs)
         kwargs['add_breaks'] = old_add_breaks
         if old_color is not None:
             kwargs['color'] = old_color
@@ -258,7 +316,7 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, b
     else:
         # Plot main line or image segments
         plot_segments(data[0], data[1], data[2], labels=labels, width=width,
-                      monotonic_axis=monotonic_axis, ax=ax, **kwargs)
+                      compact=compact, monotonic_axis=monotonic_axis, ax=ax, **kwargs)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     if z is not None:

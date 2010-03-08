@@ -23,6 +23,6 @@ try:
 except ImportError:
     logger.warn('Matplotlib was not found - plotting will be disabled')
 else:
-    from .plots_canned import plot_spectrum, plot_waterfall, plot_spectrogram, plot_fringes, \
+    from .plots_canned import plot_xyz, plot_spectrum, plot_waterfall, plot_spectrogram, plot_fringes, \
                               plot_compound_scan_in_time, plot_compound_scan_on_target, \
                               plot_data_set_in_mount_space, plot_measured_beam_pattern
