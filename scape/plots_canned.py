@@ -7,13 +7,35 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from katpoint import rad2deg
+from katpoint import rad2deg, Timestamp
+from .fitting import PiecewisePolynomial1DFit
 from .stats import robust_mu_sigma, remove_spikes, minimise_angle_wrap
 from .beam_baseline import fwhm_to_sigma, extract_measured_beam, interpolate_measured_beam
 from .plots_basic import plot_segments, plot_line_segments, plot_compacted_images, plot_marker_3d, \
                          gaussian_ellipses, plot_db_contours, ordinal_suffix
 
 logger = logging.getLogger("scape.plots_canned")
+
+def create_enviro_extractor(dataset, quantity):
+    """Create function to extract and interpolate environmental sensor data.
+
+    Parameters
+    ----------
+    dataset : :class:`DataSet` object
+        Data set that contains environmental data
+    quantity : string
+        Name of environmental quantity to extract
+
+    Returns
+    -------
+    func : function
+        Function that takes Scan object as input and returns interpolated data
+
+    """
+    sensor = dataset.enviro[quantity]
+    interp = PiecewisePolynomial1DFit(max_degree=0)
+    interp.fit(sensor['timestamp'], sensor['value'])
+    return lambda scan: interp(scan.timestamps)
 
 def extract_scan_data(scans, quantity, pol):
     """Extract data from list of Scan objects for plotting purposes.
@@ -22,7 +44,7 @@ def extract_scan_data(scans, quantity, pol):
     ----------
     scans : list of :class:`Scan` objects
         List of Scan objects from which to extract data (assumed to be non-empty)
-    quantity : string, or tuple (label, function)
+    quantity : string, or (label, function) tuple
         Quantity to extract from scans, given as either a standard name or a
         tuple containing the axis label and function which will produce the data
         when run on a Scan object
@@ -48,15 +70,21 @@ def extract_scan_data(scans, quantity, pol):
     # Assume all scans come from the same dataset
     dataset = scans[0].compscan.dataset
     # Extract earliest timestamp, used if quantity is 'time' (assumes timestamps are ordered within a scan)
-    time_origin = np.min([s.timestamps[0] for s in scans])
+    start = np.min([s.timestamps[0] for s in scans])
     # Create dict of standard quantities and the corresponding functions that will extract them from a Scan object,
     # plus their axis labels
     lf = {# Time-like quantities
-          'time'     : ('Time (s), since %s' % (time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime(time_origin)),),
-                        lambda scan: scan.timestamps - time_origin),
+          'time'     : ('Time (s), since %s' % (Timestamp(start).local(),), lambda scan: scan.timestamps - start),
           'az'       : ('Azimuth angle (deg)', lambda scan: rad2deg(scan.pointing['az'])),
           'el'       : ('Elevation angle (deg)', lambda scan: rad2deg(scan.pointing['el'])),
+          'targetx'  : ('Target coordinate x (deg)', lambda scan: rad2deg(scan.target_coords[0])),
+          'targety'  : ('Target coordinate y (deg)', lambda scan: rad2deg(scan.target_coords[1])),
           'parangle' : ('Parallactic angle (deg)', lambda scan: rad2deg(scan.parangle)),
+          'temperature'    : ('Temperature (deg C)', create_enviro_extractor(dataset, 'temperature')),
+          'pressure'       : ('Pressure (mbar)', create_enviro_extractor(dataset, 'pressure')),
+          'humidity'       : ('Relative humidity (%)', create_enviro_extractor(dataset, 'humidity')),
+          'wind_speed'     : ('Wind speed (m/s)', create_enviro_extractor(dataset, 'wind_speed')),
+          'wind_direction' : ('Wind direction (deg E of N)', create_enviro_extractor(dataset, 'wind_direction')),
           # Frequency-like quantities
           'freq'     : ('Frequency (MHz)', lambda scan: dataset.freqs),
           'chan'     : ('Channel index', lambda scan: np.arange(len(dataset.freqs))),
@@ -79,62 +107,122 @@ def extract_scan_data(scans, quantity, pol):
     return data, dt.get(tuple([np.shape(segm) for segm in data])), label
 
 #--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_xy
+#--- FUNCTION :  plot_xyz
 #--------------------------------------------------------------------------------------------------
 
-def plot_xy(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, band='all',
-            monotonic_axis='auto', ax=None, **kwargs):
-    """Generic 2-D plotting.
+def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, band='all',
+             monotonic_axis='auto', ax=None, **kwargs):
+    """Generic plotting of 2 or 3 quantities extracted from sequence of scans.
 
+    Parameters
+    ----------
+    data : :class:`DataSet`, :class:`CompoundScan` or :class:`Scan` object
+        Part of data set to plot (entire data set, compound scan or scan)
+    x, y, z : string or None, or (label, function) tuple
+        Quantities to extract from scans and form x, y and z coordinates of plot,
+        given either as standard names or as tuples containing the axis label and
+        function which will produce the data when run on a :class:`Scan` object
+    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'HV', 'VH', 'XX', 'YY', 'XY', 'YX'}, optional
+        Polarisation term to plot if x, y or z specifies visibility data
+    labels : sequence of strings, optional
+        Sequence of text labels, one per scan (default is scan index)
+    sigma : float, optional
+        Error bars are this factor of standard deviation above and below mean
+        in bar segment plots (e.g. when averaging visibility data)
     band : 'all' or integer, optional
         Single frequency channel/band to select from visibility data (the default
         is to select all channels)
+    monotonic_axis : {'auto', 'x', 'y', None}, optional
+        This overrides the automatic detection of monotonic axis in underlying
+        :func:`plot_segments` function - only needed if detection fails
+    ax : :class:`matplotlib.axes.Axes` object, optional
+        Matplotlib axes object to receive plot (default is current axes)
 
     Returns
     -------
     ax : :class:`matplotlib.axes.Axes` object
         Matplotlib Axes object representing plot
 
+    Raises
+    ------
+    ValueError
+        If scan list is empty or the combination of x, y and z are incompatible
+
     """
     # Create list of scans from whatever input form the data takes (DataSet and CompoundScan have .scans)
     scans = getattr(data, 'scans', [data])
     if len(scans) == 0:
         raise ValueError('No scans found to plot')
+    if labels is None:
+        labels = [str(n) for n, s in enumerate(scans)]
     dataset = scans[0].compscan.dataset
     # If there is only one frequency channel/band in the data set, select it
     if (band == 'all') and (len(dataset.freqs) == 1):
         band = 0
-    # Hardwire standard monotonic axes and leave auto selection for user-specified axes only
+    # Hardwire standard monotonic axes (with preference to time) and leave auto selection for user-specified axes only
     if monotonic_axis == 'auto':
-        monotonic_axis = 'x' if x in ('time', 'freq', 'chan') else 'y' if y in ('time', 'freq', 'chan') else 'auto'
-    # Extract appropriate data from scans
+        monotonic_axis = 'x' if x == 'time' else 'y' if y == 'time' else \
+                         'x' if x in ('freq', 'chan') else 'y' if y in ('freq', 'chan') else 'auto'
+
+    # Extract x, y data from scans
     xdata, xtype, xlabel = extract_scan_data(scans, x, pol)
     ydata, ytype, ylabel = extract_scan_data(scans, y, pol)
     data, xy_types, tf_stats = [xdata, ydata, None], [xtype, ytype], None
-    if z is not None:
-        zdata, ztype, zlabel = extract_scan_data(scans, z, pol)
 
-    # Process data if the combination of data types demand it (e.g. average time-frequency data in time or frequency)
+    # If x or y is a visibility ('tf') type, convert it into compatible 1-dimensional form by averaging or selection
     if 'tf' in xy_types:
         tf, other = xy_types.index('tf'), 1 - xy_types.index('tf')
         if xy_types[other] == 't':
             if band == 'all':
+                # Average over all frequency channels
                 tf_stats = [list(robust_mu_sigma(d, axis=1)) + [d.min(axis=1), d.max(axis=1)] for d in data[tf]]
                 data[tf] = [stats[0] for stats in tf_stats]
             else:
+                # Select one frequency channel / band
                 data[tf] = [d[:, band] for d in data[tf]]
                 xy_types[tf] = 't'
         elif xy_types[other] == 'f':
             data[tf], data[other] = np.vstack(data[tf]), [data[other][0]]
+            # Average over all time samples
             tf_stats = [list(robust_mu_sigma(data[tf], axis=0)) + [data[tf].min(axis=0), data[tf].max(axis=0)]]
             data[tf] = [tf_stats[0][0]]
         elif xy_types[other] == 'tf':
             if band == 'all':
                 raise ValueError('Please pick single frequency band when plotting visibility data against itself')
+            # Select one frequency channel / band for x and y data
             data[tf], data[other] = [d[:, band] for d in data[tf]], [d[:, band] for d in data[other]]
             xy_types = ['t', 't']
         else:
             raise ValueError('Unsure how to plot time-frequency-like quantity against an unrecognized quantity')
+
+    # If z data is given, check combination of (x, y, z) shapes and transpose and average z data if necessary
+    if z is not None:
+        zdata, ztype, zlabel = extract_scan_data(scans, z, pol)
+        xyz_types = tuple(xy_types + [ztype])
+        # If x and y have the *same* type, convert z into compatible 1-dimensional form by averaging or selection
+        if xyz_types == ('t', 't', 'tf'):
+            if band == 'all':
+                # Average over all frequency channels
+                data[2] = [robust_mu_sigma(segm, axis=1)[0] for segm in zdata]
+            else:
+                # Select one frequency channel / band
+                data[2] = [segm[:, band] for segm in zdata]
+            xyz_types = ('t', 't', 't')
+        elif xyz_types == ('f', 'f', 'tf'):
+            data[0], data[1] = [data[0][0]], [data[1][0]]
+            # Average over all time samples
+            data[2] = [robust_mu_sigma(np.vstack(zdata), axis=0)[0]]
+            xyz_types = ('f', 'f', 'f')
+        # If required, transpose tf arrays so that rows/columns match y/x types, respectively
+        elif xyz_types == ('t', 'f', 'tf'):
+            data[2] = [np.asarray(segm).transpose() for segm in zdata]
+        else:
+            data[2] = zdata
+        good_shapes = [('t', 't', 't'), ('f', 'f', 'f'), ('t', 'f', 'tf'), ('f', 't', 'tf')]
+        if not (xyz_types in good_shapes):
+            raise ValueError('Bad combination of quantities: (x, y, z) types are %s, should be one of %s' %
+                             (xyz_types, good_shapes))
+
     # The segment widths are set for standard quantities
     width = 1.0 / dataset.dump_rate if 'time' in (x, y) else \
             dataset.bandwidths if 'freq' in (x, y) else 1.0 if 'chan' in (x, y) else 0.0
@@ -160,10 +248,21 @@ def plot_xy(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, ba
         kwargs['add_breaks'] = old_add_breaks
         if old_color is not None:
             kwargs['color'] = old_color
-    # Plot main line or image segments
-    plot_segments(data[0], data[1], data[2], width=width, monotonic_axis=monotonic_axis, ax=ax, **kwargs)
+    # Certain (x, y, z) shapes dictate a scatter plot instead
+    if z is not None and xyz_types in [('t', 't', 't'), ('f', 'f', 'f')]:
+        plot_marker_3d(np.hstack(data[0]), np.hstack(data[1]), np.hstack(data[2]), ax=ax, **kwargs)
+        for n, label in enumerate(labels):
+            # Add text label on the middle point of segment, with white background to make it readable above segment
+            ax.text(data[0][n][len(data[0][n]) // 2], data[1][n][len(data[1][n]) // 2], label,
+                               ha='center', va='center', clip_on=True, backgroundcolor='w')
+    else:
+        # Plot main line or image segments
+        plot_segments(data[0], data[1], data[2], labels=labels, width=width,
+                      monotonic_axis=monotonic_axis, ax=ax, **kwargs)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
+    if z is not None:
+        ax.set_title(zlabel)
     return ax
 
 #--------------------------------------------------------------------------------------------------

@@ -159,32 +159,48 @@ def plot_line_segments(segments, labels=None, width=0.0, compact=True, add_break
 #--------------------------------------------------------------------------------------------------
 
 def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks=True,
-                  monotonic_axis='auto', color=None, marker=None, ax=None, **kwargs):
-    """Plot sequence of line segments, bars or images.
+                  monotonic_axis='auto', color=None, clim=None, ax=None, **kwargs):
+    """Plot segmented lines, bars or images.
 
-    This plots a sequence of line segments, bars or images. Usually, the *x* or
-    *y* axis is considered *monotonic*, which means that the coordinates along
-    that axis increase monotonically through the sequence of data segments. The
-    classic example of such a plot is when the y data segments represent time
-    series data with time on the monotonic x-axis.
+    This plots a sequence of lines, bars or images consisting of one or more
+    *segments*. These segments are typically linearly arranged, either
+    left-to-right along the *x*-axis or up-and-down along the *y*-axis,
+    potentially with gaps between the segments.
 
-    Each segment may be labelled by a text string next to it. If *compact* is
-    True, there will be no gaps between the segments along the monotonic axis.
-    The tick labels on this axis are modified to reflect the original (padded)
-    values. If *add_breaks* is True, the breaks between segments along the
-    monotonic axis are indicated by dashed lines. If there is no monotonic axis,
-    all these features (text labels, compaction and break lines) are disabled.
+    The axis along which the segments are arranged is called *monotonic* if the
+    coordinates along that axis increase monotonically through the sequence of
+    data segments. The classic example of a segmented plot is a sequence of line
+    segments with the *y* coordinates representing time series data and the
+    monotonic *x*-axis representing time. By default, the function attempts to
+    detect the appropriate monotonic axis automatically.
+
+    Because of their segmented nature, the plots share certain properties,
+    regardless of whether lines, bars or images are drawn. Each segment may be
+    labelled by a text string next to it. If *compact* is True, there will be no
+    gaps between the segments along the monotonic axis. The tick labels on this
+    axis are modified to reflect the original (padded) values. If *add_breaks*
+    is True, the breaks between segments along the monotonic axis are indicated
+    by dashed lines. If there is no monotonic axis, compaction and break lines
+    are disabled and the text labels are placed in the middle of each segment.
 
     Parameters
     ----------
-    x, y : sequence of array-like, shape (N_k,)
-        Coordinates of bars
+    x, y : sequence of array-like, shape (N_k,) or (N_k, 2) or (M_k,)
+        Coordinates of K segments along x and y axes. If the k'th segment has
+        shape (N_k,) for both x and y axes, line segments will be drawn. If the
+        k'th segment has shape (N_k,) for one axis and (N_k, 2) for the other
+        axis, bar segments will be plotted with each bar aligned with the 2nd
+        axis. If the k'th segment has shape (N_k,) for the x axis, (M_k,) for
+        the y axis and (M_k, N_k) for the z axis, image segments will be plotted.
+    z : sequence of array-like, shape (M_k, N_k), or None, optional
+        Sequence of K 2-dimensional arrays to be plotted as image segments. If
+        None, line or bar segments will be plotted.
     labels : sequence of strings, optional
         Corresponding sequence of text labels to add next to each segment along
-        monotonic axis (only makes sense if there is such an axis)
+        monotonic axis (default is no labels)
     width : float, optional
         If non-zero, replace contiguous line with staircase levels of specified
-        width along x-axis
+        width along monotonic axis
     compact : {True, False}, optional
         Plot with no gaps between segments along monotonic axis (only makes
         sense if there is such an axis)
@@ -194,6 +210,11 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
     monotonic_axis : {'auto', 'x', 'y', None}, optional
         Monotonic axis, along which segment coordinate increases monotonically
         (automatically detected by default)
+    color : color spec or None, optional
+        Color of segmented lines and bars
+    clim : sequence of 2 floats, or None, optional
+        Shared color limits of images, as (*vmin*, *vmax*). The default uses the
+        the global minimum and maximum of all the arrays in *z*.
     ax : :class:`matplotlib.axes.Axes` object, optional
         Matplotlib axes object to receive plot (default is current axes)
     kwargs : dict, optional
@@ -201,58 +222,70 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
 
     Returns
     -------
-    segments : :class:`matplotlib.collections.LineCollection` object
-        Collection of segment lines
+    segments : LineCollection, PolyCollection or list of AxesImage objects
+        Segment plot object(s) of appropriate type, depending on whether lines,
+        bars or images were plotted, respectively
     text_labels : list of :class:`matplotlib.text.Text` objects
         List of added text labels
     break_lines : :class:`matplotlib.collections.LineCollection` object, or None
         Collection of break lines separating the segments
 
+    Raises
+    ------
+    ValueError
+        If x, y and z coordinates have different lengths or mismatched shapes,
+        so that they cannot be formed into lines, bars or images
+
     """
-    if ax is None:
-        ax = plt.gca()
     if labels is None:
         labels = []
-    # Ensure that inputs are sequences of coordinate sequences
-    x = [x] if np.isscalar(x[0]) else x
-    y = [y] if np.isscalar(y[0]) else y
     # Attempt to detect monotonic axis if requested - look for axis with 1-dimensional data that is sorted
     if monotonic_axis == 'auto':
-        if np.all(np.array([np.ndim(xsegm) for xsegm in x]) == 1) and \
-           np.abs(np.sign(np.diff(np.hstack(x))).sum()) == np.sum([len(xsegm) for xsegm in x]) - 1:
-            monotonic_axis = 'x'
-        elif np.all(np.array([np.ndim(ysegm) for ysegm in y]) == 1) and \
-           np.abs(np.sign(np.diff(np.hstack(y))).sum()) == np.sum([len(ysegm) for ysegm in y]) - 1:
-            monotonic_axis = 'y'
-        else:
-            monotonic_axis = None
+        monotonic = lambda x: np.all(np.array([np.ndim(s) for s in x]) == 1) and \
+                              np.abs(np.sign(np.diff(np.hstack(x))).sum()) == np.sum([len(s) for s in x]) - 1
+        monotonic_axis = 'x' if monotonic(x) else 'y' if monotonic(y) else None
     # Disable features that depend on a monotonic axis and multiple segments
     if monotonic_axis is None or ((len(x) == 1) and (len(y) == 1)):
         compact, add_breaks = False, False
 
     # Double-check coordinate shapes and select appropriate plot type
-    if np.isscalar(x[0][0]) and np.isscalar(y[0][0]):
-        plot_type = 'line'
-    elif np.shape(x[0][0]) == () and np.shape(y[0][0]) == (2,):
-        plot_type = 'barv'
-    elif np.shape(x[0][0]) == (2,) and np.shape(y[0][0]) == ():
-        plot_type = 'barh'
-    if [np.shape(xsegm)[0] for xsegm in x] != [np.shape(ysegm)[0] for ysegm in y]:
+    if len(x) != len(y):
+        raise ValueError('Different number of segments for x and y coordinates (%d vs %d)' % (len(x), len(y)))
+    if z is None and [np.shape(s)[0] for s in x] != [np.shape(s)[0] for s in y]:
         raise ValueError('Shape mismatch between x and y (segment lengths are %s vs %s)' %
-                         ([np.shape(xsegm)[0] for xsegm in x], [np.shape(ysegm)[0] for ysegm in y]))
+                         ([np.shape(s)[0] for s in x], [np.shape(s)[0] for s in y]))
+    if z is not None:
+        yx_shape = zip([np.shape(s)[0] for s in y], [np.shape(s)[0] for s in x])
+        if [np.shape(s) for s in z] != yx_shape:
+            raise ValueError('Shape mismatch between z and (y, x) (segment shapes are %s vs %s)' %
+                             ([np.shape(s) for s in z], yx_shape))
+        plot_type = 'image'
+    elif np.isscalar(x[0][0]) and np.isscalar(y[0][0]):
+        plot_type = 'line'
+    elif np.isscalar(x[0][0]) and np.shape(y[0][0]) == (2,) and monotonic_axis != 'y':
+        plot_type = 'barv'
+    elif np.shape(x[0][0]) == (2,) and np.isscalar(y[0][0]) and monotonic_axis != 'x':
+        plot_type = 'barh'
+    else:
+        raise ValueError('Could not figure out whether to plot lines, bars or images based on x, y, z shapes')
+
+    # Only now get ready to plot...
+    if ax is None:
+        ax = plt.gca()
 
     # Get segment startpoints and endpoints along monotonic axis
     if monotonic_axis == 'x':
-        if plot_type == 'barh':
-            raise ValueError('X-axis cannot be monotonic when x-y data indicate horizontal bars')
-        start = np.array([np.min(xsegm) for xsegm in x]) - width / 2.0
-        end = np.array([np.max(xsegm) for xsegm in x]) + width / 2.0
+        if width <= 0.0:
+            width = np.array([np.mean(np.diff(segm)) for segm in x])
+        start = np.array([np.min(segm) for segm in x]) - width / 2.0
+        end = np.array([np.max(segm) for segm in x]) + width / 2.0
     elif monotonic_axis == 'y':
-        if plot_type == 'barv':
-            raise ValueError('Y-axis cannot be monotonic when x-y data indicate vertical bars')
-        start = np.array([np.min(ysegm) for ysegm in y]) - width / 2.0
-        end = np.array([np.max(ysegm) for ysegm in y]) + width / 2.0
+        if width <= 0.0:
+            width = np.array([np.mean(np.diff(segm)) for segm in y])
+        start = np.array([np.min(segm) for segm in y]) - width / 2.0
+        end = np.array([np.max(segm) for segm in y]) + width / 2.0
 
+    # Handle compaction along monotonic axis
     if compact:
         # Calculate offset between original and compacted coordinate, and adjust coordinates accordingly
         compacted_end = np.cumsum(end - start)
@@ -275,29 +308,23 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
             y = [np.asarray(ysegm) - offset[n] for n, ysegm in enumerate(y)]
             ax.yaxis.set_major_formatter(SegmentedScalarFormatter())
 
-    # Markers only allowed for line segment plots
-    if marker is not None and plot_type != 'line':
-        marker = None
+    # Plot the main line / bar / image segments
     if plot_type == 'line':
         if color is not None:
             kwargs['color'] = color
         segments = mpl.collections.LineCollection([zip(xsegm, ysegm) for xsegm, ysegm in zip(x, y)], **kwargs)
         ax.add_collection(segments)
-        if marker is not None:
-            if color is not None:
-                marker = ax.plot(np.hstack(x), np.hstack(y), linestyle='None', marker=marker, color=color)
-            else:
-                marker = ax.plot(np.hstack(x), np.hstack(y), linestyle='None', marker=marker)
     elif plot_type == 'barv':
         x = np.hstack(x)
         y1 = np.hstack([np.asarray(ysegm)[:, 0] for ysegm in y])
         y2 = np.hstack([np.asarray(ysegm)[:, 1] for ysegm in y])
-        # Form makeshift rectangular patches
+        # Form makeshift rectangular patches (the factor 0.999 prevents glitches in bars)
         xxx = np.array([x - 0.999 * width / 2, x + 0.999 * width / 2, x]).transpose().ravel()
         yyy1, yyy2 = np.repeat(y1, 3), np.repeat(y2, 3)
         mask = np.arange(len(xxx)) % 3 == 2
         if color is not None:
             kwargs['facecolors'] = kwargs['edgecolors'] = color
+        # Fill_between (which uses poly path) is much faster than a Rectangle patch collection
         segments = ax.fill_between(xxx, yyy1, yyy2, where=~mask, **kwargs)
     elif plot_type == 'barh':
         x1 = np.hstack([np.asarray(xsegm)[:, 0] for xsegm in x])
@@ -310,7 +337,31 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
         if color is not None:
             kwargs['facecolors'] = kwargs['edgecolors'] = color
         segments = ax.fill_betweenx(yyy, xxx1, xxx2, where=~mask, **kwargs)
+    elif plot_type == 'image':
+        # The default color limits use the minimum and maximum values of z
+        if clim is None:
+            cmin, cmax = np.min([im.min() for im in z]), np.max([im.max() for im in z])
+            crange = 1.0 if cmin == cmax else cmax - cmin
+            clim = (cmin - 0.05 * crange, cmax + 0.05 * crange)
+        segments = []
+        colornorm = mpl.colors.Normalize(vmin=clim[0], vmax=clim[1])
+        for xsegm, ysegm, zsegm in zip(x, y, z):
+            norm_rgb = mpl.cm.jet(colornorm(zsegm))
+            # if grey_rows is not None:
+            #     norm_rgb_grey = mpl.cm.gray(colornorm(zsegm))
+            #     norm_rgb[grey_rows, :, :] = norm_rgb_grey[grey_rows, :, :]
+            # Calculate image extent, which assumes equispaced x and y ticks and defines the bounding box of image
+            xdelta, ydelta = np.mean(np.diff(xsegm)), np.mean(np.diff(ysegm))
+            extent = (xsegm[0] - xdelta / 2, xsegm[-1] + xdelta / 2, ysegm[0] - ydelta / 2, ysegm[-1] + ydelta / 2)
+            # Convert image data to RGB uint8 form, to save space and speed things up
+            # The downside is that color limits of image are fixed
+            im = ax.imshow(np.uint8(np.round(norm_rgb * 255)), aspect='auto', origin='lower',
+                           interpolation='nearest', extent=extent)
+            # Save original normaliser to ensure correct colorbar() behaviour
+            im.set_norm(colornorm)
+            segments.append(im)
 
+    # Add text labels and break lines, and set axes limits
     text_labels, break_lines = [], None
     if monotonic_axis == 'x':
         # Break lines and labels have x coordinates fixed to data and y coordinates fixed to axes (like axvline)
@@ -323,7 +374,7 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
             break_lines = mpl.collections.LineCollection([[(s, 0), (s, 1)] for s in breaks], colors='k',
                                                          linewidths=0.5, linestyles='dotted', transform=transFixedY)
             ax.add_collection(break_lines)
-        # Only set monotonic axis limits
+        # Only set monotonic axis limits - the other axis is autoscaled
         ax.set_xlim(start[0], end[-1])
         ax.autoscale_view(scalex=False)
     elif monotonic_axis == 'y':
@@ -341,11 +392,12 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
         ax.autoscale_view(scaley=False)
     else:
         for n, label in enumerate(labels):
+            # Add text label on the middle point of segment, with white background to make it readable above segment
             text_labels.append(ax.text(x[n][len(x[n]) // 2], y[n][len(y[n]) // 2], label,
                                ha='center', va='center', clip_on=True, backgroundcolor='w'))
         ax.autoscale_view()
 
-    return segments, text_labels, break_lines, marker
+    return segments, text_labels, break_lines
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  plot_compacted_images
