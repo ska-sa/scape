@@ -240,6 +240,7 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, b
             # Average over all time samples
             tf_stats = [list(robust_mu_sigma(data[tf], axis=0)) + [data[tf].min(axis=0), data[tf].max(axis=0)]]
             data[tf] = [tf_stats[0][0]]
+            labels = labels[0] if len(labels) > 0 else []
         elif xy_types[other] == 'tf':
             if band == 'all':
                 raise ValueError('Please pick single frequency band when plotting visibility data against itself')
@@ -266,6 +267,7 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, b
             data[0], data[1] = [data[0][0]], [data[1][0]]
             # Average over all time samples
             data[2] = [robust_mu_sigma(np.vstack(zdata), axis=0)[0]]
+            labels = labels[0] if len(labels) > 0 else []
             xyz_types = ('f', 'f', 'f')
         # If required, transpose tf arrays so that rows/columns match y/x types, respectively
         elif xyz_types == ('t', 'f', 'tf'):

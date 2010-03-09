@@ -275,12 +275,12 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
 
     # Get segment startpoints and endpoints along monotonic axis
     if monotonic_axis == 'x':
-        if width <= 0.0:
+        if np.isscalar(width) and width == 0.0:
             width = np.array([np.mean(np.diff(segm)) for segm in x])
         start = np.array([np.min(segm) for segm in x]) - width / 2.0
         end = np.array([np.max(segm) for segm in x]) + width / 2.0
     elif monotonic_axis == 'y':
-        if width <= 0.0:
+        if np.isscalar(width) and width == 0.0:
             width = np.array([np.mean(np.diff(segm)) for segm in y])
         start = np.array([np.min(segm) for segm in y]) - width / 2.0
         end = np.array([np.max(segm) for segm in y]) + width / 2.0
