@@ -73,7 +73,7 @@ def remove_duplicates(sensor, name):
 #--------------------------------------------------------------------------------------------------
 
 # pylint: disable-msg=W0613
-def load_dataset(filename, baseline='A1A1', selected_pointing='pos_actual_scan', noise_diode='coupler', **kwargs):
+def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan', noise_diode='coupler', **kwargs):
     """Load data set from HDF5 file.
 
     This loads a data set from an HDF5 file. The file contains all the baselines
@@ -88,6 +88,8 @@ def load_dataset(filename, baseline='A1A1', selected_pointing='pos_actual_scan',
         Selected baseline as *AxAy*, where *x* is the number of the first antenna
         and *y* is the number of the second antenna (1-based), and *x* < *y*.
         For single-dish data the antenna number is repeated, e.g. 'A1A1'.
+        Alternatively, the baseline may be 'AxAx' for the first single-dish
+        baseline or 'AxAy' for the first interferometric baseline in the file.
     selected_pointing : string, optional
         Identifier of (az, el) sensors that will provide all the pointing data
         of the data set. The actual sensor names are formed by appending '_azim'
@@ -150,12 +152,29 @@ def load_dataset(filename, baseline='A1A1', selected_pointing='pos_actual_scan',
 
         # Load antennas group
         ants_group = f['Antennas']
-        # Select antennas involved in baseline
-        parsed_antenna_indices = baseline_pattern.match(baseline)
-        if parsed_antenna_indices is None:
-            raise ValueError("Please specify baseline with notation 'AxAy', " +
-                             "where x is index of first antenna and y is index of second antenna")
-        antA, antB = ['Antenna' + index for index in parsed_antenna_indices.groups()]
+        if baseline == 'AxAx':
+            # First single-dish baseline found
+            try:
+                antA = antB = ants_group.listnames()[0]
+            except IndexError:
+                raise ValueError('Could not load first single-dish baseline - no antennas found in file')
+            logger.info("Loading single-dish baseline '%s%s'" % (antA.replace('ntenna', ''),
+                                                                 antB.replace('ntenna', '')))
+        elif baseline == 'AxAy':
+            # First interferometric baseline found
+            try:
+                antA, antB = ants_group.listnames()[:2]
+            except IndexError:
+                raise ValueError('Could not load first interferometric baseline - less than 2 antennas found in file')
+            logger.info("Loading interferometric baseline '%s%s'" % (antA.replace('ntenna', ''),
+                                                                     antB.replace('ntenna', '')))
+        else:
+            # Select antennas involved in specified baseline
+            parsed_antenna_indices = baseline_pattern.match(baseline)
+            if parsed_antenna_indices is None:
+                raise ValueError("Please specify baseline with notation 'AxAy', " +
+                                 "where x is index of first antenna and y is index of second antenna")
+            antA, antB = ['Antenna' + index for index in parsed_antenna_indices.groups()]
         # Check that requested antennas are in data set
         if antA not in ants_group or antB not in ants_group:
             raise ValueError('Requested antenna pair not found in HDF5 file (wanted %s but file only contains %s)'
