@@ -363,16 +363,19 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
 
     # Add text labels and break lines, and set axes limits
     text_labels, break_lines = [], None
+    # Break line styles differ for image and non-image plots
+    break_kwargs = {'colors' : 'k', 'linewidths' : 2.0, 'linestyles' : 'solid'} if plot_type == 'image' else \
+                   {'colors' : 'k', 'linewidths' : 0.5, 'linestyles' : 'dotted'}
     if monotonic_axis == 'x':
         # Break lines and labels have x coordinates fixed to data and y coordinates fixed to axes (like axvline)
         transFixedY = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
         for n, label in enumerate(labels):
             text_labels.append(ax.text((start[n] + end[n]) / 2, 0.02, label, transform=transFixedY,
-                                       ha='center', va='bottom', clip_on=True))
+                                       ha='center', va='bottom', clip_on=True, backgroundcolor='w'))
         if add_breaks:
             breaks = (start[1:] + end[:-1]) / 2
-            break_lines = mpl.collections.LineCollection([[(s, 0), (s, 1)] for s in breaks], colors='k',
-                                                         linewidths=0.5, linestyles='dotted', transform=transFixedY)
+            break_lines = mpl.collections.LineCollection([[(s, 0), (s, 1)] for s in breaks],
+                                                         transform=transFixedY, **break_kwargs)
             ax.add_collection(break_lines)
         # Only set monotonic axis limits - the other axis is autoscaled
         ax.set_xlim(start[0], end[-1])
@@ -382,11 +385,11 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
         transFixedX = mpl.transforms.blended_transform_factory(ax.transAxes, ax.transData)
         for n, label in enumerate(labels):
             text_labels.append(ax.text(0.02, (start[n] + end[n]) / 2, label, transform=transFixedX,
-                                       ha='left', va='center', clip_on=True))
+                                       ha='left', va='center', clip_on=True, backgroundcolor='w'))
         if add_breaks:
             breaks = (start[1:] + end[:-1]) / 2
-            break_lines = mpl.collections.LineCollection([[(0, s), (1, s)] for s in breaks], colors='k',
-                                                         linewidths=0.5, linestyles='dotted', transform=transFixedX)
+            break_lines = mpl.collections.LineCollection([[(0, s), (1, s)] for s in breaks],
+                                                         transform=transFixedX, **break_kwargs)
             ax.add_collection(break_lines)
         ax.set_ylim(start[0], end[-1])
         ax.autoscale_view(scaley=False)
