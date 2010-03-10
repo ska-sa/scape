@@ -73,7 +73,8 @@ def remove_duplicates(sensor, name):
 #--------------------------------------------------------------------------------------------------
 
 # pylint: disable-msg=W0613
-def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan', noise_diode='coupler', **kwargs):
+def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
+                 noise_diode='coupler', time_offset=0.0, **kwargs):
     """Load data set from HDF5 file.
 
     This loads a data set from an HDF5 file. The file contains all the baselines
@@ -97,6 +98,8 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         already been processed to contain a single source of pointing data.
     noise_diode : {'coupler', 'pin'}, optional
         Load the model and on/off flags of this noise diode
+    time_offset : float, optional
+        Offset to add to correlator timestamps, in seconds
     kwargs : dict, optional
         Extra keyword arguments are ignored, as they typically apply to other formats
 
@@ -286,7 +289,7 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                                  for cid in corr_id]
                     scan_data = np.dstack(scan_data).astype(np.complex128)
                 # Convert from millisecs to secs since Unix epoch, and be sure to use float64 to preserve digits
-                data_timestamps = scan_group['timestamps'].value.astype(np.float64) / 1000.0
+                data_timestamps = scan_group['timestamps'].value.astype(np.float64) / 1000.0 + time_offset
                 # Move correlator data timestamps from start of each sample to the middle
                 if not data_timestamps_at_sample_centers:
                     data_timestamps += 0.5 * sample_period
