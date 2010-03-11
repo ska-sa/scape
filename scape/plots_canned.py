@@ -89,10 +89,14 @@ def extract_scan_data(scans, quantity, pol):
           'freq'     : ('Frequency (MHz)', lambda scan: dataset.freqs),
           'chan'     : ('Channel index', lambda scan: np.arange(len(dataset.freqs))),
           # Time-frequency-like quantities
-          'amp'      : ('%s amplitude (%s)' % (pol, dataset.data_unit), lambda scan: np.abs(scan.pol(pol))),
-          'phase'    : ('%s phase (deg)' % (pol,), lambda scan: rad2deg(np.angle(scan.pol(pol)))),
-          'real'     : ('Real part of %s (%s)' % (pol, dataset.data_unit), lambda scan: scan.pol(pol).real),
-          'imag'     : ('Imaginary part of %s (%s)' % (pol, dataset.data_unit), lambda scan: scan.pol(pol).imag)}
+          'amp'           : ('%s amplitude (%s)' % (pol, dataset.data_unit), lambda scan: np.abs(scan.pol(pol))),
+          'phase'         : ('%s phase (deg)' % (pol,), lambda scan: rad2deg(np.angle(scan.pol(pol)))),
+          'real'          : ('Real part of %s (%s)' % (pol, dataset.data_unit), lambda scan: scan.pol(pol).real),
+          'imag'          : ('Imaginary part of %s (%s)' % (pol, dataset.data_unit), lambda scan: scan.pol(pol).imag),
+          'unspiked_amp'  : ('%s amplitude (%s)' % (pol, dataset.data_unit),
+                             lambda scan: remove_spikes(np.abs(scan.pol(pol)))),
+          'unspiked_real' : ('Real part of %s (%s)' % (pol, dataset.data_unit),
+                             lambda scan: remove_spikes(scan.pol(pol).real))}
     # Obtain axis label and extraction function
     try:
         label, func = lf[quantity] if isinstance(quantity, basestring) else quantity
@@ -110,7 +114,7 @@ def extract_scan_data(scans, quantity, pol):
 #--- FUNCTION :  plot_xyz
 #--------------------------------------------------------------------------------------------------
 
-def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, band='all',
+def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, band='all', power_in_dB=False,
              compact=True, monotonic_axis='auto', ax=None, **kwargs):
     """Generic plotting of 2 or 3 quantities extracted from sequence of scans.
 
@@ -167,8 +171,9 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, b
 
     Parameters
     ----------
-    data : :class:`DataSet`, :class:`CompoundScan` or :class:`Scan` object
-        Part of data set to plot (entire data set, compound scan or scan)
+    data : :class:`DataSet`, :class:`CompoundScan` or :class:`Scan` object (list)
+        Part of data set to plot (entire data set, compound scan, scan or scan
+        list)
     x, y, z : string or None, or (label, function) tuple
         Quantities to extract from scans and form x, y and z coordinates of plot,
         given either as standard names or as tuples containing the axis label and
@@ -183,6 +188,8 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, b
     band : 'all' or integer, optional
         Single frequency channel/band to select from visibility data (the default
         is to select all channels)
+    power_in_dB : {False, True}, optional
+        True if visibility amplitudes should be converted to decibel (dB) scale
     compact : {True, False}, optional
         Plot with no gaps between segments along monotonic axis (only makes
         sense if there is such an axis)
@@ -204,7 +211,7 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, b
 
     """
     # Create list of scans from whatever input form the data takes (DataSet and CompoundScan have .scans)
-    scans = getattr(data, 'scans', [data])
+    scans = data if isinstance(data, list) else getattr(data, 'scans', [data])
     if len(scans) == 0:
         raise ValueError('No scans found to plot')
     if labels is None:
@@ -293,6 +300,9 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, b
         std_range = [np.column_stack((np.clip(tf_mean - sigma * tf_stdev, tf_min, np.inf),
                                       np.clip(tf_mean + sigma * tf_stdev, -np.inf, tf_max)))
                      for tf_mean, tf_stdev, tf_min, tf_max in tf_stats]
+        # Set dB scale right before the plot (don't do arithmetic on dB values!)
+        if power_in_dB and ((tf == 0 and x in ('amp', 'unspiked_amp')) or (tf == 1 and y in ('amp', 'unspiked_amp'))):
+            min_max, std_range = [10.0 * np.log10(s) for s in min_max], [10.0 * np.log10(s) for s in std_range]
         old_add_breaks, old_color = kwargs.get('add_breaks', True), kwargs.pop('color', None)
         kwargs['add_breaks'] = False
         if xy_types.index('tf') == 0:
@@ -308,6 +318,17 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, b
         kwargs['add_breaks'] = old_add_breaks
         if old_color is not None:
             kwargs['color'] = old_color
+    # Set dB scale right before the plot (don't do arithmetic on dB values!)
+    if power_in_dB:
+        if x in ('amp', 'unspiked_amp'):
+            data[0] = [10.0 * np.log10(segm) for segm in data[0]]
+            xlabel = '%s amplitude (dB %s)' % (pol, dataset.data_unit)
+        if y in ('amp', 'unspiked_amp'):
+            data[1] = [10.0 * np.log10(segm) for segm in data[1]]
+            ylabel = '%s amplitude (dB %s)' % (pol, dataset.data_unit)
+        if z in ('amp', 'unspiked_amp'):
+            data[2] = [10.0 * np.log10(segm) for segm in data[2]]
+            zlabel = '%s amplitude (dB %s)' % (pol, dataset.data_unit)
     # Certain (x, y, z) shapes dictate a scatter plot instead
     if z is not None and xyz_types in [('t', 't', 't'), ('f', 'f', 'f')]:
         if 'color' not in kwargs:
@@ -922,7 +943,7 @@ def plot_compound_scan_on_target(compscan, pol='I', subtract_baseline=True, leve
         target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans]))
 
     # Show the locations of the scan samples themselves, with marker sizes indicating power values
-    plot_marker_3d(target_coords[0], target_coords[1], compscan_power, ax=ax, color='b',  alpha=0.75)
+    plot_marker_3d(target_coords[0], target_coords[1], compscan_power, ax=ax, color='b', alpha=0.75)
     # Plot the fitted Gaussian beam function as contours
     if compscan.beam:
         if compscan.beam.is_valid:
