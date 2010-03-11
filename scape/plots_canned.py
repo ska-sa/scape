@@ -310,15 +310,21 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, b
             kwargs['color'] = old_color
     # Certain (x, y, z) shapes dictate a scatter plot instead
     if z is not None and xyz_types in [('t', 't', 't'), ('f', 'f', 'f')]:
-        plot_marker_3d(np.hstack(data[0]), np.hstack(data[1]), np.hstack(data[2]), ax=ax, **kwargs)
+        if 'color' not in kwargs:
+            kwargs['color'] = 'b'
+        plot_marker_3d(np.hstack(data[0]), np.hstack(data[1]), np.hstack(data[2]), ax=ax, alpha=0.75, **kwargs)
         for n, label in enumerate(labels):
-            # Add text label on the middle point of segment, with white background to make it readable above segment
-            ax.text(data[0][n][len(data[0][n]) // 2], data[1][n][len(data[1][n]) // 2], label,
-                               ha='center', va='center', clip_on=True, backgroundcolor='w')
+            # Add text label just before the start of segment, with white background to make it readable above data
+            xsegm, ysegm = data[0][n], data[1][n]
+            lx, ly = xsegm[0] - 0.03 * (xsegm[-1] - xsegm[0]), ysegm[0] - 0.03 * (ysegm[-1] - ysegm[0])
+            ax.text(lx, ly, label, ha='center', va='center', clip_on=True, backgroundcolor='w')
     else:
         # Plot main line or image segments
         plot_segments(data[0], data[1], data[2], labels=labels, width=width,
                       compact=compact, monotonic_axis=monotonic_axis, ax=ax, **kwargs)
+    # For these pairs of axes (with same units) that typically go together, give plot a square aspect ratio
+    if np.any([set((x, y)).issubset(set(p)) for p in (('az', 'el'), ('target_x', 'target_y'), ('real', 'imag'))]):
+        ax.set_aspect('equal')
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     if z is not None:

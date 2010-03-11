@@ -181,7 +181,7 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
     axis are modified to reflect the original (padded) values. If *add_breaks*
     is True, the breaks between segments along the monotonic axis are indicated
     by dashed lines. If there is no monotonic axis, compaction and break lines
-    are disabled and the text labels are placed in the middle of each segment.
+    are disabled and the text labels are placed near the start of each segment.
 
     Parameters
     ----------
@@ -395,9 +395,9 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
         ax.autoscale_view(scaley=False)
     else:
         for n, label in enumerate(labels):
-            # Add text label on the middle point of segment, with white background to make it readable above segment
-            text_labels.append(ax.text(x[n][len(x[n]) // 2], y[n][len(y[n]) // 2], label,
-                               ha='center', va='center', clip_on=True, backgroundcolor='w'))
+            # Add text label just before the start of segment, with white background to make it readable above data
+            lx, ly = x[n][0] - 0.03 * (x[n][-1] - x[n][0]), y[n][0] - 0.03 * (y[n][-1] - y[n][0])
+            text_labels.append(ax.text(lx, ly, label, ha='center', va='center', clip_on=True, backgroundcolor='w'))
         ax.autoscale_view()
 
     return segments, text_labels, break_lines
