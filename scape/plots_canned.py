@@ -79,7 +79,7 @@ def extract_scan_data(scans, quantity, pol):
           'el'       : ('Elevation angle (deg)', lambda scan: rad2deg(scan.pointing['el'])),
           'target_x' : ('Target coordinate x (deg)', lambda scan: rad2deg(scan.target_coords[0])),
           'target_y' : ('Target coordinate y (deg)', lambda scan: rad2deg(scan.target_coords[1])),
-          # Instantaneous mount coordinates are back on the sphere, but at a single time instant for all points
+          # Instantaneous mount coordinates are back on the sphere, but at a single central time instant for all points in compound scan
           'instant_az' : ('Instant azimuth angle (deg)',
                           lambda scan: rad2deg(scan.compscan.target.plane_to_sphere(scan.target_coords[0], scan.target_coords[1],
                                                np.median(np.hstack([s.timestamps for s in scan.compscan.scans])), dataset.antenna)[0])),

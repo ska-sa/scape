@@ -460,16 +460,16 @@ class DataSet(object):
         """
         # Only operate on raw data
         if self.data_unit != 'counts':
-            logger.error("Expected raw power data to convert to temperature, got data with units '" +
-                         self.data_unit + "' instead.")
+            logger.warning("Expected raw power data to convert to temperature, got data with units '" +
+                           self.data_unit + "' instead.")
             return self
         if self.nd_model is None:
-            logger.error('No noise diode model found in data set - calibration aborted')
-            return  self
+            logger.warning('No noise diode model found in data set - gain calibration not done')
+            return self
         try:
             return calibrate_gain(self, randomise, **kwargs)
         except NoSuitableNoiseDiodeDataFound:
-            logger.error('No suitable noise diode on/off blocks were found - calibration aborted')
+            logger.warning('No suitable noise diode on/off blocks were found - gain calibration not done')
 
     def average(self, channels_per_band='all', time_window=1):
         """Average data in time and/or frequency.
