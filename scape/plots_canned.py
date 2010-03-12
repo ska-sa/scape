@@ -79,7 +79,14 @@ def extract_scan_data(scans, quantity, pol):
           'el'       : ('Elevation angle (deg)', lambda scan: rad2deg(scan.pointing['el'])),
           'target_x' : ('Target coordinate x (deg)', lambda scan: rad2deg(scan.target_coords[0])),
           'target_y' : ('Target coordinate y (deg)', lambda scan: rad2deg(scan.target_coords[1])),
-          'parangle' : ('Parallactic angle (deg)', lambda scan: rad2deg(scan.parangle)),
+          # Instantaneous mount coordinates are back on the sphere, but at a single time instant for all points
+          'instant_az' : ('Instant azimuth angle (deg)',
+                          lambda scan: rad2deg(scan.compscan.target.plane_to_sphere(scan.target_coords[0], scan.target_coords[1],
+                                               np.median(np.hstack([s.timestamps for s in scan.compscan.scans])), dataset.antenna)[0])),
+          'instant_el' : ('Instant elevation angle (deg)',
+                          lambda scan: rad2deg(scan.compscan.target.plane_to_sphere(scan.target_coords[0], scan.target_coords[1],
+                                               np.median(np.hstack([s.timestamps for s in scan.compscan.scans])), dataset.antenna)[1])),
+          'parangle'   : ('Parallactic angle (deg)', lambda scan: rad2deg(scan.parangle)),
           'temperature'    : ('Temperature (deg C)', create_enviro_extractor(dataset, 'temperature')),
           'pressure'       : ('Pressure (mbar)', create_enviro_extractor(dataset, 'pressure')),
           'humidity'       : ('Relative humidity (%)', create_enviro_extractor(dataset, 'humidity')),
@@ -114,8 +121,8 @@ def extract_scan_data(scans, quantity, pol):
 #--- FUNCTION :  plot_xyz
 #--------------------------------------------------------------------------------------------------
 
-def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, band='all', power_in_dB=False,
-             compact=True, monotonic_axis='auto', ax=None, **kwargs):
+def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, band='all',
+             power_in_dB=False, compact=True, monotonic_axis='auto', ax=None, **kwargs):
     """Generic plotting of 2 or 3 quantities extracted from sequence of scans.
 
     This is a very generic plotting routine that plots quantities extracted from
@@ -344,7 +351,13 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, b
         plot_segments(data[0], data[1], data[2], labels=labels, width=width,
                       compact=compact, monotonic_axis=monotonic_axis, ax=ax, **kwargs)
     # For these pairs of axes (with same units) that typically go together, give plot a square aspect ratio
-    if np.any([set((x, y)).issubset(set(p)) for p in (('az', 'el'), ('target_x', 'target_y'), ('real', 'imag'))]):
+    if np.any([set((x, y)).issubset(set(p)) for p in (('az', 'el'), ('instant_az', 'instant_el'),
+                                                      ('target_x', 'target_y'), ('real', 'imag'))]):
+        # Pad the plot with extra space around the edges
+        x_range, y_range = ax.xaxis.get_data_interval(), ax.yaxis.get_data_interval()
+        extra_space = 0.1 * max(x_range[1] - x_range[0], y_range[1] - y_range[0])
+        ax.set_xlim(x_range + extra_space * np.array([-1.0, 1.0]))
+        ax.set_ylim(y_range + extra_space * np.array([-1.0, 1.0]))
         ax.set_aspect('equal')
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
