@@ -32,7 +32,10 @@ def create_enviro_extractor(dataset, quantity):
         Function that takes Scan object as input and returns interpolated data
 
     """
-    sensor = dataset.enviro[quantity]
+    try:
+        sensor = dataset.enviro[quantity]
+    except KeyError:
+        return lambda scan: np.tile(np.nan, scan.timestamps.shape)
     interp = PiecewisePolynomial1DFit(max_degree=0)
     interp.fit(sensor['timestamp'], sensor['value'])
     return lambda scan: interp(scan.timestamps)
