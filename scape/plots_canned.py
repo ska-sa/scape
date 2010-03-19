@@ -32,10 +32,7 @@ def create_enviro_extractor(dataset, quantity):
         Function that takes Scan object as input and returns interpolated data
 
     """
-    try:
-        sensor = dataset.enviro[quantity]
-    except KeyError:
-        return lambda scan: np.tile(np.nan, scan.timestamps.shape)
+    sensor = dataset.enviro[quantity]
     interp = PiecewisePolynomial1DFit(max_degree=0)
     interp.fit(sensor['timestamp'], sensor['value'])
     return lambda scan: interp(scan.timestamps)
@@ -90,11 +87,6 @@ def extract_scan_data(scans, quantity, pol):
                           lambda scan: rad2deg(scan.compscan.target.plane_to_sphere(scan.target_coords[0], scan.target_coords[1],
                                                np.median(np.hstack([s.timestamps for s in scan.compscan.scans])), dataset.antenna)[1])),
           'parangle'   : ('Parallactic angle (deg)', lambda scan: rad2deg(scan.parangle)),
-          'temperature'    : ('Temperature (deg C)', create_enviro_extractor(dataset, 'temperature')),
-          'pressure'       : ('Pressure (mbar)', create_enviro_extractor(dataset, 'pressure')),
-          'humidity'       : ('Relative humidity (%)', create_enviro_extractor(dataset, 'humidity')),
-          'wind_speed'     : ('Wind speed (m/s)', create_enviro_extractor(dataset, 'wind_speed')),
-          'wind_direction' : ('Wind direction (deg E of N)', create_enviro_extractor(dataset, 'wind_direction')),
           # Frequency-like quantities
           'freq'     : ('Frequency (MHz)', lambda scan: dataset.freqs),
           'chan'     : ('Channel index', lambda scan: np.arange(len(dataset.freqs))),
@@ -107,6 +99,18 @@ def extract_scan_data(scans, quantity, pol):
                              lambda scan: remove_spikes(np.abs(scan.pol(pol)))),
           'unspiked_real' : ('Real part of %s (%s)' % (pol, dataset.data_unit),
                              lambda scan: remove_spikes(scan.pol(pol).real))}
+    # Add enviro sensors as plottable time-like quantities, if they are available
+    if 'temperature' in dataset.enviro:
+        lf['temperature'] = ('Temperature (deg C)', create_enviro_extractor(dataset, 'temperature'))
+    if 'pressure' in dataset.enviro:
+        lf['pressure'] = ('Pressure (mbar)', create_enviro_extractor(dataset, 'pressure'))
+    if 'humidity' in dataset.enviro:
+        lf['humidity'] = ('Relative humidity (%)', create_enviro_extractor(dataset, 'humidity'))
+    if 'wind_speed' in dataset.enviro:
+        lf['wind_speed'] = ('Wind speed (m/s)', create_enviro_extractor(dataset, 'wind_speed'))
+    if 'wind_direction' in dataset.enviro:
+        lf['wind_direction'] = ('Wind direction (deg E of N)', create_enviro_extractor(dataset, 'wind_direction'))
+
     # Obtain axis label and extraction function
     try:
         label, func = lf[quantity] if isinstance(quantity, basestring) else quantity
