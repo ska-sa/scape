@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from katpoint import rad2deg, Timestamp
+from katpoint import rad2deg, Timestamp, construct_azel_target
 from .fitting import PiecewisePolynomial1DFit
 from .stats import robust_mu_sigma, remove_spikes, minimise_angle_wrap
 from .beam_baseline import fwhm_to_sigma, extract_measured_beam, interpolate_measured_beam
@@ -77,6 +77,14 @@ def extract_scan_data(scans, quantity, pol):
           'time'     : ('Time (s), since %s' % (Timestamp(start).local(),), lambda scan: scan.timestamps - start),
           'az'       : ('Azimuth angle (deg)', lambda scan: rad2deg(scan.pointing['az'])),
           'el'       : ('Elevation angle (deg)', lambda scan: rad2deg(scan.pointing['el'])),
+          'ra'       : ('Right ascension (deg)',
+                        lambda scan: rad2deg(np.array([construct_azel_target(az, el).radec(t, dataset.antenna)[0]
+                                                       for az, el, t in zip(scan.pointing['az'], scan.pointing['el'],
+                                                                            scan.timestamps)]))),
+          'dec'      : ('Declination (deg)',
+                        lambda scan: rad2deg(np.array([construct_azel_target(az, el).radec(t, dataset.antenna)[1]
+                                                       for az, el, t in zip(scan.pointing['az'], scan.pointing['el'],
+                                                                            scan.timestamps)]))),
           'target_x' : ('Target coordinate x (deg)', lambda scan: rad2deg(scan.target_coords[0])),
           'target_y' : ('Target coordinate y (deg)', lambda scan: rad2deg(scan.target_coords[1])),
           # Instantaneous mount coordinates are back on the sphere, but at a single central time instant for all points in compound scan
