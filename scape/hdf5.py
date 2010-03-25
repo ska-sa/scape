@@ -148,8 +148,10 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         if not 'augment' in f.attrs:
             raise ValueError('HDF5 file not augmented - please run augment4.py (provided by k7augment package)')
 
-        # Get attributes at the data set level
-        experiment_id, observer, description = f.attrs['experiment_id'], f.attrs['observer'], f.attrs['description']
+        # Get attributes at the data set level, with defaults
+        experiment_id = f.attrs.get('experiment_id', None)
+        observer = f.attrs.get('observer', None)
+        description = f.attrs.get('description', None)
         data_unit = f.attrs['data_unit']
         data_timestamps_at_sample_centers = f.attrs['data_timestamps_at_sample_centers']
 
@@ -264,7 +266,8 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         compscanlist = []
         for compscan in f['Scans']:
             compscan_group = f['Scans'][compscan]
-            compscan_target, compscan_label = compscan_group.attrs['target'], compscan_group.attrs['label']
+            compscan_target = compscan_group.attrs.get('target', 'Nothing, special')
+            compscan_label = compscan_group.attrs.get('label', '')
 
             # Load each scan group within compound scan
             scanlist = []
@@ -335,7 +338,7 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                         logger.warning(("Selected noise diode sensor '%s'" % (sensor,)) +
                                        " not found in HDF5 file - setting nd_on to False")
                         scan_flags = np.rec.fromarrays([np.tile(False, data_timestamps.shape)], names=('nd_on',))
-                scan_label = scan_group.attrs['label']
+                scan_label = scan_group.attrs.get('label', '')
 
                 scanlist.append(Scan(scan_data, data_timestamps, scan_pointing, scan_flags, scan_label,
                                      filename + '/Scans/%s/%s' % (compscan, scan)))
