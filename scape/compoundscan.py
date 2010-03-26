@@ -69,7 +69,7 @@ class CorrelatorConfig(object):
         """Inequality comparison operator."""
         return not self.__eq__(other)
 
-    def select(self, freqkeep=None):
+    def select(self, freqkeep=None, copy=False):
         """Select a subset of frequency channels/bands.
 
         Parameters
@@ -78,6 +78,9 @@ class CorrelatorConfig(object):
             Sequence of indicators of which frequency channels/bands to keep
             (either integer indices or booleans that are True for the values to
             be kept). The default is None, which keeps all channels/bands.
+        copy : {False, True}, optional
+            True if the new object is forced to be a copy, False if it is
+            potentially a view
 
         Returns
         -------
@@ -86,7 +89,11 @@ class CorrelatorConfig(object):
 
         """
         if freqkeep is None:
-            return self
+            if copy:
+                freqkeep = range(len(self.freqs))
+            else:
+                # Only make a view if all channels are selected and a view is requested
+                return self
         elif np.asarray(freqkeep).dtype == 'bool':
             freqkeep = np.asarray(freqkeep).nonzero()[0]
         # Make sure freqkeep is a list, as we need to call its .index method

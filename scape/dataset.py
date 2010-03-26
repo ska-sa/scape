@@ -370,7 +370,7 @@ class DataSet(object):
             if scanlist:
                 compscanlist.append(CompoundScan(scanlist, compscan.target))
         return DataSet(None, compscanlist, self.experiment_id, self.observer,
-                       self.description, self.data_unit, self.corrconf.select(freqkeep),
+                       self.description, self.data_unit, self.corrconf.select(freqkeep, copy),
                        self.antenna, self.antenna2, self.nd_model, self.enviro)
 
     def identify_rfi_channels(self, sigma=8.0, min_bad_scans=0.25, extra_outputs=False):
