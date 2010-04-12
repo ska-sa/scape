@@ -37,7 +37,7 @@ def create_enviro_extractor(dataset, quantity):
     interp.fit(sensor['timestamp'], sensor['value'])
     return lambda scan: interp(scan.timestamps)
 
-def extract_scan_data(scans, quantity, pol):
+def extract_scan_data(scans, quantity, pol='I'):
     """Extract data from list of Scan objects for plotting purposes.
 
     Parameters
@@ -77,11 +77,11 @@ def extract_scan_data(scans, quantity, pol):
           'time'     : ('Time (s), since %s' % (Timestamp(start).local(),), lambda scan: scan.timestamps - start),
           'az'       : ('Azimuth angle (deg)', lambda scan: rad2deg(scan.pointing['az'])),
           'el'       : ('Elevation angle (deg)', lambda scan: rad2deg(scan.pointing['el'])),
-          'ra'       : ('Right ascension (deg)',
+          'ra'       : ('Right ascension (J2000 deg)',
                         lambda scan: rad2deg(np.array([construct_azel_target(az, el).radec(t, dataset.antenna)[0]
                                                        for az, el, t in zip(scan.pointing['az'], scan.pointing['el'],
                                                                             scan.timestamps)]))),
-          'dec'      : ('Declination (deg)',
+          'dec'      : ('Declination (J2000 deg)',
                         lambda scan: rad2deg(np.array([construct_azel_target(az, el).radec(t, dataset.antenna)[1]
                                                        for az, el, t in zip(scan.pointing['az'], scan.pointing['el'],
                                                                             scan.timestamps)]))),
@@ -984,7 +984,9 @@ def plot_compound_scan_on_target(compscan, pol='I', subtract_baseline=True, leve
         ellipses = gaussian_ellipses(compscan.beam.center, np.diag(var), contour=levels)
         for ellipse in ellipses:
             ax.plot(rad2deg(ellipse[:, 0]), rad2deg(ellipse[:, 1]), ell_type, lw=2)
-        expected_var = 2 * [fwhm_to_sigma(compscan.beam.expected_width) ** 2.0]
+        expected_var = fwhm_to_sigma(compscan.beam.expected_width) ** 2.0
+        if np.isscalar(expected_var):
+            expected_var = [expected_var, expected_var]
         expected_ellipses = gaussian_ellipses(compscan.beam.center, np.diag(expected_var), contour=levels)
         for ellipse in expected_ellipses:
             ax.plot(rad2deg(ellipse[:, 0]), rad2deg(ellipse[:, 1]), 'k--', lw=2)
