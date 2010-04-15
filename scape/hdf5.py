@@ -273,7 +273,7 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
             scanlist = []
             for scan in compscan_group:
                 scan_group = compscan_group[scan]
-                data = scan_group['data'].value
+                data = scan_group['data']
                 num_times = len(scan_group['timestamps'].value)
 
                 # Load correlation data either in float64 (single-dish) form or complex128 (interferometer) form
@@ -297,7 +297,8 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                 if not data_timestamps_at_sample_centers:
                     data_timestamps += 0.5 * sample_period
                 # If data timestamps have problems, warn and discard the scan
-                if (np.diff(data_timestamps).min() == 0.0) or np.any(data_timestamps < 1000000000.0):
+                if np.any(data_timestamps < 1000000000.0) or \
+                   (len(data_timestamps) > 1 and np.diff(data_timestamps).min() == 0.0):
                     logger.warning("Discarded %s/%s - bad correlator timestamps (duplicates or way out of date)" %
                                    (compscan, scan))
                     continue
