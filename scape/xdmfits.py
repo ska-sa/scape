@@ -75,8 +75,8 @@ class NoiseDiodeXDM(NoiseDiodeModel):
             # Load data FITS file tables
             try:
                 feed_id = int(hdu['PRIMARY'].header['FeedID'])
-                temperature_x = hdu['CAL_TEMP_B%dP1' % feed_id].data
-                temperature_y = hdu['CAL_TEMP_B%dP2' % feed_id].data
+                temperature_h = hdu['CAL_TEMP_B%dP1' % feed_id].data
+                temperature_v = hdu['CAL_TEMP_B%dP2' % feed_id].data
             except KeyError:
                 raise NoiseDiodeNotFound('Noise diode tables not found in FITS file')
         else:
@@ -90,13 +90,13 @@ class NoiseDiodeXDM(NoiseDiodeModel):
                 msg = 'Feed ID should be 0 (main feed) or 1 (offset feed)'
                 logger.error(msg)
                 raise ValueError(msg)
-            temperature_x = hdu[2 * feed_id + 1].data
-            temperature_y = hdu[2 * feed_id + 2].data
-        # Store X and Y tables
-        self.temperature_x = np.vstack((np.array(temperature_x.field('Freq') / 1e6, dtype='double'),
-                                        np.array(temperature_x.field('Temp'), dtype='double'))).transpose()
-        self.temperature_y = np.vstack((np.array(temperature_y.field('Freq') / 1e6, dtype='double'),
-                                        np.array(temperature_y.field('Temp'), dtype='double'))).transpose()
+            temperature_h = hdu[2 * feed_id + 1].data
+            temperature_v = hdu[2 * feed_id + 2].data
+        # Store H and V tables
+        self.temperature_h = np.vstack((np.array(temperature_h.field('Freq') / 1e6, dtype='double'),
+                                        np.array(temperature_h.field('Temp'), dtype='double'))).transpose()
+        self.temperature_v = np.vstack((np.array(temperature_v.field('Freq') / 1e6, dtype='double'),
+                                        np.array(temperature_v.field('Temp'), dtype='double'))).transpose()
         hdu.close()
 
 #--------------------------------------------------------------------------------------------------

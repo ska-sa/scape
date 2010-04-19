@@ -5,6 +5,7 @@ import numpy as np
 from .fitting import Spline1DFit
 from .fitting import randomise as fitting_randomise
 from .stats import robust_mu_sigma, minimise_angle_wrap
+from .scan import scape_pol
 
 #--------------------------------------------------------------------------------------------------
 #--- CLASS :  NoiseDiodeModel
@@ -21,22 +22,22 @@ class NoiseDiodeModel(object):
 
     Parameters
     ----------
-    temperature_x : real array, shape (N, 2), optional
+    temperature_h : real array, shape (N, 2), optional
         Table containing frequencies [MHz] in the first column and measured
-        temperatures [K] in the second column, for port 1 or V (X polarisation)
-    temperature_y : real array, shape (N, 2), optional
+        temperatures [K] in the second column, for H polarisation
+    temperature_v : real array, shape (N, 2), optional
         Table containing frequencies [MHz] in the first column and measured
-        temperatures [K] in the second column, for port 2 or H (Y polarisation)
+        temperatures [K] in the second column, for V polarisation
 
     """
-    def __init__(self, temperature_x=None, temperature_y=None):
-        self.temperature_x = temperature_x
-        self.temperature_y = temperature_y
+    def __init__(self, temperature_h=None, temperature_v=None):
+        self.temperature_h = temperature_h
+        self.temperature_v = temperature_v
 
     def __eq__(self, other):
         """Equality comparison operator."""
-        return np.all(self.temperature_x == other.temperature_x) and \
-               np.all(self.temperature_y == other.temperature_y)
+        return np.all(self.temperature_h == other.temperature_h) and \
+               np.all(self.temperature_v == other.temperature_v)
 
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -48,9 +49,9 @@ class NoiseDiodeModel(object):
         Obtain interpolated noise diode temperature at desired frequencies.
         Optionally, randomise the smooth fit to the noise diode power spectrum,
         to represent some uncertainty as part of a larger Monte Carlo iteration.
-        The function returns an array of shape (2, *F*), where the first
-        dimension represents the feed input ports (X and Y polarisations) and
-        second dimension is frequency.
+        The function returns an array of shape (*F*, 2), where the first
+        dimension is frequency and the second dimension represents the feed
+        input ports (H and V polarisations).
 
         Parameters
         ----------
@@ -63,18 +64,18 @@ class NoiseDiodeModel(object):
         -------
         temp : real array, shape (*F*, 2)
             Noise diode temperature interpolated to the frequencies in *freqs*,
-            for X and Y polarisations
+            for H and V polarisations
 
         """
         # Fit a spline to noise diode power spectrum measurements, with optional perturbation
-        interp_x, interp_y = Spline1DFit(), Spline1DFit()
-        interp_x.fit(self.temperature_x[:, 0], self.temperature_x[:, 1])
-        interp_y.fit(self.temperature_y[:, 0], self.temperature_y[:, 1])
+        interp_h, interp_v = Spline1DFit(), Spline1DFit()
+        interp_h.fit(self.temperature_h[:, 0], self.temperature_h[:, 1])
+        interp_v.fit(self.temperature_v[:, 0], self.temperature_v[:, 1])
         if randomise:
-            interp_x = fitting_randomise(interp_x, self.temperature_x[:, 0], self.temperature_x[:, 1], 'shuffle')
-            interp_y = fitting_randomise(interp_y, self.temperature_y[:, 0], self.temperature_y[:, 1], 'shuffle')
+            interp_h = fitting_randomise(interp_h, self.temperature_h[:, 0], self.temperature_h[:, 1], 'shuffle')
+            interp_v = fitting_randomise(interp_v, self.temperature_v[:, 0], self.temperature_v[:, 1], 'shuffle')
         # Evaluate the smoothed spectrum at the desired frequencies
-        return np.dstack((interp_x(freqs), interp_y(freqs))).squeeze()
+        return np.dstack((interp_h(freqs), interp_v(freqs))).squeeze()
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTIONS
@@ -163,10 +164,10 @@ def estimate_gain(dataset, **kwargs):
     """Estimate gain and relative phase of both polarisations via injected noise.
 
     Each successful noise diode transition in the data set is used to estimate
-    the gain and relative phase in the two receiver chains for the X and Y
-    polarisations at the instant of the transition. The X and Y gains are power
+    the gain and relative phase in the two receiver chains for the H and V
+    polarisations at the instant of the transition. The H and V gains are power
     gains (i.e. the square of the voltage gains found in the Jones matrix), and
-    the phase is that of the Y chain relative to the X chain.
+    the phase is that of the V chain relative to the H chain.
 
     Parameters
     ----------
@@ -179,12 +180,12 @@ def estimate_gain(dataset, **kwargs):
     -------
     timestamps : real array, shape (*T*,)
         Timestamp of each gain measurement, in seconds-since-Unix-epoch
-    gain_xx : real array, shape (*T*, *F*)
-        Power gain of X chain per measurement and channel, in units of raw/K
-    gain_yy : real array, shape (*T*, *F*)
-        Power gain of Y chain per measurement and channel, in units of raw/K
+    gain_hh : real array, shape (*T*, *F*)
+        Power gain of H chain per measurement and channel, in units of counts/K
+    gain_vv : real array, shape (*T*, *F*)
+        Power gain of V chain per measurement and channel, in units of counts/K
     phi : real array, shape (*T*, *F*)
-        Phase of Y relative to X, per measurement and channel, in radians
+        Phase of V relative to H, per measurement and channel, in radians
 
     """
     nd_jump_times, nd_jump_power_mu = estimate_nd_jumps(dataset, **kwargs)[:2]
@@ -194,17 +195,18 @@ def estimate_gain(dataset, **kwargs):
     timestamps = np.array(nd_jump_times)
     deltas = np.concatenate([p[np.newaxis] for p in nd_jump_power_mu])
     temp_nd = dataset.nd_model.temperature(dataset.freqs)
-    gain_xx = deltas[:, :, 0] / temp_nd[np.newaxis, :, 0]
-    gain_yy = deltas[:, :, 1] / temp_nd[np.newaxis, :, 1]
-    phi = -np.arctan2(deltas[:, :, 3], deltas[:, :, 2])
-    return timestamps, gain_xx, gain_yy, minimise_angle_wrap(phi, axis=1)
+    gain_hh = deltas[:, :, scape_pol.index('HH')] / temp_nd[np.newaxis, :, 0]
+    gain_vv = deltas[:, :, scape_pol.index('VV')] / temp_nd[np.newaxis, :, 1]
+    # For single-dish, HV == Re{HV} and VH == Im{HV}
+    phi = -np.arctan2(deltas[:, :, scape_pol.index('VH')], deltas[:, :, scape_pol.index('HV')])
+    return timestamps, gain_hh, gain_vv, minimise_angle_wrap(phi, axis=1)
 
 def calibrate_gain(dataset, randomise=False, **kwargs):
-    """Calibrate X and Y gains and relative phase, based on noise injection.
+    """Calibrate H and V gains and relative phase, based on noise injection.
 
     This converts the raw power measurements in the data set to temperatures,
     based on the change in levels caused by switching the noise diode on and off.
-    At the same time it corrects for different gains in the X and Y polarisation
+    At the same time it corrects for different gains in the H and V polarisation
     receiver chains and for relative phase shifts between them.
 
     Parameters
@@ -230,22 +232,26 @@ def calibrate_gain(dataset, randomise=False, **kwargs):
         gains += np.concatenate([p[np.newaxis] for p in nd_jump_power_sigma]) * \
                  np.random.standard_normal(gains.shape)
     temp_nd = dataset.nd_model.temperature(dataset.freqs, randomise)
-    gains[:, :, :2] /= temp_nd[np.newaxis, :, :]
+    hh, vv, re_hv, im_hv = [scape_pol.index(pol) for pol in ['HH', 'VV', 'HV', 'VH']]
+    gains[:, :, hh] /= temp_nd[np.newaxis, :, 0]
+    gains[:, :, vv] /= temp_nd[np.newaxis, :, 1]
     # Do a very simple zeroth-order fitting for now, as gains are usually very stable
     smooth_gains = np.expand_dims(gains.mean(axis=0), axis=0)
 #    interp = fitting.Independent1DFit(fitting.Polynomial1DFit(max_degree=max_degree), axis=0)
 #    interp.fit(np.array(nd_jump_times), gains)
     for scan in dataset.scans:
 #        smooth_gains = interp(scan.timestamps)
-        # Scale XX and YY with respective power gains
-        scan.data[:, :, :2] /= smooth_gains[:, :, :2]
-        u, v = scan.data[:, :, 2].copy(), scan.data[:, :, 3].copy()
+        # Scale HH and VV with respective power gains
+        scan.data[:, :, hh] /= smooth_gains[:, :, hh]
+        scan.data[:, :, vv] /= smooth_gains[:, :, vv]
+        u, v = scan.data[:, :, re_hv].copy(), scan.data[:, :, im_hv].copy()
         # Rotate U and V, using K cos(phi) and -K sin(phi) terms
-        scan.data[:, :, 2] =  smooth_gains[:, :, 2] * u + smooth_gains[:, :, 3] * v
-        scan.data[:, :, 3] = -smooth_gains[:, :, 3] * u + smooth_gains[:, :, 2] * v
-        # Divide U and V by g_x g_y, as well as length of sin + cos terms above
-        gain_xy = np.sqrt(smooth_gains[:, :, 0] * smooth_gains[:, :, 1] *
-                          (smooth_gains[:, :, 2] ** 2 + smooth_gains[:, :, 3] ** 2))
-        scan.data[:, :, 2:] /= gain_xy[:, :, np.newaxis]
+        scan.data[:, :, re_hv] =  smooth_gains[:, :, re_hv] * u + smooth_gains[:, :, im_hv] * v
+        scan.data[:, :, im_hv] = -smooth_gains[:, :, im_hv] * u + smooth_gains[:, :, re_hv] * v
+        # Divide U and V by g_h g_v, as well as length of sin + cos terms above
+        gain_hv = np.sqrt(smooth_gains[:, :, hh] * smooth_gains[:, :, vv] *
+                          (smooth_gains[:, :, re_hv] ** 2 + smooth_gains[:, :, im_hv] ** 2))
+        scan.data[:, :, re_hv] /= gain_hv
+        scan.data[:, :, im_hv] /= gain_hv
     dataset.data_unit = 'K'
     return dataset

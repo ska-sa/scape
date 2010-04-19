@@ -406,8 +406,8 @@ def save_dataset(dataset, filename):
         # For now, both H and V are created, even if original dataset had only a single feed, to keep things simple
         # The correlator data for the missing feed are already zeros in this situation
         h_group, v_group = antA_group.create_group('H'), antA_group.create_group('V')
-        h_group.create_dataset('nd_model', data=dataset.nd_model.temperature_x, compression='gzip')
-        v_group.create_dataset('nd_model', data=dataset.nd_model.temperature_y, compression='gzip')
+        h_group.create_dataset('nd_model', data=dataset.nd_model.temperature_h, compression='gzip')
+        v_group.create_dataset('nd_model', data=dataset.nd_model.temperature_v, compression='gzip')
 
         # Create correlator configuration group
         corrconf_group = f.create_group('Correlator')
