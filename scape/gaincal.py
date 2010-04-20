@@ -28,16 +28,21 @@ class NoiseDiodeModel(object):
     temperature_v : real array, shape (N, 2), optional
         Table containing frequencies [MHz] in the first column and measured
         temperatures [K] in the second column, for V polarisation
+    std_temp : float, optional
+        Standard deviation of H and V temperatures [K] which determines
+        smoothness of interpolation
 
     """
-    def __init__(self, temperature_h=None, temperature_v=None):
+    def __init__(self, temperature_h=None, temperature_v=None, std_temp=1.0):
         self.temperature_h = temperature_h
         self.temperature_v = temperature_v
+        self.std_temp = std_temp
 
     def __eq__(self, other):
         """Equality comparison operator."""
         return np.all(self.temperature_h == other.temperature_h) and \
-               np.all(self.temperature_v == other.temperature_v)
+               np.all(self.temperature_v == other.temperature_v) and \
+               (self.std_temp == other.std_temp)
 
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -68,7 +73,8 @@ class NoiseDiodeModel(object):
 
         """
         # Fit a spline to noise diode power spectrum measurements, with optional perturbation
-        interp_h, interp_v = Spline1DFit(), Spline1DFit()
+        std_temp = lambda freq, temp: np.tile(self.std_temp, len(temp))
+        interp_h, interp_v = Spline1DFit(std_y=std_temp), Spline1DFit(std_y=std_temp)
         interp_h.fit(self.temperature_h[:, 0], self.temperature_h[:, 1])
         interp_v.fit(self.temperature_v[:, 0], self.temperature_v[:, 1])
         if randomise:
