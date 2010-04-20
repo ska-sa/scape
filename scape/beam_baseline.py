@@ -271,8 +271,8 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
         # Check if error remaining after baseline and beam fit has converged, and stop if it has
         resid = bl_resid - beam(target_coords)
         err_power = np.dot(resid, resid)
-        logger.debug("Iteration %d: residual = %f, beam height = %f, width = %s, region size = %d" %
-                     (n, (prev_err_power - err_power) / err_power, beam.height, beam.width, np.sum(~outer)))
+        logger.debug("Iteration %d: residual = %f, beam height = %f, width = %s, inner region = %d/%d" %
+                    (n, (prev_err_power - err_power) / err_power, beam.height, beam.width, np.sum(~outer), len(outer)))
         if (err_power == 0.0) or (prev_err_power - err_power) / err_power < 1e-5:
             break
         prev_err_power = err_power + 0.0
