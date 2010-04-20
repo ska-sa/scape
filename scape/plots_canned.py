@@ -823,7 +823,7 @@ def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=N
 #--- FUNCTION :  plot_compound_scan_in_time
 #--------------------------------------------------------------------------------------------------
 
-def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, band=0, ax=None):
+def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, spike_width=0, band=0, ax=None):
     """Plot compound scan data in time with superimposed beam/baseline fit.
 
     This plots time series of the selected polarisation power in all the scans
@@ -839,6 +839,10 @@ def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, band=0, ax=
         The coherency / Stokes parameter to display (must be real)
     add_scan_ids : {True, False}, optional
         True if scan index numbers are to be added to plot
+    spike_width : int, optional
+        Spikes with widths up to this limit (in samples) will be removed from
+        data before determining axis limits. This prevents large spikes from
+        messing up the axis limits. A width of <= 0 implies no spike removal.
     band : int, optional
         Frequency band to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
@@ -867,7 +871,7 @@ def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, band=0, ax=
     for scan in compscan.scans:
         timeline = scan.timestamps - time_origin
         measured_power = np.abs(scan.pol(pol)[:, band])
-        smooth_power = remove_spikes(measured_power)
+        smooth_power = remove_spikes(measured_power, spike_width=spike_width)
         power_limits.extend([smooth_power.min(), smooth_power.max()])
         data_segments.append(np.column_stack((timeline, measured_power)))
         if scan.baseline:
@@ -915,7 +919,7 @@ def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, band=0, ax=
 #--------------------------------------------------------------------------------------------------
 
 def plot_compound_scan_on_target(compscan, pol='I', subtract_baseline=True, levels=None,
-                                 add_scan_ids=True, band=0, ax=None):
+                                 add_scan_ids=True, spike_width=0, band=0, ax=None):
     """Plot compound scan data in target space with beam fit.
 
     This plots contour ellipses of a Gaussian beam function fitted to the scans
@@ -935,6 +939,10 @@ def plot_compound_scan_on_target(compscan, pol='I', subtract_baseline=True, leve
         factor of beam height. The default is [0.5, 0.1].
     add_scan_ids : {True, False}, optional
         True if scan index numbers are to be added to plot
+    spike_width : int, optional
+        Spikes with widths up to this limit (in samples) will be removed from
+        data before plotting it. This prevents large spikes from messing up the
+        3D marker autoscaling. A width of <= 0 implies no spike removal.
     band : int, optional
         Frequency band to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
@@ -963,11 +971,12 @@ def plot_compound_scan_on_target(compscan, pol='I', subtract_baseline=True, leve
         logger.warning('No scans were found with baselines - setting subtract_baseline to False')
     # Extract total power and target coordinates (in degrees) of all scans (or those with baselines)
     if subtract_baseline:
-        compscan_power = np.hstack([remove_spikes(np.abs(scan.pol(pol)[:, band])) - scan.baseline(scan.timestamps)
-                                 for scan in compscan.scans if scan.baseline])
+        compscan_power = np.hstack([remove_spikes(np.abs(scan.pol(pol)[:, band]), spike_width=spike_width)
+                                    - scan.baseline(scan.timestamps) for scan in compscan.scans if scan.baseline])
         target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans if scan.baseline]))
     else:
-        compscan_power = np.hstack([remove_spikes(np.abs(scan.pol(pol)[:, band])) for scan in compscan.scans])
+        compscan_power = np.hstack([remove_spikes(np.abs(scan.pol(pol)[:, band]), spike_width=spike_width)
+                                    for scan in compscan.scans])
         target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans]))
 
     # Show the locations of the scan samples themselves, with marker sizes indicating power values
@@ -1016,7 +1025,7 @@ def plot_compound_scan_on_target(compscan, pol='I', subtract_baseline=True, leve
 #--- FUNCTION :  plot_data_set_in_mount_space
 #--------------------------------------------------------------------------------------------------
 
-def plot_data_set_in_mount_space(dataset, levels=None, band=0, ax=None):
+def plot_data_set_in_mount_space(dataset, levels=None, spike_width=0, band=0, ax=None):
     """Plot total power scans of all compound scans in mount space with beam fits.
 
     This plots the total power of all scans in the data set as a pseudo-3D plot
@@ -1039,6 +1048,10 @@ def plot_data_set_in_mount_space(dataset, levels=None, band=0, ax=None):
     levels : float, or real array-like, shape (K,), optional
         Contour level (or sequence of levels) to plot for each Gaussian beam, as
         factor of beam height. The default is [0.5, 0.1].
+    spike_width : int, optional
+        Spikes with widths up to this limit (in samples) will be removed from
+        data before plotting it. This prevents large spikes from messing up the
+        3D marker autoscaling. A width of <= 0 implies no spike removal.
     band : int, optional
         Frequency band to plot
     ax : :class:`matplotlib.axes.Axes` object, optional
@@ -1056,7 +1069,8 @@ def plot_data_set_in_mount_space(dataset, levels=None, band=0, ax=None):
         levels = [0.5, 0.1]
 
     for compscan in dataset.compscans:
-        total_power = np.hstack([remove_spikes(np.abs(scan.pol('I')[:, band])) for scan in compscan.scans])
+        total_power = np.hstack([remove_spikes(np.abs(scan.pol('I')[:, band]), spike_width=spike_width)
+                                 for scan in compscan.scans])
         target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
         center_time = np.median(np.hstack([scan.timestamps for scan in compscan.scans]))
         # Instantaneous mount coordinates are back on the sphere, but at a single time instant for all points

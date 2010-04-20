@@ -154,7 +154,8 @@ class BeamPatternFit(ScatterFit):
 #--- FUNCTION :  fit_beam_and_baselines
 #--------------------------------------------------------------------------------------------------
 
-def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol='I', refine_beam=True, band=0):
+def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol='I',
+                           refine_beam=True, spike_width=0, band=0):
     """Simultaneously fit beam and baselines to all scans in a compound scan.
 
     This fits a beam pattern and baselines to the selected power data in all the
@@ -166,7 +167,7 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
     polynomial functions of time, while the beam is refined by refitting it in
     the inner region close to the peak that is typically a better fit to a
     Gaussian function than in the tails. Only one frequency band is used.
-    The power data is smoothed to remove spikes before fitting.
+    The power data is optionally smoothed to remove spikes before fitting.
 
     Parameters
     ----------
@@ -188,6 +189,11 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
         If true, baselines are refined per scan and beam is refitted to within
         FWHM region around peak. This is a good idea for linear scans, but not
         for spiral or other exotic scans.
+    spike_width : int, optional
+        Spikes with widths up to this limit (in samples) will be removed from
+        data before fitting. The downside of spike removal is that beam tops are
+        clipped, more so for larger values of *spike_width*. A width of <= 0
+        implies no spike removal.
     band : int, optional
         Frequency band in which to fit beam and baselines
 
@@ -235,7 +241,7 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
     # Stokes I has double the degrees of freedom, as it is the sum of the independent HH and VV samples
     dof = 2 * dof if underlying_pol == 'I' else dof
     # Clean up power data by removing isolated spikes
-    scan_power = [remove_spikes(scan.pol(underlying_pol)[:, band]) for scan in compscan.scans]
+    scan_power = [remove_spikes(scan.pol(underlying_pol)[:, band], spike_width=spike_width) for scan in compscan.scans]
     compscan_power = np.hstack(scan_power)
     target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
 
@@ -273,7 +279,7 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
     # For non-positive polarisation terms, refit baseline to outer region found in total power
     if pol in ('Q', 'U', 'V'):
         logger.debug("Refitting initial baseline to pol '%s'" % pol)
-        scan_pol = [remove_spikes(scan.pol(pol)[:, band]) for scan in compscan.scans]
+        scan_pol = [remove_spikes(scan.pol(pol)[:, band], spike_width=spike_width) for scan in compscan.scans]
         compscan_pol = np.hstack(scan_pol)
         initial_baseline.fit(target_coords[:, outer], compscan_pol[outer])
 
@@ -421,7 +427,7 @@ def interpolate_measured_beam(x, y, z, num_grid_rows=201):
 #--- FUNCTION :  extract_measured_beam
 #--------------------------------------------------------------------------------------------------
 
-def extract_measured_beam(compscan, pol='I', band=0, subtract_baseline=True):
+def extract_measured_beam(compscan, pol='I', band=0, subtract_baseline=True, spike_width=0):
     """Extract measured beam pattern from power data in compound scan.
 
     This interprets the compound scan as a raster scan and extracts the selected
@@ -440,6 +446,11 @@ def extract_measured_beam(compscan, pol='I', band=0, subtract_baseline=True):
         Frequency band of measured beam pattern
     subtract_baseline : {True, False}, optional
         True to subtract baselines (only scans with baselines are then mapped)
+    spike_width : int, optional
+        Spikes with widths up to this limit (in samples) will be removed from
+        beam pattern data. The downside of spike removal is that the beam top is
+        clipped, more so for larger values of *spike_width*. A width of <= 0
+        implies no spike removal.
 
     Returns
     -------
@@ -458,11 +469,11 @@ def extract_measured_beam(compscan, pol='I', band=0, subtract_baseline=True):
         subtract_baseline = False
     # Extract power parameter and target coordinates of all scans (or those with baselines)
     if subtract_baseline:
-        power = np.hstack([remove_spikes(scan.pol(pol)[:, band]) - scan.baseline(scan.timestamps)
-                           for scan in compscan.scans if scan.baseline])
+        power = np.hstack([remove_spikes(scan.pol(pol)[:, band], spike_width=spike_width)
+                           - scan.baseline(scan.timestamps) for scan in compscan.scans if scan.baseline])
         x, y = np.hstack([scan.target_coords for scan in compscan.scans if scan.baseline])
     else:
-        power = np.hstack([remove_spikes(scan.pol(pol)[:, band]) for scan in compscan.scans])
+        power = np.hstack([remove_spikes(scan.pol(pol)[:, band], spike_width=spike_width) for scan in compscan.scans])
         x, y = np.hstack([scan.target_coords for scan in compscan.scans])
     # Align with beam center and normalise by beam height, if beam is available
     if compscan.beam:

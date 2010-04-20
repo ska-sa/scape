@@ -50,7 +50,7 @@ class XDMFitsTestCases(unittest.TestCase):
         # Save original channel frequencies before averaging
         channel_freqs = d.freqs
         d.average()
-        d.fit_beams_and_baselines(pol='I')
+        d.fit_beams_and_baselines(pol='I', spike_width=3)
         # Quick checks that all went well
         self.assert_(len(d.compscans) > 0)
         compscan = d.compscans[0]

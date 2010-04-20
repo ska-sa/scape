@@ -176,7 +176,7 @@ def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
 #--- FUNCTION :  remove_spikes
 #--------------------------------------------------------------------------------------------------
 
-def remove_spikes(data, axis=0, kernel_size=7, outlier_sigma=5.0):
+def remove_spikes(data, axis=0, spike_width=3, outlier_sigma=5.0):
     """Remove outliers from data, replacing them with a local median value.
 
     The data is median-filtered along the specified axis, and any data values
@@ -188,8 +188,10 @@ def remove_spikes(data, axis=0, kernel_size=7, outlier_sigma=5.0):
         N-dimensional numpy array containing data to clean
     axis : int, optional
         Axis along which to perform median, between 0 and N-1
-    kernel_size : int, optional
-        Kernel size for median filter, should be an odd integer
+    spike_width : int, optional
+        Spikes with widths up to this limit (in samples) will be removed. A size
+        of <= 0 implies no spike removal. The kernel size for the median filter
+        will be 2 * spike_width + 1.
     outlier_sigma : float, optional
         Multiple of standard deviation that indicates an outlier
 
@@ -210,6 +212,9 @@ def remove_spikes(data, axis=0, kernel_size=7, outlier_sigma=5.0):
 
     """
     data = np.atleast_1d(data)
+    kernel_size = 2 * max(int(spike_width), 0) + 1
+    if kernel_size == 1:
+        return data
     # Median filter data along the desired axis, with given kernel size
     kernel = np.ones(data.ndim, dtype='int32')
     kernel[axis] = kernel_size

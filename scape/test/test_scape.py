@@ -93,7 +93,7 @@ class PointSourceScanTestCases(unittest.TestCase):
     def test_beam_fit(self):
         """Check if beam fitting is successful."""
         self.dataset.average()
-        self.dataset.fit_beams_and_baselines()
+        self.dataset.fit_beams_and_baselines(spike_width=3)
         compscan = self.dataset.compscans[0]
         self.assertAlmostEqual(compscan.beam.center[0], 0.0, places=8)
         self.assertAlmostEqual(compscan.beam.center[1], 0.0, places=8)
