@@ -247,6 +247,12 @@ def calibrate_gain(dataset, randomise=False, **kwargs):
 #    interp.fit(np.array(nd_jump_times), gains)
     for scan in dataset.scans:
 #        smooth_gains = interp(scan.timestamps)
+        # Remove instances of zero gain, which would lead to NaNs or Infs in the data
+        # Usually these are associated with missing H or V polarisations (which get filled in with zeros)
+        # Replace them with Infs instead, which suppresses the corresponding channels / polarisations
+        # Similar to pseudo-inverse, where scale factors of 1/0 associated with zero eigenvalues are replaced by 0
+        smooth_gains[:, :, hh][smooth_gains[:, :, hh] == 0.0] = np.inf
+        smooth_gains[:, :, vv][smooth_gains[:, :, vv] == 0.0] = np.inf
         # Scale HH and VV with respective power gains
         scan.data[:, :, hh] /= smooth_gains[:, :, hh]
         scan.data[:, :, vv] /= smooth_gains[:, :, vv]
@@ -257,6 +263,8 @@ def calibrate_gain(dataset, randomise=False, **kwargs):
         # Divide U and V by g_h g_v, as well as length of sin + cos terms above
         gain_hv = np.sqrt(smooth_gains[:, :, hh] * smooth_gains[:, :, vv] *
                           (smooth_gains[:, :, re_hv] ** 2 + smooth_gains[:, :, im_hv] ** 2))
+        # Gain_HV is NaN if HH or VV gain is Inf and Re/Im HV gain is zero (typical of the single-pol case)
+        gain_hv[np.isnan(gain_hv)] = np.inf
         scan.data[:, :, re_hv] /= gain_hv
         scan.data[:, :, im_hv] /= gain_hv
     dataset.data_unit = 'K'
