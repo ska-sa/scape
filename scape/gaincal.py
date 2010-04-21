@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from .fitting import Spline1DFit
+from .fitting import Spline1DFit, Polynomial1DFit
 from .fitting import randomise as fitting_randomise
 from .stats import robust_mu_sigma, minimise_angle_wrap
 from .scan import scape_pol
@@ -22,10 +22,10 @@ class NoiseDiodeModel(object):
 
     Parameters
     ----------
-    temperature_h : real array, shape (N, 2), optional
+    temperature_h : real array-like, shape (N, 2)
         Table containing frequencies [MHz] in the first column and measured
         temperatures [K] in the second column, for H polarisation
-    temperature_v : real array, shape (N, 2), optional
+    temperature_v : real array-like, shape (N, 2)
         Table containing frequencies [MHz] in the first column and measured
         temperatures [K] in the second column, for V polarisation
     std_temp : float, optional
@@ -33,9 +33,9 @@ class NoiseDiodeModel(object):
         smoothness of interpolation
 
     """
-    def __init__(self, temperature_h=None, temperature_v=None, std_temp=1.0):
-        self.temperature_h = temperature_h
-        self.temperature_v = temperature_v
+    def __init__(self, temperature_h, temperature_v, std_temp=1.0):
+        self.temperature_h = np.asarray(temperature_h)
+        self.temperature_v = np.asarray(temperature_v)
         self.std_temp = std_temp
 
     def __eq__(self, other):
@@ -72,11 +72,13 @@ class NoiseDiodeModel(object):
             for H and V polarisations
 
         """
-        # Fit a spline to noise diode power spectrum measurements, with optional perturbation
+        # Fit a spline to power spectrum measurements (or straight line if too few measurements)
         std_temp = lambda freq, temp: np.tile(self.std_temp, len(temp))
-        interp_h, interp_v = Spline1DFit(std_y=std_temp), Spline1DFit(std_y=std_temp)
+        interp_h = Spline1DFit(std_y=std_temp) if self.temperature_h.shape[0] > 4 else Polynomial1DFit(max_degree=1)
+        interp_v = Spline1DFit(std_y=std_temp) if self.temperature_v.shape[0] > 4 else Polynomial1DFit(max_degree=1)
         interp_h.fit(self.temperature_h[:, 0], self.temperature_h[:, 1])
         interp_v.fit(self.temperature_v[:, 0], self.temperature_v[:, 1])
+        # Optionally perturb the fit
         if randomise:
             interp_h = fitting_randomise(interp_h, self.temperature_h[:, 0], self.temperature_h[:, 1], 'shuffle')
             interp_v = fitting_randomise(interp_v, self.temperature_v[:, 0], self.temperature_v[:, 1], 'shuffle')

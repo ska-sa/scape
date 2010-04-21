@@ -62,7 +62,7 @@ class NoiseDiodeXDM(NoiseDiodeModel):
 
     """
     def __init__(self, filename, feed_id=None):
-        NoiseDiodeModel.__init__(self)
+        NoiseDiodeModel.__init__(self, [], [])
         # Open FITS file
         try:
             hdu = pyfits.open(filename)
