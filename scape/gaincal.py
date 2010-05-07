@@ -131,6 +131,8 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
         valid_flag = scan.flags['valid'] if 'valid' in scan.flags.dtype.names else np.tile(True, num_times)
         # Find indices where noise diode flag changes value
         jumps = (np.diff(scan.flags['nd_on']).nonzero()[0] + 1).tolist()
+        # The sample where the noise diode changes state is invalid for gain calibration
+        valid_flag[jumps] = False
         if jumps:
             before_jump = [0] + jumps[:-1]
             at_jump = jumps
