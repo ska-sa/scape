@@ -4,6 +4,7 @@ import logging
 
 import numpy as np
 import scipy.special as special
+from katpoint import rad2deg
 
 from .fitting import ScatterFit, Polynomial1DFit, Polynomial2DFit, GaussianFit, Delaunay2DScatterFit
 from .stats import remove_spikes, chi2_conf_interval
@@ -56,6 +57,11 @@ def sigma_to_fwhm(sigma):
     # Gaussian function reaches half its peak value at sqrt(2 log 2)*sigma => should equal beamwidth/2
     return 2.0 * np.sqrt(2.0 * np.log(2.0)) * sigma
 
+def width_string(beamwidth):
+    """Pretty-print beamwidth."""
+    beamwidth = rad2deg(np.array(beamwidth))
+    return ('%.3f deg' % beamwidth) if np.isscalar(beamwidth) else ('(%.3f, %.3f) deg' % (beamwidth[0], beamwidth[1]))
+
 #--------------------------------------------------------------------------------------------------
 #--- CLASS :  BeamPatternFit
 #--------------------------------------------------------------------------------------------------
@@ -101,6 +107,7 @@ class BeamPatternFit(ScatterFit):
 
         self.expected_width = width
         # Initial guess for radius of first null
+        ##POTENTIAL TWEAK##
         self.radius_first_null = 1.3 * np.mean(self.expected_width)
         # Beam initially unrefined and invalid
         self.refined = 0
@@ -125,6 +132,7 @@ class BeamPatternFit(ScatterFit):
         self.width = sigma_to_fwhm(np.sqrt(self._interp.var))
         self.height = self._interp.height
         self.is_valid = not np.any(np.isnan(self.center)) and (self.height > 0.0)
+        ##POTENTIAL TWEAK##
         if np.isscalar(self.width):
             self.is_valid = self.is_valid and (self.width > 0.9 * self.expected_width) and \
                                               (self.width < 1.25 * self.expected_width)
@@ -246,12 +254,13 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
     target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
 
     # Do initial beam + baseline fitting, where both are fitted in 2-D target coord space
+    # This makes no assumptions about the structure of the scans - they are just viewed as a collection of samples
     initial_baseline = Polynomial2DFit(bl_degrees)
     prev_err_power = np.inf
     # Initially, all data is considered to be in the "outer" region and therefore forms part of the baseline
     outer = np.tile(True, len(compscan_power))
-    logger.debug("Fitting beam and initial baseline of degree (%d, %d) to pol '%s':" %
-                 (bl_degrees[0], bl_degrees[1], underlying_pol))
+    logger.debug("Fitting beam and initial baseline of degree (%d, %d) to pol '%s' of target '%s':" %
+                 (bl_degrees[0], bl_degrees[1], underlying_pol, compscan.target.name))
     # Alternate between baseline and beam fitting for a few iterations
     for n in xrange(10):
         # Fit baseline to "outer" regions, away from where beam was found
@@ -271,8 +280,9 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
         # Check if error remaining after baseline and beam fit has converged, and stop if it has
         resid = bl_resid - beam(target_coords)
         err_power = np.dot(resid, resid)
-        logger.debug("Iteration %d: residual = %f, beam height = %f, width = %s, inner region = %d/%d" %
-                    (n, (prev_err_power - err_power) / err_power, beam.height, beam.width, np.sum(~outer), len(outer)))
+        logger.debug("Iteration %d: residual = %.2f, beam height = %.3f, width = %s, inner region = %d/%d" %
+                     (n, (prev_err_power - err_power) / err_power, beam.height,
+                      width_string(beam.width), np.sum(~outer), len(outer)))
         if (err_power == 0.0) or (prev_err_power - err_power) / err_power < 1e-5:
             break
         prev_err_power = err_power + 0.0
@@ -285,11 +295,28 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
 
     # Find first beam null, by moving outward from beam center in radius range where null is expected
     mean_beamwidth = np.mean(beam.width)
+    # The average angular distance moved in target space during a single time sample (== scan speed * dump period)
+    scan_distance_per_sample = np.median(np.sqrt((np.diff(target_coords, axis=1) ** 2).sum(axis=0)))
+    # Radial half-width of annulus centred on beam null, used both to detect null and to initialise scan baseline fit
+    # The annulus should be wide enough to contain 4 time samples (2 on each side of null)
+    ##POTENTIAL TWEAK##
+    annulus_halfwidth = max(0.2 * mean_beamwidth, 2 * scan_distance_per_sample)
+    # Calculate expected number of samples in annulus, both on inside and outside of beam null, based on
+    # the expected beam center (== target center) and expected beam null radius
+    expected_radius = np.sqrt((target_coords ** 2).sum(axis=0))
+    expected_inside_count = ((expected_radius > beam.radius_first_null - annulus_halfwidth) &
+                             (expected_radius <= beam.radius_first_null)).sum()
+    expected_outside_count = ((expected_radius > beam.radius_first_null) &
+                              (expected_radius <= beam.radius_first_null + annulus_halfwidth)).sum()
+    # Iterate through potential null radius values, which shifts annulus outwards during search
+    ##POTENTIAL TWEAK##
     for null in np.arange(1.2, 1.8, 0.01) * mean_beamwidth:
-        inside_null = (radius > null - 0.2 * mean_beamwidth) & (radius <= null)
-        outside_null = (radius > null) & (radius <= null + 0.2 * mean_beamwidth)
-        # Stop if end of scanned region is reached
-        if (inside_null.sum() < 20) or (outside_null.sum() < 20):
+        inside_null = (radius > null - annulus_halfwidth) & (radius <= null)
+        outside_null = (radius > null) & (radius <= null + annulus_halfwidth)
+        # Stop if the annulus hits the boundary of scanned region before power starts increasing
+        # This is detected by a marked decrease in samples inside the annulus
+        ##POTENTIAL TWEAK##
+        if (inside_null.sum() < 0.2 * expected_inside_count) or (outside_null.sum() < 0.2 * expected_outside_count):
             break
         # Use median to ignore isolated RFI bumps in some scans
         # Stop when total power starts increasing again as a function of radius
@@ -299,16 +326,26 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
     beam.radius_first_null = null
 
     # If requested, refine beam by redoing baseline fits on per-scan basis, this time fitted against time
+    # Also redo the beam fit to the inner region of the beam, where the Gaussian assumption is more correct
+    # This assumes that the scans are linear and cross the annular region around the beam null
     good_scan_coords, good_scan_resid, baselines = [], [], []
     if refine_beam:
+        # Half-width of inner region of the beam. To select an inner region where beam height > 0.5 * max,
+        # the half-width has to be the classical HWHM = 0.5 * FWHM. Slightly enlarge this region to include
+        # more scans (which improves fit in direction across scans). Also ensure inner region has at least 5
+        # samples across it.
+        ##POTENTIAL TWEAK##
+        inner_halfwidth = max(0.6 * mean_beamwidth, 2.5 * scan_distance_per_sample)
         for n, scan in enumerate(compscan.scans):
-            # Identify regions close to first beam null within the current scan
+            # Identify regions within annulus close to first beam null within the current scan
             radius = np.sqrt(((scan.target_coords - beam.center[:, np.newaxis]) ** 2).sum(axis=0))
-            around_null = np.abs(radius - beam.radius_first_null) < 0.2 * mean_beamwidth
+            around_null = np.abs(radius - beam.radius_first_null) < annulus_halfwidth
             padded_selection = np.array([False] + around_null.tolist() + [False])
             borders = np.diff(padded_selection).nonzero()[0] + 1
-            # Discard scan if it doesn't contain two separate null regions (with beam area in between)
-            if (padded_selection[borders].tolist() != [True, False, True, False]) or (borders[2] - borders[1] < 10):
+            # Discard scan if it doesn't contain two separate null regions (with sufficient beam area in between)
+            ##POTENTIAL TWEAK##
+            if (padded_selection[borders].tolist() != [True, False, True, False]) or \
+               (borders[2] - borders[1] < 0.1 * inner_halfwidth / scan_distance_per_sample):
                 baselines.append(None)
                 continue
             # Calculate standard deviation of samples, based on "ideal total-power radiometer equation"
@@ -319,6 +356,7 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
             for iteration in range(7):
                 baseline.fit(scan.timestamps[around_null], scan_power[n][around_null])
                 bl_resid = scan_power[n] - baseline(scan.timestamps)
+                ##POTENTIAL TWEAK##
                 next_around_null = bl_resid < 1.0 * (upper - mean)
                 if not next_around_null.any():
                     break
@@ -331,7 +369,7 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
                 bl_resid = scan_pol[n] - baseline(scan.timestamps)
             baselines.append(baseline)
             # Identify inner region of beam (close to peak) within scan and add to list if any was found
-            inner = radius < 0.6 * mean_beamwidth
+            inner = radius < inner_halfwidth
             if inner.any():
                 good_scan_coords.append(scan.target_coords[:, inner])
                 good_scan_resid.append(bl_resid[inner])
@@ -339,8 +377,9 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
         if len(good_scan_resid) > 1:
             # Refit beam to inner region across all good scans
             beam.fit(np.hstack(good_scan_coords), np.hstack(good_scan_resid))
-            logger.debug("Refinement: beam height = %f, width = %s, first null = %f, based on %d of %d scans" % \
-                          (beam.height, beam.width, beam.radius_first_null, len(good_scan_resid), len(compscan.scans)))
+            logger.debug("Refinement: beam height = %.3f, width = %s, first null = %.3f deg, based on %d of %d scans" %
+                         (beam.height, width_string(beam.width), rad2deg(beam.radius_first_null),
+                          len(good_scan_resid), len(compscan.scans)))
             beam.refined = len(good_scan_resid)
 
     # Attempt to fit initial beam in non-positive pol term (might be a silly idea)
@@ -349,6 +388,7 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
         beam.fit(target_coords, bl_resid)
 
     # Do final validation of beam fit
+    ##POTENTIAL TWEAK##
     if np.isnan(beam.center).any() or np.isnan(beam.width).any() or np.isnan(beam.height):
         beam = None
     else:
