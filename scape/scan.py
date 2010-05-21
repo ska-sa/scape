@@ -177,12 +177,13 @@ class Scan(object):
                 raise ValueError('Please specify a target object')
         if antenna is None and self.compscan and self.compscan.dataset:
             antenna = self.compscan.dataset.antenna
+        # Copy scan (az, el) coordinates
+        az, el = self.pointing['az'][:], self.pointing['el'][:]
         # Fix over-the-top elevations (projections can only handle elevations in range +- 90 degrees)
-        over_the_top = (self.pointing['el'] > np.pi / 2.0) & (self.pointing['el'] < np.pi)
-        self.pointing['az'][over_the_top] += np.pi
-        self.pointing['el'][over_the_top] = np.pi - self.pointing['el'][over_the_top]
-        target_x, target_y = target.sphere_to_plane(self.pointing['az'], self.pointing['el'],
-                                                    self.timestamps, antenna)
+        over_the_top = (el > np.pi / 2.0) & (el < np.pi)
+        az[over_the_top] += np.pi
+        el[over_the_top] = np.pi - el[over_the_top]
+        target_x, target_y = target.sphere_to_plane(az, el, self.timestamps, antenna)
         self.target_coords = np.vstack((target_x, target_y))
         self.parangle = target.parallactic_angle(self.timestamps, antenna)
 
