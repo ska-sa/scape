@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from .fitting import Spline1DFit, Polynomial1DFit
+from .fitting import Spline1DFit, Polynomial1DFit, PiecewisePolynomial1DFit, Independent1DFit
 from .fitting import randomise as fitting_randomise
 from .stats import robust_mu_sigma, minimise_angle_wrap
 from .scan import scape_pol
@@ -170,48 +170,73 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
                         nd_jump_power_sigma.append(nd_delta_sigma)
     return nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma
 
-def estimate_gain(dataset, **kwargs):
+def estimate_gain(dataset, interp_degree=1, randomise=False, **kwargs):
     """Estimate gain and relative phase of both polarisations via injected noise.
 
     Each successful noise diode transition in the data set is used to estimate
     the gain and relative phase in the two receiver chains for the H and V
     polarisations at the instant of the transition. The H and V gains are power
     gains (i.e. the square of the voltage gains found in the Jones matrix), and
-    the phase is that of the V chain relative to the H chain.
+    the phase *phi* is that of the H chain relative to the V chain. The gains
+    and phase are measured per channel in the data set, and are represented by
+    vectors of length *F*. The measured gains are interpolated over time using a
+    piecewise polynomial function. The measurements may also be perturbed as
+    part of a Monte Carlo simulation.
 
     Parameters
     ----------
     dataset : :class:`dataset.DataSet` object
         Data set to analyse
+    interp_degree : integer, optional
+        Maximum degree of polynomial interpolating gains between measurements
+    randomise : {False, True}, optional
+        True if raw data and noise diode spectrum smoothing should be randomised
     kwargs : dict, optional
         Extra keyword arguments are passed to :func:`estimate_nd_jumps`
 
     Returns
     -------
-    timestamps : real array, shape (*T*,)
-        Timestamp of each gain measurement, in seconds-since-Unix-epoch
-    gain_hh : real array, shape (*T*, *F*)
-        Power gain of H chain per measurement and channel, in units of counts/K
-    gain_vv : real array, shape (*T*, *F*)
-        Power gain of V chain per measurement and channel, in units of counts/K
-    phi : real array, shape (*T*, *F*)
-        Phase of V relative to H, per measurement and channel, in radians
+    gain_hh, gain_vv : function, signature ``g = f(t)``
+        Power gain of H and V chain per channel, in units of counts/K, each a
+        function of time which returns a real array of shape (*F*,).
+    delta_re_hv, delta_im_hv : function, signature ``d = f(t)``
+        Terms proportional to *cos(phi)* and *sin(phi)*, where *phi* is the
+        phase of H relative to V. Each term is a function of time which returns
+        a real array of shape (*F*,). The phase angle *phi* can be obtained as
+        ``phi = np.arctan2(delta_im_hv, delta_re_hv)``.
+
+    Raises
+    ------
+    NoSuitableNoiseDiodeDataFound
+        If no suitable noise diode on/off blocks were found in data set
 
     """
-    nd_jump_times, nd_jump_power_mu = estimate_nd_jumps(dataset, **kwargs)[:2]
-    if not nd_jump_times:
-        return np.zeros((0)), np.zeros((0, len(dataset.freqs))), \
-               np.zeros((0, len(dataset.freqs))), np.zeros((0, len(dataset.freqs)))
-    timestamps = np.array(nd_jump_times)
+    nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma = estimate_nd_jumps(dataset, **kwargs)
+    if not nd_jump_power_mu:
+        raise NoSuitableNoiseDiodeDataFound
+    # delta = Pon - Poff = power increase (in counts) when noise diode fires
     deltas = np.concatenate([p[np.newaxis] for p in nd_jump_power_mu])
-    temp_nd = dataset.nd_model.temperature(dataset.freqs)
-    gain_hh = deltas[:, :, scape_pol.index('HH')] / temp_nd[np.newaxis, :, 0]
-    gain_vv = deltas[:, :, scape_pol.index('VV')] / temp_nd[np.newaxis, :, 1]
-    # For single-dish, HV == Re{HV} and VH == Im{HV}
-    phi = -np.arctan2(deltas[:, :, scape_pol.index('VH')], deltas[:, :, scape_pol.index('HV')])
-    return timestamps, gain_hh, gain_vv, minimise_angle_wrap(phi, axis=1)
+    # Uncomment the line below to average all cal measurements together, as in the original FF reduction
+    # deltas = np.tile(deltas.mean(axis=0), (len(nd_jump_times), 1, 1))
+    if randomise:
+        deltas += np.concatenate([p[np.newaxis] for p in nd_jump_power_sigma]) * \
+                  np.random.standard_normal(deltas.shape)
+    # Interpolate noise diode model to channel frequencies
+    temp_nd = dataset.nd_model.temperature(dataset.freqs, randomise)
+    # Do a piece-wise smooth interpolation of HH and VV gains between cal measurements
+    gain_hh = Independent1DFit(PiecewisePolynomial1DFit(max_degree=interp_degree), axis=0)
+    # The HH (and VV) gain is defined as (Pon - Poff) / Tcal, in counts per K
+    gain_hh.fit(np.array(nd_jump_times), deltas[:, :, scape_pol.index('HH')] / temp_nd[np.newaxis, :, 0])
+    gain_vv = Independent1DFit(PiecewisePolynomial1DFit(max_degree=interp_degree), axis=0)
+    gain_vv.fit(np.array(nd_jump_times), deltas[:, :, scape_pol.index('VV')] / temp_nd[np.newaxis, :, 1])
+    # Also interpolate the complex-valued HV (real and imag separately), used to derive phase angle between H and V
+    delta_re_hv = Independent1DFit(PiecewisePolynomial1DFit(max_degree=interp_degree), axis=0)
+    delta_re_hv.fit(np.array(nd_jump_times), deltas[:, :, scape_pol.index('HV')])
+    delta_im_hv = Independent1DFit(PiecewisePolynomial1DFit(max_degree=interp_degree), axis=0)
+    delta_im_hv.fit(np.array(nd_jump_times), deltas[:, :, scape_pol.index('VH')])
+    return gain_hh, gain_vv, delta_re_hv, delta_im_hv
 
-def calibrate_gain(dataset, randomise=False, **kwargs):
+def calibrate_gain(dataset, **kwargs):
     """Calibrate H and V gains and relative phase, based on noise injection.
 
     This converts the raw power measurements in the data set to temperatures,
@@ -223,50 +248,31 @@ def calibrate_gain(dataset, randomise=False, **kwargs):
     ----------
     dataset : :class:`dataset.DataSet` object
         Data set to calibrate
-    randomise : {False, True}, optional
-        True if raw data and noise diode spectrum smoothing should be randomised
     kwargs : dict, optional
-        Extra keyword arguments are passed to :func:`estimate_nd_jumps`
-
-    Raises
-    ------
-    NoSuitableNoiseDiodeDataFound
-        If no suitable noise diode on/off blocks were found in data set
+        Extra keyword arguments are passed to :func:`estimate_gain`
 
     """
-    nd_jump_power_mu, nd_jump_power_sigma = estimate_nd_jumps(dataset, **kwargs)[1:]
-    if not nd_jump_power_mu:
-        raise NoSuitableNoiseDiodeDataFound
-    gains = np.concatenate([p[np.newaxis] for p in nd_jump_power_mu])
-    if randomise:
-        gains += np.concatenate([p[np.newaxis] for p in nd_jump_power_sigma]) * \
-                 np.random.standard_normal(gains.shape)
-    temp_nd = dataset.nd_model.temperature(dataset.freqs, randomise)
+    gain_hh, gain_vv, delta_re_hv, delta_im_hv = estimate_gain(dataset, **kwargs)
     hh, vv, re_hv, im_hv = [scape_pol.index(pol) for pol in ['HH', 'VV', 'HV', 'VH']]
-    gains[:, :, hh] /= temp_nd[np.newaxis, :, 0]
-    gains[:, :, vv] /= temp_nd[np.newaxis, :, 1]
-    # Do a very simple zeroth-order fitting for now, as gains are usually very stable
-    smooth_gains = np.expand_dims(gains.mean(axis=0), axis=0)
-#    interp = fitting.Independent1DFit(fitting.Polynomial1DFit(max_degree=max_degree), axis=0)
-#    interp.fit(np.array(nd_jump_times), gains)
     for scan in dataset.scans:
-#        smooth_gains = interp(scan.timestamps)
+        # Interpolate gains based on scan timestamps
+        smooth_gain_hh, smooth_gain_vv = gain_hh(scan.timestamps), gain_vv(scan.timestamps)
+        smooth_delta_re_hv, smooth_delta_im_hv = delta_re_hv(scan.timestamps), delta_im_hv(scan.timestamps)
         # Remove instances of zero gain, which would lead to NaNs or Infs in the data
         # Usually these are associated with missing H or V polarisations (which get filled in with zeros)
         # Replace them with Infs instead, which suppresses the corresponding channels / polarisations
         # Similar to pseudo-inverse, where scale factors of 1/0 associated with zero eigenvalues are replaced by 0
-        smooth_gains[:, :, hh][smooth_gains[:, :, hh] == 0.0] = np.inf
-        smooth_gains[:, :, vv][smooth_gains[:, :, vv] == 0.0] = np.inf
+        smooth_gain_hh[smooth_gain_hh == 0.0] = np.inf
+        smooth_gain_vv[smooth_gain_vv == 0.0] = np.inf
         # Scale HH and VV with respective power gains
-        scan.data[:, :, hh] /= smooth_gains[:, :, hh]
-        scan.data[:, :, vv] /= smooth_gains[:, :, vv]
+        scan.data[:, :, hh] /= smooth_gain_hh
+        scan.data[:, :, vv] /= smooth_gain_vv
         u, v = scan.data[:, :, re_hv].copy(), scan.data[:, :, im_hv].copy()
-        # Rotate U and V, using K cos(phi) and -K sin(phi) terms
-        scan.data[:, :, re_hv] =  smooth_gains[:, :, re_hv] * u + smooth_gains[:, :, im_hv] * v
-        scan.data[:, :, im_hv] = -smooth_gains[:, :, im_hv] * u + smooth_gains[:, :, re_hv] * v
+        # Rotate U and V through angle -phi, using K cos(phi) and K sin(phi) terms
+        scan.data[:, :, re_hv] =  smooth_delta_re_hv * u + smooth_delta_im_hv * v
+        scan.data[:, :, im_hv] = -smooth_delta_im_hv * u + smooth_delta_re_hv * v
         # Divide U and V by g_h g_v, as well as length of sin + cos terms above
-        gain_hv = np.sqrt(smooth_gains[:, :, hh] * smooth_gains[:, :, vv] *
-                          (smooth_gains[:, :, re_hv] ** 2 + smooth_gains[:, :, im_hv] ** 2))
+        gain_hv = np.sqrt(smooth_gain_hh * smooth_gain_vv * (smooth_delta_re_hv ** 2 + smooth_delta_im_hv ** 2))
         # Gain_HV is NaN if HH or VV gain is Inf and Re/Im HV gain is zero (typical of the single-pol case)
         gain_hv[np.isnan(gain_hv)] = np.inf
         scan.data[:, :, re_hv] /= gain_hv

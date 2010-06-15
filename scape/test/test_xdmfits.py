@@ -19,17 +19,24 @@ class XDMFitsTestCases(unittest.TestCase):
         self.dataset = pkg_resources.resource_filename('scape.test', fitsfile)
         self.catalogue = katpoint.Catalogue()
         self.catalogue.add('J1959+4044 | *Cygnus A | CygA | 3C405, radec J2000, 19:59:28.36, 40:44:2.1, (20.0 2000.0 4.695 0.085 -0.178)')
-        self.beam_height = 108.8561436
-        self.beam_width = 0.9102625
-        self.baseline_height = 151.6516238
         self.average_flux = 1513.4451
         self.temperature = 2.00
         self.pressure = 875.00
         self.humidity = 56.60
         self.az = 29.5937309
         self.el = 14.1074702
-        self.delta_az = -0.1430513
-        self.delta_el = -0.0676434
+        # Original beam values based on averaged noise diode cal measurements
+        # self.beam_height = 108.8561436
+        # self.beam_width = 0.9102625
+        # self.baseline_height = 151.6516238
+        # self.delta_az = -0.1430513
+        # self.delta_el = -0.0676434
+        # Beam values based on linearly interpolated cal measurements
+        self.beam_height = 108.9559406
+        self.beam_width = 0.9102636
+        self.baseline_height = 151.7917742
+        self.delta_az = -0.1430509
+        self.delta_el = -0.0686143
 
     def test_beam_fit(self):
         """Load XDM FITS data set and do point source scan analysis on it."""

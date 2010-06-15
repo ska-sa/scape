@@ -467,7 +467,7 @@ class DataSet(object):
             logger.warning('No noise diode model found in data set - gain calibration not done')
             return self
         try:
-            return calibrate_gain(self, randomise, **kwargs)
+            return calibrate_gain(self, randomise=randomise, **kwargs)
         except NoSuitableNoiseDiodeDataFound:
             logger.warning('No suitable noise diode on/off blocks were found - gain calibration not done')
 
