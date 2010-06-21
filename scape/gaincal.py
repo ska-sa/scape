@@ -121,54 +121,62 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
     nd_jump_power_sigma : list of arrays, shape (*F*, 4)
         Standard deviation of power level changes at each jump, stored as an
         array of shape (*F*, 4), where *F* is the number of channels/bands
+    segments : list of tuples
+        Off/on segments identified at each jump, stored as a tuple of
+        (scan index, "off" sample indices, "on" sample indices), for debugging
 
     """
-    nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma = [], [], []
-    min_samples = dataset.dump_rate * min_duration
-    for scan in dataset.scans:
+    nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma, segments = [], [], [], []
+    min_samples = int(np.ceil(dataset.dump_rate * min_duration))
+    for scan_ind, scan in enumerate(dataset.scans):
         num_times = len(scan.timestamps)
         # In absence of valid flag, all data is valid
         valid_flag = scan.flags['valid'] if 'valid' in scan.flags.dtype.names else np.tile(True, num_times)
-        # Find indices where noise diode flag changes value
+        # Find indices where noise diode flag changes value, or continue on to the next scan
         jumps = (np.diff(scan.flags['nd_on']).nonzero()[0] + 1).tolist()
-        # The sample where the noise diode changes state is invalid for gain calibration
+        if len(jumps) == 0:
+            continue
+        # The samples immediately before and after the noise diode changes state are invalid for gain calibration
+        valid_flag[np.array(jumps) - 1] = False
         valid_flag[jumps] = False
-        if jumps:
-            before_jump = [0] + jumps[:-1]
-            at_jump = jumps
-            after_jump = jumps[1:] + [num_times]
-            # For every jump, obtain segments before and after jump with constant noise diode state
-            for start, mid, end in zip(before_jump, at_jump, after_jump):
-                # Restrict these segments to indices where data is valid
-                before_segment = valid_flag[start:mid].nonzero()[0] + start
-                after_segment = valid_flag[mid:end].nonzero()[0] + mid
-                if (len(before_segment) > min_samples) and (len(after_segment) > min_samples):
-                    # Utilise both off -> on and on -> off transitions
-                    # (mid is the first sample of the segment after the jump)
-                    if scan.flags['nd_on'][mid]:
-                        off_segment, on_segment = before_segment, after_segment
-                    else:
-                        on_segment, off_segment = before_segment, after_segment
-                    # Calculate mean and standard deviation of the *averaged* power data in the two segments.
-                    # Use robust estimators to suppress spikes and transients in data. Since the estimated mean
-                    # of data is less variable than the data itself, we have to divide the data sigma by sqrt(N).
-                    nd_off_mu, nd_off_sigma = robust_mu_sigma(scan.data[off_segment, :, :])
-                    nd_off_sigma /= np.sqrt(len(off_segment))
-                    nd_on_mu, nd_on_sigma = robust_mu_sigma(scan.data[on_segment, :, :])
-                    nd_on_sigma /= np.sqrt(len(on_segment))
-                    # Obtain mean and standard deviation of difference between averaged power in the segments
-                    nd_delta_mu, nd_delta_sigma = nd_on_mu - nd_off_mu, np.sqrt(nd_on_sigma ** 2 + nd_off_sigma ** 2)
-                    # Only keep jumps with significant *increase* in power (focus on the positive HH/VV)
-                    # This discards segments where noise diode did not fire as expected
-                    norm_jump = nd_delta_mu / nd_delta_sigma
-                    norm_jump = norm_jump[:, :2]
-                    # Remove NaNs which typically occur with perfect simulated data (zero mu and zero sigma)
-                    norm_jump[np.isnan(norm_jump)] = 0.0
-                    if np.mean(norm_jump, axis=0).max() > jump_significance:
-                        nd_jump_times.append(scan.timestamps[mid])
-                        nd_jump_power_mu.append(nd_delta_mu)
-                        nd_jump_power_sigma.append(nd_delta_sigma)
-    return nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma
+        before_jump = [0] + jumps[:-1]
+        at_jump = jumps
+        after_jump = jumps[1:] + [num_times]
+        # For every jump, obtain segments before and after jump with constant noise diode state
+        for start, mid, end in zip(before_jump, at_jump, after_jump):
+            # Restrict these segments to indices where data is valid
+            before_segment = valid_flag[start:mid].nonzero()[0] + start
+            after_segment = valid_flag[mid:end].nonzero()[0] + mid
+            # Skip the jump if one or both segments are too short
+            if min(len(before_segment), len(after_segment)) < min_samples:
+                continue
+            # Utilise both off -> on and on -> off transitions
+            # (mid is the first sample of the segment after the jump)
+            if scan.flags['nd_on'][mid]:
+                off_segment, on_segment = before_segment, after_segment
+            else:
+                on_segment, off_segment = before_segment, after_segment
+            # Calculate mean and standard deviation of the *averaged* power data in the two segments.
+            # Use robust estimators to suppress spikes and transients in data. Since the estimated mean
+            # of data is less variable than the data itself, we have to divide the data sigma by sqrt(N).
+            nd_off_mu, nd_off_sigma = robust_mu_sigma(scan.data[off_segment, :, :])
+            nd_off_sigma /= np.sqrt(len(off_segment))
+            nd_on_mu, nd_on_sigma = robust_mu_sigma(scan.data[on_segment, :, :])
+            nd_on_sigma /= np.sqrt(len(on_segment))
+            # Obtain mean and standard deviation of difference between averaged power in the segments
+            nd_delta_mu, nd_delta_sigma = nd_on_mu - nd_off_mu, np.sqrt(nd_on_sigma ** 2 + nd_off_sigma ** 2)
+            # Only keep jumps with significant *increase* in power (focus on the positive HH/VV)
+            # This discards segments where noise diode did not fire as expected
+            norm_jump = nd_delta_mu / nd_delta_sigma
+            norm_jump = norm_jump[:, :2]
+            # Remove NaNs which typically occur with perfect simulated data (zero mu and zero sigma)
+            norm_jump[np.isnan(norm_jump)] = 0.0
+            if np.mean(norm_jump, axis=0).max() > jump_significance:
+                nd_jump_times.append(scan.timestamps[mid])
+                nd_jump_power_mu.append(nd_delta_mu)
+                nd_jump_power_sigma.append(nd_delta_sigma)
+                segments.append((scan_ind, off_segment, on_segment))
+    return nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma, segments
 
 def estimate_gain(dataset, interp_degree=1, randomise=False, **kwargs):
     """Estimate gain and relative phase of both polarisations via injected noise.
@@ -211,7 +219,7 @@ def estimate_gain(dataset, interp_degree=1, randomise=False, **kwargs):
         If no suitable noise diode on/off blocks were found in data set
 
     """
-    nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma = estimate_nd_jumps(dataset, **kwargs)
+    nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma = estimate_nd_jumps(dataset, **kwargs)[:3]
     if not nd_jump_power_mu:
         raise NoSuitableNoiseDiodeDataFound
     # delta = Pon - Poff = power increase (in counts) when noise diode fires
