@@ -121,12 +121,12 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
     nd_jump_power_sigma : list of arrays, shape (*F*, 4)
         Standard deviation of power level changes at each jump, stored as an
         array of shape (*F*, 4), where *F* is the number of channels/bands
-    segments : list of tuples
-        Off/on segments identified at each jump, stored as a tuple of
-        (scan index, "off" sample indices, "on" sample indices), for debugging
+    nd_jump_info : list of tuples
+        Diagnostic information for each jump, stored as a tuple of (scan index,
+        jump sample index, "off" sample indices, "on" sample indices)
 
     """
-    nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma, segments = [], [], [], []
+    nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma, nd_jump_info = [], [], [], []
     min_samples = int(np.ceil(dataset.dump_rate * min_duration))
     for scan_ind, scan in enumerate(dataset.scans):
         num_times = len(scan.timestamps)
@@ -175,8 +175,8 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
                 nd_jump_times.append(scan.timestamps[mid])
                 nd_jump_power_mu.append(nd_delta_mu)
                 nd_jump_power_sigma.append(nd_delta_sigma)
-                segments.append((scan_ind, off_segment, on_segment))
-    return nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma, segments
+                nd_jump_info.append((scan_ind, mid, off_segment, on_segment))
+    return nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma, nd_jump_info
 
 def estimate_gain(dataset, interp_degree=1, randomise=False, **kwargs):
     """Estimate gain and relative phase of both polarisations via injected noise.
