@@ -160,7 +160,7 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         if baseline == 'AxAx':
             # First single-dish baseline found
             try:
-                antA = antB = ants_group.listnames()[0]
+                antA = antB = ants_group.keys()[0]
             except IndexError:
                 raise ValueError('Could not load first single-dish baseline - no antennas found in file')
             logger.info("Loading single-dish baseline '%s%s'" % (antA.replace('ntenna', ''),
@@ -168,7 +168,7 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         elif baseline == 'AxAy':
             # First interferometric baseline found
             try:
-                antA, antB = ants_group.listnames()[:2]
+                antA, antB = ants_group.keys()[:2]
             except IndexError:
                 raise ValueError('Could not load first interferometric baseline - less than 2 antennas found in file')
             logger.info("Loading interferometric baseline '%s%s'" % (antA.replace('ntenna', ''),
@@ -183,7 +183,7 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         # Check that requested antennas are in data set
         if antA not in ants_group or antB not in ants_group:
             raise ValueError('Requested antenna pair not found in HDF5 file (wanted %s but file only contains %s)'
-                             % ([antA, antB], ants_group.listnames()))
+                             % ([antA, antB], ants_group.keys()))
         antA_group, antB_group = ants_group[antA], ants_group[antB]
         # Get antenna description strings (antenna2 is None for single-dish data)
         antenna, antenna2 = antA_group.attrs['description'], antB_group.attrs['description']
@@ -212,10 +212,10 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                 # Find noise diode model datasets common to both 'H' and 'V' (if these feeds exist)
                 nd_set = None
                 if 'H' in antA_group:
-                    nd_set = set([name.rpartition('_nd_model')[0] for name in antA_group['H'].listnames()])
+                    nd_set = set([name.rpartition('_nd_model')[0] for name in antA_group['H']])
                     nd_set.discard('')
                 if 'V' in antA_group:
-                    nd_set2 = set([name.rpartition('_nd_model')[0] for name in antA_group['V'].listnames()])
+                    nd_set2 = set([name.rpartition('_nd_model')[0] for name in antA_group['V']])
                     nd_set2.discard('')
                     nd_set = nd_set2 if nd_set is None else nd_set.intersection(nd_set2)
                 raise ValueError("Unknown noise diode '%s', found the following models instead: %s" %
