@@ -74,7 +74,7 @@ def remove_duplicates(sensor, name):
 
 # pylint: disable-msg=W0613
 def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
-                 noise_diode='coupler', time_offset=0.0, **kwargs):
+                 noise_diode=None, time_offset=0.0, **kwargs):
     """Load data set from HDF5 file.
 
     This loads a data set from an HDF5 file. The file contains all the baselines
@@ -96,8 +96,10 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         of the data set. The actual sensor names are formed by appending '_azim'
         and '_elev' to *selected_pointing*. This is ignored if the data set has
         already been processed to contain a single source of pointing data.
-    noise_diode : {'coupler', 'pin'}, optional
-        Load the model and on/off flags of this noise diode
+    noise_diode : {None, 'coupler', 'pin'}, optional
+        Load the model and on/off flags of this noise diode. The default is to
+        pick the noise diode with on/off activity if it is the only one showing
+        activity, otherwise defaulting to 'coupler'.
     time_offset : float, optional
         Offset to add to correlator timestamps, in seconds
     kwargs : dict, optional
@@ -203,6 +205,18 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
             temperature_H = antA_group['H']['nd_model'].value if 'H' in antA_group else np.ones((1, 2))
             temperature_V = antA_group['V']['nd_model'].value if 'V' in antA_group else np.ones((1, 2))
         except KeyError:
+            # Autodetect the noise diode to use, based on which sensor shows any activity
+            if noise_diode is None:
+                nd_fired = {}
+                for nd in ('coupler', 'pin'):
+                    sensor = sensor_name[nd + '_nd_on']
+                    nd_fired[nd] = np.any(sensors_group[sensor]['value'] == '1') if sensor in sensors_group else False
+                if np.sum(nd_fired.values()) == 1:
+                    noise_diode = nd_fired.keys()[nd_fired.values().index(True)]
+                    logger.info("Using '%s' noise diode as it is the only one firing in data set" % noise_diode)
+                else:
+                    noise_diode = 'coupler'
+                    logger.info("Defaulting to '%s' noise diode (either no or both diodes are firing)" % noise_diode)
             # Now try to load selected noise diode
             try:
                 nd_model = noise_diode + '_nd_model'
