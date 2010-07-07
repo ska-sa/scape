@@ -230,7 +230,7 @@ def estimate_gain(dataset, interp_degree=1, randomise=False, **kwargs):
         deltas += np.concatenate([p[np.newaxis] for p in nd_jump_power_sigma]) * \
                   np.random.standard_normal(deltas.shape)
     # Interpolate noise diode model to channel frequencies
-    temp_nd = dataset.nd_model.temperature(dataset.freqs, randomise)
+    temp_nd = np.atleast_2d(dataset.nd_model.temperature(dataset.freqs, randomise))
     # Do a piece-wise smooth interpolation of HH and VV gains between cal measurements
     gain_hh = Independent1DFit(PiecewisePolynomial1DFit(max_degree=interp_degree), axis=0)
     # The HH (and VV) gain is defined as (Pon - Poff) / Tcal, in counts per K
