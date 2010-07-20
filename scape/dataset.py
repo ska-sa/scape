@@ -9,7 +9,6 @@ import katpoint
 from .compoundscan import CompoundScan
 from .gaincal import calibrate_gain, NoSuitableNoiseDiodeDataFound
 from .beam_baseline import fit_beam_and_baselines
-from .stats import remove_spikes, chi2_conf_interval
 
 # Try to import all available formats
 try:
@@ -372,67 +371,6 @@ class DataSet(object):
         return DataSet(None, compscanlist, self.experiment_id, self.observer,
                        self.description, self.data_unit, self.corrconf.select(freqkeep, copy),
                        self.antenna, self.antenna2, self.nd_model, self.enviro)
-
-    def identify_rfi_channels(self, sigma=8.0, min_bad_scans=0.25, extra_outputs=False):
-        """Identify potential RFI-corrupted channels.
-
-        This is a simple RFI detection procedure that assumes that there are
-        less RFI-corrupted channels than good channels, and that the desired
-        signal is broadband/continuum with similar features across the entire
-        spectrum.
-
-        Parameters
-        ----------
-        sigma : float, optional
-            Threshold for deviation from signal (non-RFI) template, as a factor
-            of the expected standard deviation of the error under the null
-            hypothesis. By increasing it, less channels are marked as bad. This
-            factor should typically be larger than expected (in the order of 6
-            to 8), as the null hypothesis is quite stringent.
-        min_bad_scans : float, optional
-            The fraction of scans in which a channel has to be marked as bad in
-            order to qualify as RFI-corrupted. This allows for some intermittence
-            in RFI corruption.
-        extra_outputs : {False, True}, optional
-            True if extra information should be returned (intended for plots)
-
-        Returns
-        -------
-        rfi_channels : list of ints
-            List of potential RFI-corrupted channel indices
-
-        """
-        rfi_count = np.zeros(len(self.freqs))
-        dof = 4.0 * (self.bandwidths * 1e6) / self.dump_rate
-        rfi_data = []
-        for scan in self.scans:
-            # Normalise power in scan by removing spikes, offsets and differences in scale
-            power = remove_spikes(scan.pol('I'))
-            offset = power.min(axis=0)
-            scale = power.max(axis=0) - offset
-            scale[scale <= 0.0] = 1.0
-            norm_power = (power - offset[np.newaxis, :]) / scale[np.newaxis, :]
-            # Form a template of the desired signal as a function of time
-            template = np.median(norm_power, axis=1)
-            # Use this as average power, after adding back scaling and offset
-            mean_signal_power = np.outer(template, scale) + offset[np.newaxis, :]
-            # Determine expected standard deviation of power data, assuming it has chi-square distribution
-            # Also divide by an extra sqrt(template) factor, which allows more leeway where template is small
-            # This is useful for absorbing small discrepancies in baseline when scanning across a source
-            expected_std = np.sqrt(2.0 / dof[np.newaxis, :]) * mean_signal_power / scale[np.newaxis, :] / \
-                           np.sqrt(template[:, np.newaxis])
-            channel_sumsq = (((norm_power - template[:, np.newaxis]) / expected_std) ** 2).sum(axis=0)
-            # The sum of squares over time is again a chi-square distribution, with different dof
-            lower, upper = chi2_conf_interval(power.shape[0], power.shape[0], sigma)
-            rfi_count += (channel_sumsq < lower) | (channel_sumsq > upper)
-            if extra_outputs:
-                rfi_data.append((norm_power, template, expected_std))
-        # Count the number of bad scans per channel, and threshold it
-        rfi_channels = (rfi_count > max(min_bad_scans * len(self.scans), 1.0)).nonzero()[0]
-        if extra_outputs:
-            return rfi_channels, rfi_count, rfi_data
-        else:
-            return rfi_channels
 
     def convert_power_to_temperature(self, randomise=False, **kwargs):
         """Convert raw power into temperature (K) based on noise injection.
