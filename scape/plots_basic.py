@@ -361,6 +361,10 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
             im.set_norm(colornorm)
             segments.append(im)
 
+    ## MPL WORKAROUND ##
+    # In matplotlib 1.0.0 and earlier (at least), adding break lines (axvline collection) messes up axes data limits
+    # The y bottom limit is erroneously reset to 0 - as a workaround, do an initial autoscale_view
+    ax.autoscale_view()
     # Add text labels and break lines, and set axes limits
     text_labels, break_lines = [], None
     # Break line styles differ for image and non-image plots
