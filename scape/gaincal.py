@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from .fitting import Spline1DFit, Polynomial1DFit, PiecewisePolynomial1DFit, Independent1DFit
+from .fitting import Spline1DFit, Polynomial1DFit, Spline2DGridFit
 from .fitting import randomise as fitting_randomise
 from .stats import robust_mu_sigma, minimise_angle_wrap
 from .scan import scape_pol
@@ -178,7 +178,46 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
                 nd_jump_info.append((scan_ind, mid, off_segment, on_segment))
     return nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma, nd_jump_info
 
-def estimate_gain(dataset, interp_degree=1, randomise=False, **kwargs):
+def _partition_into_bins(x, width):
+    """Partition values into bins of given width.
+
+    This partitions the sequence *x* into bins, where the values in each bin are
+    within *width* of each other. The bins are populated sequentially from the
+    sorted values of *x*. If *width* is 'all', all values are binned together in
+    a single bin, while a width of 0 or 'none' puts each value in its own bin.
+
+    Parameters
+    ----------
+    x : sequence of numbers
+        Sequence of values to partition
+    width : number or 'all' or 'none'
+        Bin width, so that the range of values in each bin are less than *width*
+
+    Returns
+    -------
+    bins : list of arrays of ints
+        Indices of values in *x*, with one array per bin indicating the members
+        of that bin
+    centres : array of float, shape (*N*,)
+        Centre (mean value) of each bin
+
+    """
+    x = np.atleast_1d(x)
+    bins, bin_start = [], 0
+    ind = np.argsort(x)
+    if width == 'all':
+        return [ind], np.array([x.mean()])
+    elif (width <= 0) or (width == 'none'):
+        return [[n] for n in ind], x[ind]
+    relative_x = x[ind] - x[ind[0]]
+    while bin_start < len(relative_x):
+        relative_x -= relative_x[bin_start]
+        bin_inds = ind[bin_start + (relative_x[bin_start:] < width).nonzero()[0]]
+        bins.append(bin_inds)
+        bin_start += len(bin_inds)
+    return bins, np.hstack([x[bin].mean() for bin in bins])
+
+def estimate_gain(dataset, interp_degree=1, time_width=900.0, freq_width='all', randomise=False, **kwargs):
     """Estimate gain and relative phase of both polarisations via injected noise.
 
     Each successful noise diode transition in the data set is used to estimate
@@ -186,17 +225,29 @@ def estimate_gain(dataset, interp_degree=1, randomise=False, **kwargs):
     polarisations at the instant of the transition. The H and V gains are power
     gains (i.e. the square of the voltage gains found in the Jones matrix), and
     the phase *phi* is that of the H chain relative to the V chain. The gains
-    and phase are measured per channel in the data set, and are represented by
-    vectors of length *F*. The measured gains are interpolated over time using a
-    piecewise polynomial function. The measurements may also be perturbed as
-    part of a Monte Carlo simulation.
+    and phase are measured per frequency channel in the data set. The measured
+    gains are then averaged in time-frequency bins of size *time_width* seconds
+    by *freq_width* MHz. The function returns spline functions that will
+    interpolate these averaged gains to any desired time and frequency. The
+    measurements may also be perturbed as part of a Monte Carlo simulation.
 
     Parameters
     ----------
     dataset : :class:`dataset.DataSet` object
         Data set to analyse
-    interp_degree : integer, optional
-        Maximum degree of polynomial interpolating gains between measurements
+    interp_degree : integer or sequence of 2 integers, optional
+        Maximum degree of spline interpolating gains between averaged
+        measurements (single degree or separate degrees for time and frequency)
+    time_width : float or 'all' or 'none', optional
+        Width of averaging bin along time axis, in seconds. Gains measured within
+        *time_width* seconds of each other will be averaged together. If this is
+        the string 'all', gains are averaged together for all times. If this is
+        0 or the string 'none', no averaging is done along the time axis.
+    freq_width : float or 'all' or 'none', optional
+        Width of averaging bin along frequency axis, in MHz. Gains measured in
+        channels within *freq_width* MHz of each other are averaged together.
+        If this is string 'all', gains are averaged together over all channels.
+        If this is 0 or string 'none', no averaging is done along frequency axis.
     randomise : {False, True}, optional
         True if raw data and noise diode spectrum smoothing should be randomised
     kwargs : dict, optional
@@ -204,13 +255,17 @@ def estimate_gain(dataset, interp_degree=1, randomise=False, **kwargs):
 
     Returns
     -------
-    gain_hh, gain_vv : function, signature ``g = f(t)``
-        Power gain of H and V chain per channel, in units of counts/K, each a
-        function of time which returns a real array of shape (*F*,).
+    gain_hh, gain_vv : function, signature ``gain = f(time, freq)``
+        Power gain of H and V chain, in units of counts/K, each a function of
+        time and frequency. The two inputs to these functions are arrays of
+        timestamps and frequencies, of shapes (*T*,) and (*F*,), respectively,
+        and the functions output real gain arrays of shape (*T*, *F*).
     delta_re_hv, delta_im_hv : function, signature ``d = f(t)``
         Terms proportional to *cos(phi)* and *sin(phi)*, where *phi* is the
-        phase of H relative to V. Each term is a function of time which returns
-        a real array of shape (*F*,). The phase angle *phi* can be obtained as
+        phase of H relative to V. Each term is a function of time and frequency,
+        and accepts arrays of timestamps and frequencies as inputs, of shapes
+        (*T*,) and (*F*,), respectively. The output is a real array of shape
+        (*T*, *F*). The phase angle *phi* can be obtained as
         ``phi = np.arctan2(delta_im_hv, delta_re_hv)``.
 
     Raises
@@ -219,30 +274,56 @@ def estimate_gain(dataset, interp_degree=1, randomise=False, **kwargs):
         If no suitable noise diode on/off blocks were found in data set
 
     """
+    interp_degree = list(interp_degree) if hasattr(interp_degree, '__getitem__') else [interp_degree, interp_degree]
+    # Obtain noise diode firings
     nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma = estimate_nd_jumps(dataset, **kwargs)[:3]
     if not nd_jump_power_mu:
         raise NoSuitableNoiseDiodeDataFound
     # delta = Pon - Poff = power increase (in counts) when noise diode fires
     deltas = np.concatenate([p[np.newaxis] for p in nd_jump_power_mu])
-    # Uncomment the line below to average all cal measurements together, as in the original FF reduction
-    # deltas = np.tile(deltas.mean(axis=0), (len(nd_jump_times), 1, 1))
     if randomise:
         deltas += np.concatenate([p[np.newaxis] for p in nd_jump_power_sigma]) * \
                   np.random.standard_normal(deltas.shape)
     # Interpolate noise diode model to channel frequencies
     temp_nd = np.atleast_2d(dataset.nd_model.temperature(dataset.freqs, randomise))
-    # Do a piece-wise smooth interpolation of HH and VV gains between cal measurements
-    gain_hh = Independent1DFit(PiecewisePolynomial1DFit(max_degree=interp_degree), axis=0)
     # The HH (and VV) gain is defined as (Pon - Poff) / Tcal, in counts per K
-    gain_hh.fit(np.array(nd_jump_times), deltas[:, :, scape_pol.index('HH')] / temp_nd[np.newaxis, :, 0])
-    gain_vv = Independent1DFit(PiecewisePolynomial1DFit(max_degree=interp_degree), axis=0)
-    gain_vv.fit(np.array(nd_jump_times), deltas[:, :, scape_pol.index('VV')] / temp_nd[np.newaxis, :, 1])
+    deltas[:, :, scape_pol.index('HH')] /= temp_nd[np.newaxis, :, 0]
+    deltas[:, :, scape_pol.index('VV')] /= temp_nd[np.newaxis, :, 1]
+
+    # Create time-frequency bins and average data into these bins
+    time_bins, time_avg = _partition_into_bins(nd_jump_times, time_width)
+    freq_bins, freq_avg = _partition_into_bins(dataset.freqs, freq_width)
+    deltas_tavg = np.array([deltas[bin, :, :].mean(axis=0) for bin in time_bins])
+    deltas_avg = np.hstack([deltas_tavg[:, bin, :].mean(axis=1)[:, np.newaxis, :] for bin in freq_bins])
+    # Extend domain of spline extrapolation to full time-frequency range (otherwise extrapolation will be flat)
+    timestamps = np.hstack([scan.timestamps for scan in dataset.scans])
+    bbox = [timestamps.min(), timestamps.max(), dataset.freqs.min(), dataset.freqs.max()]
+
+    # Make sure at least a first-order spline can be fit, by duplicating a single data point along any axis
+    if len(time_avg) == 1:
+        deltas_avg = np.tile(deltas_avg, (2, 1, 1))
+        time_avg = np.array([time_avg[0], time_avg[0] + 1])
+    if len(freq_avg) == 1:
+        deltas_avg = np.tile(deltas_avg, (1, 2, 1))
+        freq_avg = np.array([freq_avg[0], freq_avg[0] + 1])
+    # Reduce spline degree if not enough data is available
+    interp_degree[0] = min(interp_degree[0], 2 * (len(time_avg) // 2) - 1)
+    interp_degree[1] = min(interp_degree[1], 2 * (len(freq_avg) // 2) - 1)
+
+    # Do a spline interpolation of HH and VV gains between time-frequency bins
+    gain_hh = Spline2DGridFit(degree=interp_degree, bbox=bbox)
+    gain_hh.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol.index('HH')])
+    gain_vv = Spline2DGridFit(degree=interp_degree, bbox=bbox)
+    gain_vv.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol.index('VV')])
     # Also interpolate the complex-valued HV (real and imag separately), used to derive phase angle between H and V
-    delta_re_hv = Independent1DFit(PiecewisePolynomial1DFit(max_degree=interp_degree), axis=0)
-    delta_re_hv.fit(np.array(nd_jump_times), deltas[:, :, scape_pol.index('HV')])
-    delta_im_hv = Independent1DFit(PiecewisePolynomial1DFit(max_degree=interp_degree), axis=0)
-    delta_im_hv.fit(np.array(nd_jump_times), deltas[:, :, scape_pol.index('VH')])
-    return gain_hh, gain_vv, delta_re_hv, delta_im_hv
+    delta_re_hv = Spline2DGridFit(degree=interp_degree, bbox=bbox)
+    delta_re_hv.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol.index('HV')])
+    delta_im_hv = Spline2DGridFit(degree=interp_degree, bbox=bbox)
+    delta_im_hv.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol.index('VH')])
+
+    # Return interpolators in convenient form, where t and f are separate arguments (instead of a single list input)
+    return lambda t, f: gain_hh([t, f]), lambda t, f: gain_vv([t, f]), \
+           lambda t, f: delta_re_hv([t, f]), lambda t, f: delta_im_hv([t, f])
 
 def calibrate_gain(dataset, **kwargs):
     """Calibrate H and V gains and relative phase, based on noise injection.
@@ -264,8 +345,10 @@ def calibrate_gain(dataset, **kwargs):
     hh, vv, re_hv, im_hv = [scape_pol.index(pol) for pol in ['HH', 'VV', 'HV', 'VH']]
     for scan in dataset.scans:
         # Interpolate gains based on scan timestamps
-        smooth_gain_hh, smooth_gain_vv = gain_hh(scan.timestamps), gain_vv(scan.timestamps)
-        smooth_delta_re_hv, smooth_delta_im_hv = delta_re_hv(scan.timestamps), delta_im_hv(scan.timestamps)
+        smooth_gain_hh = gain_hh(scan.timestamps, dataset.freqs)
+        smooth_gain_vv = gain_vv(scan.timestamps, dataset.freqs)
+        smooth_delta_re_hv = delta_re_hv(scan.timestamps, dataset.freqs)
+        smooth_delta_im_hv = delta_im_hv(scan.timestamps, dataset.freqs)
         # Remove instances of zero gain, which would lead to NaNs or Infs in the data
         # Usually these are associated with missing H or V polarisations (which get filled in with zeros)
         # Replace them with Infs instead, which suppresses the corresponding channels / polarisations

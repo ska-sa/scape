@@ -32,11 +32,17 @@ class XDMFitsTestCases(unittest.TestCase):
         # self.delta_az = -0.1430513
         # self.delta_el = -0.0676434
         # Beam values based on linearly interpolated cal measurements
-        self.beam_height = 108.9559406
-        self.beam_width = 0.9102636
-        self.baseline_height = 151.7917742
-        self.delta_az = -0.1430509
-        self.delta_el = -0.0686143
+        # self.beam_height = 108.9559406
+        # self.beam_width = 0.9102636
+        # self.baseline_height = 151.7917742
+        # self.delta_az = -0.1430509
+        # self.delta_el = -0.0686143
+        # Beam values based on cal measurements averaged in frequency, linearly interpolated in time (900-second bins)
+        self.beam_height = 108.7471834
+        self.beam_width = 0.9110111
+        self.baseline_height = 151.3675153
+        self.delta_az = -0.1430157
+        self.delta_el = -0.0675574
 
     def test_beam_fit(self):
         """Load XDM FITS data set and do point source scan analysis on it."""
