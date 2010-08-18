@@ -93,7 +93,7 @@ class NoSuitableNoiseDiodeDataFound(Exception):
     """No suitable noise diode on/off blocks were found in data set."""
     pass
 
-def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
+def estimate_nd_jumps(dataset, min_samples=3, min_duration=None, jump_significance=10.0):
     """Estimate jumps in power when noise diode toggles state in data set.
 
     This examines all time instants where the noise diode flag changes state
@@ -106,8 +106,11 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
     ----------
     dataset : :class:`dataset.DataSet` object
         Data set to analyse
+    min_samples : int, optional
+        Minimum number of samples in each time segment, to ensure good estimates
     min_duration : float, optional
-        Minimum duration of each time segment in seconds, to ensure good estimates
+        Minimum duration of each time segment in seconds. If specified, it
+        overrides the *min_samples* value.
     jump_significance : float, optional
         The jump in power level should be at least this number of standard devs
 
@@ -127,7 +130,8 @@ def estimate_nd_jumps(dataset, min_duration=1.0, jump_significance=10.0):
 
     """
     nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma, nd_jump_info = [], [], [], []
-    min_samples = int(np.ceil(dataset.dump_rate * min_duration))
+    if min_duration is not None:
+        min_samples = int(np.ceil(dataset.dump_rate * min_duration))
     for scan_ind, scan in enumerate(dataset.scans):
         num_times = len(scan.timestamps)
         # In absence of valid flag, all data is valid
