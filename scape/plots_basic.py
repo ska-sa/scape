@@ -6,6 +6,8 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
+import pyfits
+
 logger = logging.getLogger("scape.plots_basic")
 
 def ordinal_suffix(n):
@@ -736,3 +738,111 @@ def plot_db_contours(x, y, Z, levels=None, sin_coords=False, add_lines=True, ax=
     ax.fill(-corner_x, -corner_y, facecolor='w')
     ax.fill( corner_x, -corner_y, facecolor='w')
     return cset
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  save_fits_image
+#--------------------------------------------------------------------------------------------------
+
+def save_fits_image(filename, x, y, Z, target_name='', coord_system='radec',
+                    projection_type='ARC', data_unit='', freq_Hz=0.,
+                    bandwidth_Hz=0., pol=None, observe_date='', create_date='',
+                    telescope='', instrument='', observer='', clobber=False):
+    """Save image data to FITS file.
+
+    This produces a FITS file from 2D spatial image data. It optionally allows
+    degenerate frequency and Stokes axes, in order to specify the RF frequency
+    and polarisation of the image data.
+
+    Parameters
+    ----------
+    filename : string
+        Name of FITS file to create
+    x : real array-like, shape (N,)
+        Vector of x coordinates, in degrees
+    y : real array-like, shape (M,)
+        Vector of y coordinates, in degrees
+    Z : real array-like, shape (M, N)
+        Matrix of z values, with rows associated with *y* and columns with *x*
+    target_name : string, optional
+        Name of source being imaged
+    coord_system : {'radec', 'azel'}, optional
+        Spherical coordinate system serving as basis for *x* and *y*
+    projection_type : {'ARC', 'SIN', 'TAN', 'STG', 'CAR'}, optional
+        Type of spherical projection used to obtain *x*-*y* plane
+    data_unit : string, optional
+        Unit of z data
+    freq_Hz : float, optional
+        Centre frequency of z data, in Hz (if bigger than 0, add a frequency axis)
+    bandwidth_Hz : float, optional
+        Bandwidth of z data, in Hz
+    pol : {None, 'I', 'Q', 'U', 'V', 'HH', 'VV', 'VH', 'HV', 'XX', 'YY', 'XY', 'YX'}, optional
+        Polarisation of z data (if not None, add a Stokes axis)
+    observe_date : string, optional
+        UT timestamp of start of observation (format YYYY-MM-DD[Thh:mm:ss[.sss]])
+    create_date : string, optional
+        UT timestamp of file creation (format YYYY-MM-DD[Thh:mm:ss[.sss]])
+    telescope : string, optional
+        Telescope that performed the observation
+    instrument : string, optional
+        Instrument that recorded the data
+    observer : string, optional
+        Person responsible for the observation
+    clobber : {False, True}, optional
+        True if FITS file should be replaced if it already exists
+
+    Raises
+    ------
+    ValueError
+        If coordinate system is unknown
+
+    """
+    if coord_system == 'azel':
+        axes = ['AZ---' + projection_type, 'EL---' + projection_type]
+    elif coord_system == 'radec':
+        axes = ['RA---' + projection_type, 'DEC--' + projection_type]
+    else:
+        raise ValueError('Unknown coordinate system for FITS image')
+    if data_unit == 'counts':
+        data_unit = 'count'
+    # Pick centre pixel as reference, out of convenience
+    ref_pixel = [(len(x) // 2 + 1), (len(y) // 2) + 1]
+    ref_world = [x[ref_pixel[0] - 1], y[ref_pixel[1] - 1]]
+    world_per_pixel = [(x[-1] - x[0]) / (len(x) - 1), (y[-1] - y[0]) / (len(y) - 1)]
+    # If frequency is specified, add a frequency axis
+    if freq_Hz > 0:
+        axes.append('FREQ')
+        ref_pixel.append(1)
+        ref_world.append(freq_Hz)
+        world_per_pixel.append(bandwidth_Hz)
+        Z = Z[np.newaxis]
+    # If polarisation is specified, add a Stokes axis
+    if pol is not None:
+        stokes_code = {'I' : 1, 'Q' : 2, 'U' : 3, 'V' : 4,
+                       'XX' : -5, 'YY' : -6, 'XY' : -7, 'YX' : -8,
+                       'HH' : -5, 'VV' : -6, 'HV' : -7, 'VH' : -8}
+        axes.append('STOKES')
+        ref_pixel.append(1)
+        ref_world.append(stokes_code[pol])
+        world_per_pixel.append(1)
+        Z = Z[np.newaxis]
+
+    phdu = pyfits.PrimaryHDU(Z)
+    phdu.update_header()
+    phdu.header.update('DATE', create_date, comment='UT file creation time')
+    phdu.header.update('ORIGIN', 'SKA SA', 'institution that created file')
+    phdu.header.update('DATE-OBS', observe_date, comment='UT observation start time')
+    phdu.header.update('TELESCOP', telescope)
+    phdu.header.update('INSTRUME', instrument)
+    phdu.header.update('OBSERVER', observer)
+    phdu.header.update('OBJECT', target_name, comment='source name')
+    phdu.header.update('EQUINOX', 2000.0, comment='equinox of ra dec')
+    phdu.header.update('BUNIT', data_unit, comment='units of flux')
+    for n, (ax_type, ref_pix, ref_val, ref_delt) in enumerate(zip(axes, ref_pixel, ref_world, world_per_pixel)):
+        phdu.header.update('CTYPE%d' % (n+1), ax_type)
+        phdu.header.update('CRPIX%d' % (n+1), ref_pix)
+        phdu.header.update('CRVAL%d' % (n+1), ref_val)
+        phdu.header.update('CDELT%d' % (n+1), ref_delt)
+        phdu.header.update('CROTA%d' % (n+1), 0)
+    phdu.header.update('DATAMAX', Z.max(), comment='max pixel value')
+    phdu.header.update('DATAMIN', Z.min(), comment='min pixel value')
+    pyfits.writeto(filename, phdu.data, phdu.header, clobber=clobber)
