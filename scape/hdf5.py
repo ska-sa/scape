@@ -7,6 +7,7 @@ import re
 
 import h5py
 import numpy as np
+import katpoint
 
 from .gaincal import NoiseDiodeModel
 from .scan import Scan, scape_pol
@@ -29,7 +30,7 @@ sensor_name = {'temperature' : 'enviro_air_temperature',
                'coupler_nd_on' : 'rfe3_rfe15_noise_coupler_on',
                'pin_nd_on' : 'rfe3_rfe15_noise_pin_on'}
 
-def remove_duplicates(sensor, name):
+def remove_duplicates(sensor):
     """Remove duplicate timestamp values from sensor data.
 
     This sorts the 'timestamp' field of the sensor record array and removes any
@@ -40,10 +41,9 @@ def remove_duplicates(sensor, name):
 
     Parameters
     ----------
-    sensor : record array, shape (N,)
-        Sensor data record array with fields 'timestamp', 'value' and 'status'
-    name : string
-        Name of sensor, used in warning message
+    sensor : :class:`h5py.Dataset` object, shape (N,)
+        Sensor dataset, which acts like a record array with fields 'timestamp',
+        'value' and 'status'
 
     Returns
     -------
@@ -65,7 +65,13 @@ def remove_duplicates(sensor, name):
     replacement = unique_ind[len(unique_ind) - np.cumsum(last_of_run[::-1])[::-1]]
     # All duplicates should have the same y and z values - complain otherwise, but continue
     if not np.all(y[replacement] == y) or not np.all(z[replacement] == z):
-        logger.warning("Sensor '%s' has duplicate timestamps with different values or statuses" % name)
+        logger.warning("Sensor '%s' has duplicate timestamps with different values or statuses" % sensor.name)
+        for ind in (y[replacement] != y).nonzero()[0]:
+            logger.debug("At %s, sensor '%s' has values of %s and %s - keeping last one" %
+                         (katpoint.Timestamp(x[ind]).local(), sensor.name, y[ind], y[replacement][ind]))
+        for ind in (z[replacement] != z).nonzero()[0]:
+            logger.debug("At %s, sensor '%s' has statuses of '%s' and '%s' - keeping last one" %
+                         (katpoint.Timestamp(x[ind]).local(), sensor.name, z[ind], z[replacement][ind]))
     return np.rec.fromarrays([x[unique_ind], y[unique_ind], z[unique_ind]], dtype=sensor.dtype)
 
 #--------------------------------------------------------------------------------------------------
@@ -199,7 +205,7 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
             sensor = sensor_name[quantity]
             # Environment sensors are optional
             if sensor in sensors_group:
-                enviro[quantity] = remove_duplicates(sensors_group[sensor], sensor)
+                enviro[quantity] = remove_duplicates(sensors_group[sensor])
         # First try to load generic noise diode model (typically found in processed / intermediate file)
         try:
             temperature_H = antA_group['H']['nd_model'].value if 'H' in antA_group else np.ones((1, 2))
@@ -326,7 +332,7 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                         if sensor not in sensors_group:
                             raise ValueError("Selected pointing sensor '%s' was not found in HDF5 file" % (sensor,))
                         # Ensure pointing timestamps are unique before interpolation
-                        original_coord = remove_duplicates(sensors_group[sensor], sensor)
+                        original_coord = remove_duplicates(sensors_group[sensor])
                         # Linearly interpolate pointing coordinates to correlator data timestamps
                         # As long as azimuth is in natural antenna coordinates, no special angle interpolation required
                         interp = PiecewisePolynomial1DFit(max_degree=1)
@@ -344,7 +350,7 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                     sensor = sensor_name[noise_diode + '_nd_on']
                     if sensor in sensors_group:
                         # Ensure noise diode timestamps are unique before interpolation
-                        nd_on = remove_duplicates(sensors_group[sensor], sensor)
+                        nd_on = remove_duplicates(sensors_group[sensor])
                         # Do step-wise interpolation (as flag is either 0 or 1 and holds its value until it toggles)
                         interp = PiecewisePolynomial1DFit(max_degree=0)
                         interp.fit(nd_on['timestamp'], nd_on['value'].astype(int))
