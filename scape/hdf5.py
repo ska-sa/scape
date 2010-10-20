@@ -130,8 +130,8 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         Description string of single-dish antenna or first antenna of baseline pair
     antenna2 : string or None
         Description string of second antenna of baseline pair (None for single-dish)
-    nd_model : :class:`NoiseDiodeModel` object
-        Noise diode model
+    nd_h_model, nd_v_model : :class:`NoiseDiodeModel` objects
+        Noise diode models for H and V polarisations on first antenna
     enviro : dict of record arrays
         Environmental (weather) measurements. The keys of the dict are strings
         indicating the type of measurement ('temperature', 'pressure', etc),
@@ -207,9 +207,18 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
             if sensor in sensors_group:
                 enviro[quantity] = remove_duplicates(sensors_group[sensor])
         # First try to load generic noise diode model (typically found in processed / intermediate file)
+        nd_h_model = nd_v_model = None
         try:
-            temperature_H = antA_group['H']['nd_model'].value if 'H' in antA_group else np.ones((1, 2))
-            temperature_V = antA_group['V']['nd_model'].value if 'V' in antA_group else np.ones((1, 2))
+            if 'H' in antA_group:
+                nd_dataset = antA_group['H']['nd_model']
+                nd_h_model = NoiseDiodeModel(nd_dataset[:, 0], nd_dataset[:, 1], **dict(nd_dataset.attrs))
+                if 'V' not in antA_group:
+                    nd_v_model = NoiseDiodeModel()
+            if 'V' in antA_group:
+                nd_dataset = antA_group['V']['nd_model']
+                nd_v_model = NoiseDiodeModel(nd_dataset[:, 0], nd_dataset[:, 1], **dict(nd_dataset.attrs))
+                if 'H' not in antA_group:
+                    nd_h_model = NoiseDiodeModel()
         except KeyError:
             # Autodetect the noise diode to use, based on which sensor shows any activity
             if noise_diode is None:
@@ -225,9 +234,16 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                     logger.info("Defaulting to '%s' noise diode (either no or both diodes are firing)" % noise_diode)
             # Now try to load selected noise diode
             try:
-                nd_model = noise_diode + '_nd_model'
-                temperature_H = antA_group['H'][nd_model].value if 'H' in antA_group else np.ones((1, 2))
-                temperature_V = antA_group['V'][nd_model].value if 'V' in antA_group else np.ones((1, 2))
+                if 'H' in antA_group:
+                    nd_dataset = antA_group['H'][noise_diode + '_nd_model']
+                    nd_h_model = NoiseDiodeModel(nd_dataset[:, 0], nd_dataset[:, 1], **dict(nd_dataset.attrs))
+                    if 'V' not in antA_group:
+                        nd_v_model = NoiseDiodeModel()
+                if 'V' in antA_group:
+                    nd_dataset = antA_group['V'][noise_diode + '_nd_model']
+                    nd_v_model = NoiseDiodeModel(nd_dataset[:, 0], nd_dataset[:, 1], **dict(nd_dataset.attrs))
+                    if 'H' not in antA_group:
+                        nd_h_model = NoiseDiodeModel()
             except KeyError:
                 # Find noise diode model datasets common to both 'H' and 'V' (if these feeds exist)
                 nd_set = None
@@ -240,7 +256,6 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                     nd_set = nd_set2 if nd_set is None else nd_set.intersection(nd_set2)
                 raise ValueError("Unknown noise diode '%s', found the following models instead: %s" %
                                  (noise_diode, list(nd_set)))
-        nd_model = NoiseDiodeModel(temperature_H, temperature_V)
 
         # Load correlator configuration group
         corrconf_group = f['Correlator']
@@ -373,7 +388,7 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
             # Sort compound scans chronologically too
             compscanlist.sort(key=lambda compscan: compscan.scans[0].timestamps[0])
         return compscanlist, experiment_id, observer, description, data_unit, \
-               corrconf, antenna, antenna2, nd_model, enviro
+               corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  save_dataset
@@ -426,8 +441,13 @@ def save_dataset(dataset, filename):
         # For now, both H and V are created, even if original dataset had only a single feed, to keep things simple
         # The correlator data for the missing feed are already zeros in this situation
         h_group, v_group = antA_group.create_group('H'), antA_group.create_group('V')
-        h_group.create_dataset('nd_model', data=dataset.nd_model.temperature_h, compression='gzip')
-        v_group.create_dataset('nd_model', data=dataset.nd_model.temperature_v, compression='gzip')
+        for nd_model, pol_group in zip([dataset.nd_h_model, dataset.nd_v_model], [h_group, v_group]):
+            if nd_model is not None:
+                nd_data = np.column_stack((nd_model.freq, nd_model.temp))
+                nd_dataset = pol_group.create_dataset('nd_model', data=nd_data, compression='gzip')
+                for key, val in vars(nd_model).iteritems():
+                    if key not in ('freq', 'temp'):
+                        nd_dataset.attrs[key] = val
 
         # Create correlator configuration group
         corrconf_group = f.create_group('Correlator')

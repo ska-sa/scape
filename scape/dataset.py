@@ -67,8 +67,8 @@ class DataSet(object):
     antenna2 : :class:`katpoint.Antenna` object or string or None, optional
         Second antenna of baseline, as object or description string. This is
         *None* for single-dish autocorrelation data.
-    nd_model : :class:`gaincal.NoiseDiodeModel` object, optional
-        Noise diode model
+    nd_h_model, nd_v_model : :class:`gaincal.NoiseDiodeModel` objects, optional
+        Noise diode models for H and V polarisations on first antenna
     enviro : dict of record arrays, optional
         Environmental (weather) measurements. The keys of the dict are strings
         indicating the type of measurement ('temperature', 'pressure', etc),
@@ -101,20 +101,22 @@ class DataSet(object):
         If file extension is unknown or parameter is invalid
 
     """
-    def __init__(self, filename, compscanlist=None, experiment_id=None, observer=None, description=None,
-                 data_unit=None, corrconf=None, antenna=None, antenna2=None, nd_model=None, enviro=None, **kwargs):
+    def __init__(self, filename, compscanlist=None, experiment_id=None, observer=None,
+                 description=None, data_unit=None, corrconf=None, antenna=None, antenna2=None,
+                 nd_h_model=None, nd_v_model=None, enviro=None, **kwargs):
         # Load dataset from file
         if filename:
             ext = os.path.splitext(filename)[1]
             if ext == '.fits':
                 if not xdmfits_found:
                     raise ImportError('XDM FITS support could not be loaded - please check xdmfits module')
-                compscanlist, data_unit, corrconf, antenna, nd_model, enviro = xdmfits_load(filename, **kwargs)
+                compscanlist, data_unit, corrconf, \
+                antenna, nd_h_model, nd_v_model, enviro = xdmfits_load(filename, **kwargs)
             elif (ext == '.h5') or (ext == '.hdf5'):
                 if not hdf5_found:
                     raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
                 compscanlist, experiment_id, observer, description, data_unit, \
-                corrconf, antenna, antenna2, nd_model, enviro = hdf5_load(filename, **kwargs)
+                corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = hdf5_load(filename, **kwargs)
             else:
                 raise ValueError("File extension '%s' not understood" % ext)
 
@@ -132,7 +134,8 @@ class DataSet(object):
             self.antenna2 = antenna2
         else:
             self.antenna2 = katpoint.Antenna(antenna2)
-        self.nd_model = nd_model
+        self.nd_h_model = nd_h_model
+        self.nd_v_model = nd_v_model
         self.enviro = enviro
 
         # Create global scan list and fill in caches and links in lower-level objects
@@ -170,7 +173,7 @@ class DataSet(object):
                ((self.antenna2 == other.antenna2 == None) or \
                 ((self.antenna2 is not None) and (other.antenna2 is not None) and \
                  self.antenna2.description == other.antenna2.description)) and \
-               (self.nd_model == other.nd_model) and \
+               (self.nd_h_model == other.nd_h_model) and (self.nd_v_model == other.nd_v_model) and \
                np.all([key == key2 for key, key2 in zip(self.enviro.iterkeys(), other.enviro.iterkeys())]) and \
                np.all([np.all(val == val2) for val, val2 in zip(self.enviro.itervalues(), other.enviro.itervalues())])
 
@@ -370,7 +373,7 @@ class DataSet(object):
                 compscanlist.append(CompoundScan(scanlist, compscan.target))
         return DataSet(None, compscanlist, self.experiment_id, self.observer,
                        self.description, self.data_unit, self.corrconf.select(freqkeep, copy),
-                       self.antenna, self.antenna2, self.nd_model, self.enviro)
+                       self.antenna, self.antenna2, self.nd_h_model, self.nd_v_model, self.enviro)
 
     def convert_power_to_temperature(self, randomise=False, **kwargs):
         """Convert raw power into temperature (K) based on noise injection.
@@ -401,7 +404,7 @@ class DataSet(object):
             logger.warning("Expected raw power data to convert to temperature, got data with units '" +
                            self.data_unit + "' instead.")
             return self
-        if self.nd_model is None:
+        if self.nd_h_model is None or self.nd_v_model is None:
             logger.warning('No noise diode model found in data set - gain calibration not done')
             return self
         try:

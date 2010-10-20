@@ -33,73 +33,6 @@ from .stats import angle_wrap
 logger = logging.getLogger("scape.xdmfits")
 
 #--------------------------------------------------------------------------------------------------
-#--- CLASS :  NoiseDiodeXDM
-#--------------------------------------------------------------------------------------------------
-
-class NoiseDiodeXDM(NoiseDiodeModel):
-    """A container for noise diode calibration data (XDM FITS version).
-
-    This allows the (randomised) calculation of the noise diode temperature from
-    the tables stored in a FITS file, as a function of frequency. This is the
-    second version, used for XDM after April 2009, which uses a simple
-    temperature lookup table as a function of frequency for each feed
-    (independent of rotator angle). The spectrum is only interpolated when the
-    actual noise diode temperature is requested. This can load data from both
-    the data FITS file and the optional cal FITS file. In the latter case the
-    feed ID has to be specified (but not in the former case).
-
-    Parameters
-    ----------
-    filename : string
-        Name of data or cal FITS file
-    feed_id : int
-        Feed ID number (0 or 1), which should only be used for cal FITS file
-
-    Raises
-    ------
-    gaincal.NoiseDiodeNotFound
-        If the noise diode tables are not present in the FITS file
-
-    """
-    def __init__(self, filename, feed_id=None):
-        NoiseDiodeModel.__init__(self, [], [])
-        # Open FITS file
-        try:
-            hdu = pyfits.open(filename)
-        except (IOError, TypeError):
-            msg = 'The FITS file (%s) cannot be read!' % filename
-            logger.error(msg)
-            raise IOError(msg)
-        # First assume file is a data FITS file, since feed ID will then be extracted from file
-        if feed_id is None:
-            # Load data FITS file tables
-            try:
-                feed_id = int(hdu['PRIMARY'].header['FeedID'])
-                temperature_h = hdu['CAL_TEMP_B%dP1' % feed_id].data
-                temperature_v = hdu['CAL_TEMP_B%dP2' % feed_id].data
-            except KeyError:
-                raise NoiseDiodeNotFound('Noise diode tables not found in FITS file')
-        else:
-            # Load cal FITS file tables instead, which will have feed ID specified externally
-            # nd_type = hdu[0].header.get('NAME')
-            if (len(hdu) != 5) or \
-               (hdu[1].name != 'CAL_TEMP_B0P1') or (hdu[2].name != 'CAL_TEMP_B0P2') or \
-               (hdu[3].name != 'CAL_TEMP_B1P1') or (hdu[4].name != 'CAL_TEMP_B1P2'):
-                raise NoiseDiodeNotFound('Noise diode tables not found in FITS file')
-            if feed_id not in [0, 1]:
-                msg = 'Feed ID should be 0 (main feed) or 1 (offset feed)'
-                logger.error(msg)
-                raise ValueError(msg)
-            temperature_h = hdu[2 * feed_id + 1].data
-            temperature_v = hdu[2 * feed_id + 2].data
-        # Store H and V tables
-        self.temperature_h = np.vstack((np.array(temperature_h.field('Freq') / 1e6, dtype='double'),
-                                        np.array(temperature_h.field('Temp'), dtype='double'))).transpose()
-        self.temperature_v = np.vstack((np.array(temperature_v.field('Freq') / 1e6, dtype='double'),
-                                        np.array(temperature_v.field('Temp'), dtype='double'))).transpose()
-        hdu.close()
-
-#--------------------------------------------------------------------------------------------------
 #--- FUNCTIONS
 #--------------------------------------------------------------------------------------------------
 
@@ -196,6 +129,78 @@ def acsm_antenna_description(mount):
         return descr
     # This is typically a futile thing to return, but will help debug why the above match failed
     return descr
+
+def load_xdm_noise_models(filename, feed_id=None):
+    """Load noise diode calibration data (XDM FITS version).
+
+    This allows the (randomised) calculation of the noise diode temperature from
+    the tables stored in a FITS file, as a function of frequency. This is the
+    second version, used for XDM after April 2009, which uses a simple
+    temperature lookup table as a function of frequency for each feed
+    (independent of rotator angle). This can load data from both the data FITS
+    file and the optional cal FITS file. In the latter case the feed ID has to
+    be specified (but not in the former case).
+
+    Parameters
+    ----------
+    filename : string
+        Name of data or cal FITS file
+    feed_id : integer or None, optional
+        Feed ID number (0 or 1), which should only be used for cal FITS file
+
+    Returns
+    -------
+    nd_h_model, nd_v_model : :class:`NoiseDiodeModel` objects
+        Noise diode models for H and V polarisations
+
+    Raises
+    ------
+    gaincal.NoiseDiodeNotFound
+        If the noise diode tables are not present in the FITS file
+
+    """
+    # Open FITS file
+    try:
+        hdu = pyfits.open(filename)
+    except (IOError, TypeError):
+        msg = 'The FITS file (%s) cannot be read!' % filename
+        logger.error(msg)
+        raise IOError(msg)
+    # First assume file is a data FITS file, since feed ID will then be extracted from file
+    if feed_id is None:
+        # Load data FITS file tables
+        try:
+            feed_id = int(hdu['PRIMARY'].header['FeedID'])
+            temperature_h = hdu['CAL_TEMP_B%dP1' % feed_id].data
+            temperature_v = hdu['CAL_TEMP_B%dP2' % feed_id].data
+        except KeyError:
+            raise NoiseDiodeNotFound('Noise diode tables not found in FITS file')
+    else:
+        # Load cal FITS file tables instead, which will have feed ID specified externally
+        # nd_type = hdu[0].header.get('NAME')
+        if (len(hdu) != 5) or \
+           (hdu[1].name != 'CAL_TEMP_B0P1') or (hdu[2].name != 'CAL_TEMP_B0P2') or \
+           (hdu[3].name != 'CAL_TEMP_B1P1') or (hdu[4].name != 'CAL_TEMP_B1P2'):
+            raise NoiseDiodeNotFound('Noise diode tables not found in FITS file')
+        if feed_id not in [0, 1]:
+            msg = 'Feed ID should be 0 (main feed) or 1 (offset feed)'
+            logger.error(msg)
+            raise ValueError(msg)
+        temperature_h = hdu[2 * feed_id + 1].data
+        temperature_v = hdu[2 * feed_id + 2].data
+    # Create H and V models
+    nd_h_model = NoiseDiodeModel(np.array(temperature_h.field('Freq') / 1e6, dtype='double'),
+                                 np.array(temperature_h.field('Temp'), dtype='double'),
+                                 interp='Spline1DFit(std_y=lambda freq, temp: np.tile(1.0, len(temp)))',
+                                 antenna='XDM', pol='H', diode='injector', date='2009-03-27',
+                                 feed=('main' if feed_id == 0 else 'offset'))
+    nd_v_model = NoiseDiodeModel(np.array(temperature_v.field('Freq') / 1e6, dtype='double'),
+                                 np.array(temperature_v.field('Temp'), dtype='double'),
+                                 interp='Spline1DFit(std_y=lambda freq, temp: np.tile(1.0, len(temp)))',
+                                 antenna='XDM', pol='V', diode='injector', date='2009-03-27',
+                                 feed=('main' if feed_id == 0 else 'offset'))
+    hdu.close()
+    return nd_h_model, nd_v_model
 
 def load_scan(filename):
     """Load scan from single XDM FITS file.
@@ -336,8 +341,8 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
         Correlator configuration object
     antenna : string
         Description string of antenna that produced the data set
-    nd_model : :class:`NoiseDiodeXDM` object
-        Noise diode model
+    nd_h_model, nd_v_model : :class:`NoiseDiodeXDM` object
+        Noise diode models for H and V polarisations
     enviro : dict of record arrays
         Environmental (weather) measurements. The keys of the dict are strings
         indicating the type of measurement ('temperature', 'pressure', etc),
@@ -376,7 +381,7 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
         raise IOError("Data file '%s' not found" % data_filename)
     # Group all FITS files (= scans) with the same experiment sequence number into a compound scan
     scanlists, targets = {}, {}
-    nd_model = None
+    nd_h_model = nd_v_model = None
     enviro_list = []
     for fits_file in filelist:
         scan, data_unit, corrconf, target, antenna, exp_seq_num, feed_id, scan_enviro = load_scan(fits_file)
@@ -391,11 +396,11 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
                "Each scan in a compound scan is required to have the same target"
         targets[exp_seq_num] = target
         # Load noise diode characteristics if available
-        if nd_model is None:
+        if nd_h_model is None and nd_v_model is None:
             # Alternate cal FITS file overrides the data set version
             if nd_filename:
                 try:
-                    nd_model = NoiseDiodeXDM(nd_filename, feed_id)
+                    nd_h_model, nd_v_model = load_xdm_noise_models(nd_filename, feed_id)
                     logger.info("Loaded alternate noise diode characteristics from %s" % nd_filename)
                 except NoiseDiodeNotFound:
                     logger.warning("Could not load noise diode data from " + nd_filename)
@@ -404,7 +409,7 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
             # Fall back to noise diode data in data FITS file
             if nd_filename is None:
                 try:
-                    nd_model = NoiseDiodeXDM(data_filename)
+                    nd_h_model, nd_v_model = load_xdm_noise_models(data_filename)
                     logger.info("Loaded noise diode characteristics from %s" % fits_file)
                 except NoiseDiodeNotFound:
                     pass
@@ -445,4 +450,4 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
                     logger.warning("No target in catalogue close enough to '%s' (closest is %.1f arcsecs away)" %
                                    (target.name, rad2deg(distance[closest]) * 3600.))
         compscanlist.append(CompoundScan(scanlist, target))
-    return compscanlist, data_unit, corrconf, antenna, nd_model, enviro
+    return compscanlist, data_unit, corrconf, antenna, nd_h_model, nd_v_model, enviro

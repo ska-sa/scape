@@ -40,10 +40,12 @@ class SaveLoadTestCases(unittest.TestCase):
         channel_select = list(set(range(num_chans)) - set(rfi_channels))
         corrconf = compoundscan.CorrelatorConfig(freqs, np.tile(1.0, num_chans).astype(np.float64),
                                                  channel_select, 1.0)
-        temp = np.column_stack((freqs, 20.0 + np.random.randn(len(freqs))))
-        nd_model = gaincal.NoiseDiodeModel(temp, temp)
+        nd_h_model = gaincal.NoiseDiodeModel(freqs, 20.0 + np.random.randn(len(freqs)),
+                                             antenna='Test', pol='H', diode='coupler', date='2010-10-20')
+        nd_v_model = gaincal.NoiseDiodeModel(freqs, 20.0 + np.random.randn(len(freqs)),
+                                             antenna='Test', pol='V', diode='coupler', date='2010-10-20')
         self.d = dataset.DataSet('', [cs1, cs2], '007', 'tester', 'Test', 'counts',
-                                 corrconf, 'Test, 0, 0, 0, 15.0', None, nd_model, enviro)
+                                 corrconf, 'Test, 0, 0, 0, 15.0', None, nd_h_model, nd_v_model, enviro)
         self.filename = 'scape_test_dataset.h5'
         if os.path.exists(self.filename):
             os.remove(self.filename)

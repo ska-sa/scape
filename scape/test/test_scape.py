@@ -86,9 +86,11 @@ class PointSourceScanTestCases(unittest.TestCase):
                                                names=('timestamp', 'value', 'status')),
                   'wind_direction' : np.rec.array([timestamps[0], np.float32(45.2), 'nominal'],
                                                   names=('timestamp', 'value', 'status'))}
-        nd_model = scape.gaincal.NoiseDiodeModel(np.array([[center_freq_MHz, 10.]]), np.array([[center_freq_MHz, 10.]]))
+        nd_h_model = scape.gaincal.NoiseDiodeModel([center_freq_MHz], [10.], interp='Polynomial1DFit(max_degree=1)')
+        nd_v_model = scape.gaincal.NoiseDiodeModel([center_freq_MHz], [10.], interp='Polynomial1DFit(max_degree=1)')
         self.dataset = scape.DataSet('', [scape.CompoundScan(scanlist, target, 'compscan')],
-                                     '008', 'tester', 'Unit test.', 'Jy', corrconf, ant, None, nd_model, enviro)
+                                     '008', 'tester', 'Unit test.', 'Jy', corrconf, ant, None,
+                                     nd_h_model, nd_v_model, enviro)
 
     def test_beam_fit(self):
         """Check if beam fitting is successful."""

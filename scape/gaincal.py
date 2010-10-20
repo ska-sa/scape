@@ -1,11 +1,38 @@
 """Gain calibration via noise injection."""
 
 import numpy as np
+import re
 
+import fitting
 from .fitting import Spline1DFit, Polynomial1DFit, Spline2DGridFit
 from .fitting import randomise as fitting_randomise
 from .stats import robust_mu_sigma, minimise_angle_wrap
 from .scan import scape_pol
+
+def load_csv_with_header(csv_file):
+    """Load CSV file containing commented-out header with key-value pairs.
+
+    Parameters
+    ----------
+    csv_file : file object or string
+        File object of opened CSV file, or string containing the file name
+
+    Returns
+    -------
+    csv : array, shape (N, M)
+        CSV data as a 2-dimensional array with N rows and M columns
+    attrs : dict
+        Key-value pairs extracted from header
+
+    """
+    csv_file = file(csv_file) if isinstance(csv_file, basestring) else csv_file
+    start = csv_file.tell()
+    csv = np.loadtxt(csv_file, comments='#', delimiter=',')
+    csv_file.seek(start)
+    header = [line[1:].strip() for line in csv_file.readlines() if line[0] == '#']
+    keyvalue = re.compile('\A([a-z]\w*)\s*[:=]\s*(.+)')
+    attrs = dict([keyvalue.match(line).groups() for line in header if keyvalue.match(line)])
+    return csv, attrs
 
 #--------------------------------------------------------------------------------------------------
 #--- CLASS :  NoiseDiodeModel
@@ -16,33 +43,82 @@ class NoiseDiodeNotFound(Exception):
     pass
 
 class NoiseDiodeModel(object):
-    """Container for noise diode calibration data.
+    """Container for the measured spectrum of a single noise diode.
 
-    This allows different noise diode data formats to co-exist in the code.
+    The noise temperature of a noise diode is measured in K at a sequence of
+    frequencies in MHz. An interpolator allows the noise diode temperature to be
+    evaluated at any frequency, and optionally smoothes the data. Additionally,
+    metadata related to the noise diode are available as attributes of this
+    object.
+
+    The noise diode model may be constructed explicitly from a frequency and
+    temperature array and a dictionary of attributes, or it may be loaded from
+    a text file if the first parameter is a filename string. If no parameters
+    are specified, the default model has a temperature of 1 K for all
+    frequencies.
 
     Parameters
     ----------
-    temperature_h : real array-like, shape (N, 2)
-        Table containing frequencies [MHz] in the first column and measured
-        temperatures [K] in the second column, for H polarisation
-    temperature_v : real array-like, shape (N, 2)
-        Table containing frequencies [MHz] in the first column and measured
-        temperatures [K] in the second column, for V polarisation
-    std_temp : float, optional
-        Standard deviation of H and V temperatures [K] which determines
-        smoothness of interpolation
+    freq : real array-like, shape (N,) or file or string or None, optional
+        Array of frequencies where temperature was measured, in MHz.
+        Alternatively, a CSV file (or its name) containing noise diode data.
+    temp : real array-like, shape (N,) or None, optional
+        Array of temperature measurements, in K (ignored if filename was given)
+    interp : string or None, optional
+        Interpolator to use, as a string that can be evaluated in namespace of
+        :mod:`fitting` module to create a :class:`fitting.ScatterFit` object
+        (default is piecewise linear interpolator)
+    kwargs : dict, optional
+        Additional parameters that are turned into attributes of this object.
+        Example parameters include *antenna*, *pol*, *diode* and *date*.
+
+    Notes
+    -----
+    An example of a noise diode model text file is::
+
+      # antenna = ant1
+      # pol = H
+      # diode = coupler
+      # date = 2010-08-05
+      # interp = PiecewisePolynomial1DFit(max_degree=3)
+      #
+      # freq [Hz], T_nd [K]
+      1190562500, 4.194
+      1191343750, 4.226
+      1192125000, 4.226
+      ..snip
+
+    The frequencies are specified in Hz, and the noise diode temperature in K.
+    These form two required comma-separated columns. Additionally, optional
+    attributes may be added as key=value pairs, commented out with hashes at
+    the top of the file.
 
     """
-    def __init__(self, temperature_h, temperature_v, std_temp=1.0):
-        self.temperature_h = np.asarray(temperature_h)
-        self.temperature_v = np.asarray(temperature_v)
-        self.std_temp = std_temp
+    def __init__(self, freq=None, temp=None, interp=None, **kwargs):
+        # The default noise diode model has temperature of 1 K at all frequencies
+        if freq is None and temp is None and interp is None:
+            freq, temp = np.array([1.]), np.array([1.])
+            interp = 'Polynomial1DFit(max_degree=0)'
+        # If filename or file-like object is given, load data from file instead
+        elif isinstance(freq, basestring) or hasattr(freq, 'readlines'):
+            csv, attrs = load_csv_with_header(freq)
+            # Keyword arguments override parameters in file
+            attrs.update(kwargs)
+            kwargs = attrs
+            interp = kwargs.get('interp', None) if interp is None else interp
+            freq, temp = csv[:, 0] / 1e6, csv[:, 1]
+        assert len(freq) == len(temp), \
+               'Frequency and temperature arrays should have the same length (%d vs %d)' % (len(freq), len(temp))
+        self.freq = freq
+        self.temp = temp
+        self.interp = 'PiecewisePolynomial1DFit(max_degree=1)' if interp is None else interp
+        for key, val in kwargs.iteritems():
+            setattr(self, key, val)
 
     def __eq__(self, other):
         """Equality comparison operator."""
-        return np.all(self.temperature_h == other.temperature_h) and \
-               np.all(self.temperature_v == other.temperature_v) and \
-               (self.std_temp == other.std_temp)
+        return (vars(self).keys() == vars(other).keys()) and \
+               np.all([np.all(getattr(self, attr) == getattr(other, attr)) for attr in vars(self)])
 
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -54,9 +130,6 @@ class NoiseDiodeModel(object):
         Obtain interpolated noise diode temperature at desired frequencies.
         Optionally, randomise the smooth fit to the noise diode power spectrum,
         to represent some uncertainty as part of a larger Monte Carlo iteration.
-        The function returns an array of shape (*F*, 2), where the first
-        dimension is frequency and the second dimension represents the feed
-        input ports (H and V polarisations).
 
         Parameters
         ----------
@@ -67,23 +140,18 @@ class NoiseDiodeModel(object):
 
         Returns
         -------
-        temp : real array, shape (*F*, 2)
-            Noise diode temperature interpolated to the frequencies in *freqs*,
-            for H and V polarisations
+        temp : real array, shape (*F*,)
+            Noise diode temperature interpolated to the frequencies in *freqs*
 
         """
-        # Fit a spline to power spectrum measurements (or straight line if too few measurements)
-        std_temp = lambda freq, temp: np.tile(self.std_temp, len(temp))
-        interp_h = Spline1DFit(std_y=std_temp) if self.temperature_h.shape[0] > 4 else Polynomial1DFit(max_degree=1)
-        interp_v = Spline1DFit(std_y=std_temp) if self.temperature_v.shape[0] > 4 else Polynomial1DFit(max_degree=1)
-        interp_h.fit(self.temperature_h[:, 0], self.temperature_h[:, 1])
-        interp_v.fit(self.temperature_v[:, 0], self.temperature_v[:, 1])
+        # Instantiate interpolator object and fit to measurements
+        interp = eval(self.interp, vars(fitting))
+        interp.fit(self.freq, self.temp)
         # Optionally perturb the fit
         if randomise:
-            interp_h = fitting_randomise(interp_h, self.temperature_h[:, 0], self.temperature_h[:, 1], 'shuffle')
-            interp_v = fitting_randomise(interp_v, self.temperature_v[:, 0], self.temperature_v[:, 1], 'shuffle')
+            interp = fitting_randomise(interp, self.freq, self.temp, 'shuffle')
         # Evaluate the smoothed spectrum at the desired frequencies
-        return np.dstack((interp_h(freqs), interp_v(freqs))).squeeze()
+        return interp(freqs)
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTIONS
@@ -288,11 +356,12 @@ def estimate_gain(dataset, interp_degree=1, time_width=900.0, freq_width='all', 
     if randomise:
         deltas += np.concatenate([p[np.newaxis] for p in nd_jump_power_sigma]) * \
                   np.random.standard_normal(deltas.shape)
-    # Interpolate noise diode model to channel frequencies
-    temp_nd = np.atleast_2d(dataset.nd_model.temperature(dataset.freqs, randomise))
+    # Interpolate noise diode models to channel frequencies
+    temp_nd_h = dataset.nd_h_model.temperature(dataset.freqs, randomise)
+    temp_nd_v = dataset.nd_v_model.temperature(dataset.freqs, randomise)
     # The HH (and VV) gain is defined as (Pon - Poff) / Tcal, in counts per K
-    deltas[:, :, scape_pol.index('HH')] /= temp_nd[np.newaxis, :, 0]
-    deltas[:, :, scape_pol.index('VV')] /= temp_nd[np.newaxis, :, 1]
+    deltas[:, :, scape_pol.index('HH')] /= temp_nd_h
+    deltas[:, :, scape_pol.index('VV')] /= temp_nd_v
 
     # Create time-frequency bins and average data into these bins
     time_bins, time_avg = _partition_into_bins(nd_jump_times, time_width)
