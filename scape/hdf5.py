@@ -211,12 +211,12 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         try:
             if 'H' in antA_group:
                 nd_dataset = antA_group['H']['nd_model']
-                nd_h_model = NoiseDiodeModel(nd_dataset[:, 0], nd_dataset[:, 1], **dict(nd_dataset.attrs))
+                nd_h_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
                 if 'V' not in antA_group:
                     nd_v_model = NoiseDiodeModel()
             if 'V' in antA_group:
                 nd_dataset = antA_group['V']['nd_model']
-                nd_v_model = NoiseDiodeModel(nd_dataset[:, 0], nd_dataset[:, 1], **dict(nd_dataset.attrs))
+                nd_v_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
                 if 'H' not in antA_group:
                     nd_h_model = NoiseDiodeModel()
         except KeyError:
@@ -236,12 +236,12 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
             try:
                 if 'H' in antA_group:
                     nd_dataset = antA_group['H'][noise_diode + '_nd_model']
-                    nd_h_model = NoiseDiodeModel(nd_dataset[:, 0], nd_dataset[:, 1], **dict(nd_dataset.attrs))
+                    nd_h_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
                     if 'V' not in antA_group:
                         nd_v_model = NoiseDiodeModel()
                 if 'V' in antA_group:
                     nd_dataset = antA_group['V'][noise_diode + '_nd_model']
-                    nd_v_model = NoiseDiodeModel(nd_dataset[:, 0], nd_dataset[:, 1], **dict(nd_dataset.attrs))
+                    nd_v_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
                     if 'H' not in antA_group:
                         nd_h_model = NoiseDiodeModel()
             except KeyError:
@@ -443,7 +443,7 @@ def save_dataset(dataset, filename):
         h_group, v_group = antA_group.create_group('H'), antA_group.create_group('V')
         for nd_model, pol_group in zip([dataset.nd_h_model, dataset.nd_v_model], [h_group, v_group]):
             if nd_model is not None:
-                nd_data = np.column_stack((nd_model.freq, nd_model.temp))
+                nd_data = np.column_stack((nd_model.freq * 1e6, nd_model.temp))
                 nd_dataset = pol_group.create_dataset('nd_model', data=nd_data, compression='gzip')
                 for key, val in vars(nd_model).iteritems():
                     if key not in ('freq', 'temp'):
