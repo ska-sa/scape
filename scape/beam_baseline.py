@@ -277,6 +277,16 @@ def fit_beam_and_baselines(compscan, expected_width, dof, bl_degrees=(1, 3), pol
         radius = np.sqrt(((target_coords - beam.center[:, np.newaxis]) ** 2).sum(axis=0))
         # This threshold should be close to first nulls of beam - too wide compromises baseline fit
         outer = radius > beam.radius_first_null
+        # If outer list is empty, all samples lie within first null of beam center - abort fitting
+        if not outer.any():
+            logger.warning("All data marked as part of beam - scan extent too small to continue fitting " +
+                           "(are you tracking the target?)")
+            return None, [None] * len(compscan.scans) if refine_beam else [], initial_baseline
+        # If all data is still in outer region, beam was typically found outside scan area - abort fitting
+        # Since the outer list is the only state of the initial fitter, this would mean we are back where we started
+        if outer.all():
+            logger.warning("All data marked as part of baseline - beam too far outside scan area to continue fitting")
+            return None, [None] * len(compscan.scans) if refine_beam else [], initial_baseline
         # Check if error remaining after baseline and beam fit has converged, and stop if it has
         resid = bl_resid - beam(target_coords)
         err_power = np.dot(resid, resid)
