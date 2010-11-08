@@ -368,7 +368,13 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                         nd_on = remove_duplicates(sensors_group[sensor])
                         # Do step-wise interpolation (as flag is either 0 or 1 and holds its value until it toggles)
                         interp = PiecewisePolynomial1DFit(max_degree=0)
-                        interp.fit(nd_on['timestamp'], nd_on['value'].astype(int))
+                        try:
+                            # Assumes that flag values are '1' and '0' (or 1 and 0) for True and False, respectively
+                            nd_flags = nd_on['value'].astype(int)
+                        except ValueError:
+                            # Assumes that flag values are 'True' and 'False' for True and False, respectively
+                            nd_flags = [(1 if flag == 'True' else 0) for flag in nd_on['value']]
+                        interp.fit(nd_on['timestamp'], nd_flags)
                         scan_flags = np.rec.fromarrays([interp(data_timestamps).astype(bool)], names=('nd_on',))
                     else:
                         logger.warning(("Selected noise diode sensor '%s'" % (sensor,)) +
