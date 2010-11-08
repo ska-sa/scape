@@ -241,3 +241,26 @@ class ScanTestCases(unittest.TestCase):
         assert_almost_equal(self.scan_if.pol('XX') + self.scan_if.pol('YY'), self.scan_if.pol('I'))
         np.testing.assert_equal(1j * (self.scan_if.pol('HV') - self.scan_if.pol('VH')), self.scan_if.pol('V'))
         assert_almost_equal(1j * (self.scan_if.pol('YX') - self.scan_if.pol('XY')), self.scan_if.pol('V'), decimal=13)
+
+    def test_select(self):
+        """Test Scan time/frequency selection."""
+        data = self.scan_sd.data
+        # Check verbatim copies
+        self.assertTrue((self.scan_sd.select(copy=True).data == data).all())
+        self.assertEqual(id(self.scan_sd.select(copy=False).data), id(data))
+        # Test time selection via indices and masks
+        tselect = [0, 50, 100]
+        self.assertTrue((self.scan_sd.select(timekeep=tselect, copy=True).data == data[tselect, :, :]).all())
+        tmask = np.tile(False, data.shape[0])
+        tmask[tselect] = True
+        self.assertTrue((self.scan_sd.select(timekeep=tselect, copy=True).data == data[tselect, :, :]).all())
+        self.assertRaises(IndexError, self.scan_sd.select, timekeep=[0, 50, 1000], copy=True)
+        self.assertRaises(IndexError, self.scan_sd.select, timekeep=np.tile(False, 2 * data.shape[0]), copy=True)
+        # Test frequency selection via indices and masks
+        fselect = [0, 8, 15]
+        self.assertTrue((self.scan_sd.select(freqkeep=fselect, copy=True).data == data[:, fselect, :]).all())
+        fmask = np.tile(False, data.shape[1])
+        fmask[fselect] = True
+        self.assertTrue((self.scan_sd.select(freqkeep=fselect, copy=True).data == data[:, fselect, :]).all())
+        self.assertRaises(IndexError, self.scan_sd.select, freqkeep=[0, 50, 1000], copy=True)
+        self.assertRaises(IndexError, self.scan_sd.select, freqkeep=np.tile(False, 2 * data.shape[1]), copy=True)

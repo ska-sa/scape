@@ -338,11 +338,11 @@ class Scan(object):
 
         Parameters
         ----------
-        timekeep : sequence of bools or ints, optional
+        timekeep : sequence of bools or ints or None, optional
             Sequence of indicators of which time samples to keep (either integer
             indices or booleans that are True for the values to be kept). The
             default is None, which keeps everything.
-        freqkeep : sequence of bools or ints, optional
+        freqkeep : sequence of bools or ints or None, optional
             Sequence of indicators of which frequency channels/bands to keep
             (either integer indices or booleans that are True for the values to
             be kept). The default is None, which keeps everything.
@@ -354,7 +354,32 @@ class Scan(object):
         scan : :class:`Scan` object
             Scan with reduced data matrix (either masked array or smaller copy)
 
+        Raises
+        ------
+        IndexError
+            If time or frequency selection is out of range
+
         """
+        # Check time selection against data array size
+        if timekeep is not None:
+            if np.asarray(timekeep).dtype == 'bool':
+                if len(timekeep) != self.data.shape[0]:
+                    raise IndexError('Length of time selection mask (%d) differs from data shape (%d)' %
+                                     (len(timekeep), self.data.shape[0]))
+            else:
+                if (np.asarray(timekeep).min() < 0) or (np.asarray(timekeep).max() >= self.data.shape[0]):
+                    raise IndexError('Selected time indices out of range (should be 0..%d, but are %d..%d)' %
+                                     (self.data.shape[0] - 1, np.asarray(timekeep).min(), np.asarray(timekeep).max()))
+        # Check frequency selection against data array size
+        if freqkeep is not None:
+            if np.asarray(freqkeep).dtype == 'bool':
+                if len(freqkeep) != self.data.shape[1]:
+                    raise IndexError('Length of frequency selection mask (%d) differs from data shape (%d)' %
+                                     (len(freqkeep), self.data.shape[1]))
+            else:
+                if (np.asarray(freqkeep).min() < 0) or (np.asarray(freqkeep).max() >= self.data.shape[1]):
+                    raise IndexError('Selected frequency channels out of range (should be 0..%d, but are %d..%d)' %
+                                     (self.data.shape[1] - 1, np.asarray(freqkeep).min(), np.asarray(freqkeep).max()))
         # Use advanced indexing to create a smaller copy of the data matrix
         if copy:
             # If data matrix is kept intact, make a straight copy - probably faster
