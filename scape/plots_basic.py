@@ -765,7 +765,7 @@ def save_fits_image(filename, x, y, Z, target_name='', coord_system='radec',
         Matrix of z values, with rows associated with *y* and columns with *x*
     target_name : string, optional
         Name of source being imaged
-    coord_system : {'radec', 'azel'}, optional
+    coord_system : {'radec', 'azel', 'lm'}, optional
         Spherical coordinate system serving as basis for *x* and *y*
     projection_type : {'ARC', 'SIN', 'TAN', 'STG', 'CAR'}, optional
         Type of spherical projection used to obtain *x*-*y* plane
@@ -800,6 +800,8 @@ def save_fits_image(filename, x, y, Z, target_name='', coord_system='radec',
         axes = ['AZ---' + projection_type, 'EL---' + projection_type]
     elif coord_system == 'radec':
         axes = ['RA---' + projection_type, 'DEC--' + projection_type]
+    elif coord_system == 'lm':
+        axes = ['L', 'M']
     else:
         raise ValueError('Unknown coordinate system for FITS image')
     if data_unit == 'counts':
