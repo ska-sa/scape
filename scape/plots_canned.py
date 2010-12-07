@@ -4,8 +4,12 @@ import time
 import logging
 
 import numpy as np
-import matplotlib as mpl
-import matplotlib.pyplot as plt
+
+try:
+    import matplotlib as mpl
+    import matplotlib.pyplot as plt
+except ImportError:
+    pass
 
 from katpoint import rad2deg, Timestamp, construct_azel_target
 from .fitting import PiecewisePolynomial1DFit

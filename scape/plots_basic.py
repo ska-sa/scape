@@ -3,10 +3,17 @@
 import logging
 
 import numpy as np
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 
-import pyfits
+try:
+    import matplotlib as mpl
+    import matplotlib.pyplot as plt
+except ImportError:
+    pass
+
+try:
+    import pyfits
+except ImportError:
+    pass
 
 logger = logging.getLogger("scape.plots_basic")
 
