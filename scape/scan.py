@@ -96,8 +96,8 @@ class Scan(object):
     compscan : :class:`CompoundScan` object, optional
         Parent compound scan of which this scan forms a part
 
-    Arguments
-    ---------
+    Attributes
+    ----------
     has_autocorr : bool
         True if the scan contains autocorrelation data in real single-dish format
 

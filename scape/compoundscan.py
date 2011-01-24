@@ -16,8 +16,14 @@ Functionality: beam/baseline fitting, instant mount coords, ...
 """
 
 import numpy as np
+import logging
 
 import katpoint
+
+from .beam_baseline import fit_beam_and_baselines
+from .stats import remove_spikes
+
+logger = logging.getLogger("scape.compoundscan")
 
 #--------------------------------------------------------------------------------------------------
 #--- CLASS :  CorrelatorConfig
@@ -193,6 +199,76 @@ class CompoundScan(object):
         """Short human-friendly string representation of compound scan object."""
         return "<scape.CompoundScan '%s' target='%s' scans=%d at 0x%x>" % \
                (self.label, self.target.name, len(self.scans), id(self))
+
+    def fit_beam_and_baselines(self, pol='I', circular_beam='auto', bl_degrees=(1, 3),
+                               refine_beam=True, spike_width=0, band=0):
+        """Simultaneously fit beam and baselines to all scans in a compound scan.
+
+        This fits a beam pattern and baselines to the selected power data in all
+        the scans comprising the compound scan. The beam pattern is a Gaussian
+        function of the two-dimensional target coordinates for the entire
+        compound scan. The initial baseline is a two-dimensional polynomial
+        function of the target coordinates, also for the entire compound scan.
+        This baseline may be refined to a set of separate baselines (one per
+        scan) that are first-order polynomial functions of time, while the beam
+        is refined by refitting it in the inner region close to the peak that is
+        typically a better fit to a Gaussian function than in the tails. Only
+        one frequency band is used. The power data is optionally smoothed to
+        remove spikes before fitting. More details on the algorithm can be found
+        in the documentation of :func:`beam_baseline.fit_beam_and_baselines`.
+
+        Parameters
+        ----------
+        pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'}, optional
+            The coherency / Stokes parameter which will be fit. Beam fits are not
+            advised for 'Q', 'U' and 'V', which usually have non-Gaussian beams.
+        circular_beam : {'auto', True, False}, optional
+            True forces beam to be circular, while False allows for an elliptical
+            beam. The default chooses this automatically (False for 'HH', 'VV',
+            'XX' and 'YY' pols, and True for the rest).
+        bl_degrees : sequence of 2 ints, optional
+            Degrees of initial polynomial baseline, along *x* and *y* coordinate
+        refine_beam : {True, False}, optional
+            If true, baselines are refined per scan and beam is refitted to
+            within FWHM region around peak. This is a good idea for linear scans,
+            but not for spiral or other exotic scans.
+        spike_width : int, optional
+            Spikes with widths up to this limit (in samples) will be removed from
+            data before fitting. The downside of spike removal is that beam tops
+            are clipped, more so for larger values of *spike_width*. A width
+            of <= 0 implies no spike removal.
+        band : int, optional
+            Frequency band in which to fit beam and baselines
+
+        """
+        scan_coords = [scan.target_coords for scan in self.scans]
+        scan_data = [remove_spikes(scan.pol(pol)[:, band], spike_width=spike_width) for scan in self.scans]
+        # Auto beam shape picks a circular beam for dual-pol terms and elliptical beam for single-pol terms
+        dual_pol = pol not in ('HH', 'VV')
+        circular_beam = dual_pol if circular_beam == 'auto' else circular_beam
+        # FWHM beamwidth (in radians) for uniformly illuminated circular dish is 1.03 lambda / D
+        # FWHM beamwidth for Gaussian-tapered circular dish is 1.22 lambda / D
+        # The antenna beamwidth factor is somewhere between 1.03 and 1.22
+        ant = self.dataset.antenna
+        expected_width = ant.beamwidth * katpoint.lightspeed / (self.dataset.freqs[band]*1e6) / ant.diameter
+        if not circular_beam:
+            expected_width = [expected_width, expected_width]
+        # Degrees of freedom is time-bandwidth product (2 * BW * t_dump) of each sample
+        dof = 2.0 * (self.dataset.bandwidths[band] * 1e6) / self.dataset.dump_rate
+        # Stokes I etc has double the degrees of freedom, as it is the sum of the independent HH and VV samples
+        dof = 2 * dof if dual_pol else dof
+        # Refining the beam and baselines requires scan timestamps
+        scan_timestamps = [scan.timestamps for scan in self.scans] if refine_beam else None
+        # Fit beam and baselines directly to positive coherencies / Stokes params only, otherwise use I as proxy
+        positive_pol = pol not in ('Q', 'U', 'V')
+        scan_total_power = [remove_spikes(scan.pol('I')[:, band], spike_width=spike_width) for scan in self.scans] \
+                           if not positive_pol else None
+        logger.debug("Fitting beam and initial baseline of degree (%d, %d) to pol '%s' of target '%s':" %
+                     (bl_degrees[0], bl_degrees[1], pol if positive_pol else 'I', self.target.name))
+        self.beam, baselines, self.baseline = fit_beam_and_baselines(scan_coords, scan_data, expected_width, dof,
+                                                                     bl_degrees, scan_timestamps, scan_total_power)
+        for scan, bl in zip(self.scans, baselines):
+            scan.baseline = bl
 
     def baseline_height(self):
         """Estimate height of fitted baseline (at fitted beam center).

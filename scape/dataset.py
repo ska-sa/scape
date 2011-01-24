@@ -8,7 +8,6 @@ import numpy as np
 import katpoint
 from .compoundscan import CompoundScan
 from .gaincal import calibrate_gain, NoSuitableNoiseDiodeDataFound
-from .beam_baseline import fit_beam_and_baselines
 
 # Try to import all available formats
 try:
@@ -491,28 +490,13 @@ class DataSet(object):
         self.corrconf.merge(channels_per_band)
         return self
 
-    def fit_beams_and_baselines(self, pol='I', band=0, circular_beam=True, compscan=-1, **kwargs):
+    def fit_beams_and_baselines(self, *args, **kwargs):
         """Simultaneously fit beams and baselines to all compound scans.
 
-        This fits a beam pattern and baseline to the total power data of all the
-        scans comprising each compound scan, and stores the resulting fitted
-        functions in each CompoundScan and Scan object. Only one frequency band
-        is used.
-
-        Parameters
-        ----------
-        pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'}, optional
-            Coherency / Stokes parameter which will be fit. Beam fits are not
-            advised for 'Q', 'U' and 'V', which typically exhibit non-Gaussian beams.
-        band : int, optional
-            Frequency band in which to fit beam and baseline(s)
-        circular_beam : {True, False}, optional
-            True forces beam to be circular; False allows for elliptical beam
-        compscan : integer, optional
-            Index of compound scan to fit beam to (default is all compound scans)
-        kwargs : dict, optional
-            Extra keyword arguments are passed to underlying :mod:`beam_baseline`
-            functions
+        This fits a beam pattern and baseline to the power data of all the scans
+        comprising each compound scan, and stores the resulting fitted functions
+        in each :class:`CompoundScan` and :class:`Scan` object. For details on
+        the parameters, see :meth:`CompoundScan.fit_beams_and_baselines`.
 
         Returns
         -------
@@ -520,23 +504,6 @@ class DataSet(object):
             Data set with fitted beam/baseline functions added
 
         """
-        # Select all or one compscan
-        if compscan == -1:
-            compscans = self.compscans
-        else:
-            compscans = [self.compscans[compscan]]
-        # FWHM beamwidth for uniformly illuminated circular dish is 1.03 lambda / D
-        # FWHM beamwidth for Gaussian-tapered circular dish is 1.22 lambda / D
-        # The antenna beamwidth factor is somewhere between 1.03 and 1.22
-        expected_width = self.antenna.beamwidth * katpoint.lightspeed / (self.freqs[band]*1e6) / self.antenna.diameter
-        if not circular_beam:
-            expected_width = [expected_width, expected_width]
-        # Degrees of freedom is time-bandwidth product (2 * BW * t_dump) of each sample
-        # Stokes I would have double this value, as it is the sum of the independent XX and YY samples
-        dof = 2.0 * (self.bandwidths[band] * 1e6) / self.dump_rate
-        for compscan in compscans:
-            compscan.beam, baselines, compscan.baseline = fit_beam_and_baselines(compscan, expected_width, dof,
-                                                                                 pol=pol, band=band, **kwargs)
-            for scan, bl in zip(compscan.scans, baselines):
-                scan.baseline = bl
+        for compscan in self.compscans:
+            compscan.fit_beam_and_baselines(*args, **kwargs)
         return self
