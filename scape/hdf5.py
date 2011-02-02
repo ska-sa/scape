@@ -4,6 +4,7 @@ from __future__ import with_statement
 
 import logging
 import re
+import os.path
 
 import h5py
 import numpy as np
@@ -80,7 +81,7 @@ def remove_duplicates(sensor):
 
 # pylint: disable-msg=W0613
 def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
-                 noise_diode=None, time_offset=0.0, **kwargs):
+                 noise_diode=None, nd_models=None, time_offset=0.0, **kwargs):
     """Load data set from HDF5 file.
 
     This loads a data set from an HDF5 file. The file contains all the baselines
@@ -106,6 +107,10 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         Load the model and on/off flags of this noise diode. The default is to
         pick the noise diode with on/off activity if it is the only one showing
         activity, otherwise defaulting to 'coupler'.
+    nd_models : None or string, optional
+        Override the noise diode models in the HDF5 file using the ones in this
+        directory. This assumes that the model files have the format
+        '%(antenna).%(diode).%(pol).csv' (e.g. 'ant1.coupler.h.csv').
     time_offset : float, optional
         Offset to add to correlator timestamps, in seconds
     kwargs : dict, optional
@@ -206,22 +211,14 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
             # Environment sensors are optional
             if sensor in sensors_group:
                 enviro[quantity] = remove_duplicates(sensors_group[sensor])
-        # First try to load generic noise diode model (typically found in processed / intermediate file)
-        nd_h_model = nd_v_model = None
-        try:
-            if 'H' in antA_group:
-                nd_dataset = antA_group['H']['nd_model']
-                nd_h_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
-                if 'V' not in antA_group:
-                    nd_v_model = NoiseDiodeModel()
-            if 'V' in antA_group:
-                nd_dataset = antA_group['V']['nd_model']
-                nd_v_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
-                if 'H' not in antA_group:
-                    nd_h_model = NoiseDiodeModel()
-        except KeyError:
-            # Autodetect the noise diode to use, based on which sensor shows any activity
-            if noise_diode is None:
+        # Autodetect the noise diode to use, based on which sensor shows any activity
+        if not noise_diode:
+            # In a processed / intermediate file, there are no noise diode sensors - rather check model attribute
+            if 'H' in antA_group and 'nd_model' in antA_group['H']:
+                noise_diode = antA_group['H']['nd_model'].attrs.get('diode', None)
+            elif 'V' in antA_group and 'nd_model' in antA_group['V']:
+                noise_diode = antA_group['V']['nd_model'].attrs.get('diode', None)
+            else:
                 nd_fired = {}
                 for nd in ('coupler', 'pin'):
                     sensor = sensor_name[nd + '_nd_on']
@@ -232,30 +229,55 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                 else:
                     noise_diode = 'coupler'
                     logger.info("Defaulting to '%s' noise diode (either no or both diodes are firing)" % noise_diode)
-            # Now try to load selected noise diode
-            try:
+        # First try to load external noise diode models, if provided
+        nd_h_model = nd_v_model = None
+        if nd_models:
+            if not noise_diode:
+                raise ValueError('Unable to pick right noise diode model file, as noise diode could not be identified')
+            antA_name = antenna.split(',')[0]
+            if not antA_name:
+                raise ValueError('Unable to pick right noise diode model file, as antenna could not be identified')
+            nd_h_file = os.path.join(nd_models, '%s.%s.h.csv' % (antA_name, noise_diode))
+            nd_h_model = NoiseDiodeModel(nd_h_file)
+            logger.info("Loaded H noise diode model from '%s'" % (nd_h_file,))
+            nd_v_file = os.path.join(nd_models, '%s.%s.v.csv' % (antA_name, noise_diode))
+            nd_v_model = NoiseDiodeModel(nd_v_file)
+            logger.info("Loaded V noise diode model from '%s'" % (nd_v_file,))
+        else:
+            def load_nd_dataset(nd_dataset_name):
+                """Load H and V noise diode models from selected HDF5 dataset."""
+                nd_h_model = nd_v_model = None
                 if 'H' in antA_group:
-                    nd_dataset = antA_group['H'][noise_diode + '_nd_model']
+                    nd_dataset = antA_group['H'][nd_dataset_name]
                     nd_h_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
                     if 'V' not in antA_group:
                         nd_v_model = NoiseDiodeModel()
                 if 'V' in antA_group:
-                    nd_dataset = antA_group['V'][noise_diode + '_nd_model']
+                    nd_dataset = antA_group['V'][nd_dataset_name]
                     nd_v_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
                     if 'H' not in antA_group:
                         nd_h_model = NoiseDiodeModel()
+                return nd_h_model, nd_v_model
+            # Now try to load generic noise diode model (typically found in processed / intermediate file)
+            try:
+                nd_h_model, nd_v_model = load_nd_dataset('nd_model')
             except KeyError:
-                # Find noise diode model datasets common to both 'H' and 'V' (if these feeds exist)
-                nd_set = None
-                if 'H' in antA_group:
-                    nd_set = set([name.rpartition('_nd_model')[0] for name in antA_group['H']])
-                    nd_set.discard('')
-                if 'V' in antA_group:
-                    nd_set2 = set([name.rpartition('_nd_model')[0] for name in antA_group['V']])
-                    nd_set2.discard('')
-                    nd_set = nd_set2 if nd_set is None else nd_set.intersection(nd_set2)
-                raise ValueError("Unknown noise diode '%s', found the following models instead: %s" %
-                                 (noise_diode, list(nd_set)))
+                # Now try to load models for selected noise diode
+                try:
+                    nd_h_model, nd_v_model = load_nd_dataset(noise_diode + '_nd_model')
+                except KeyError:
+                    # No models were found for the selected diode - quit and report any ones that are there instead
+                    # Find noise diode model datasets common to both 'H' and 'V' (if these feeds exist)
+                    nd_set = None
+                    if 'H' in antA_group:
+                        nd_set = set([name.rpartition('_nd_model')[0] for name in antA_group['H']])
+                        nd_set.discard('')
+                    if 'V' in antA_group:
+                        nd_set2 = set([name.rpartition('_nd_model')[0] for name in antA_group['V']])
+                        nd_set2.discard('')
+                        nd_set = nd_set2 if nd_set is None else nd_set.intersection(nd_set2)
+                    raise ValueError("Unknown noise diode '%s', found the following models instead: %s" %
+                                     (noise_diode, list(nd_set)))
 
         # Load correlator configuration group
         corrconf_group = f['Correlator']

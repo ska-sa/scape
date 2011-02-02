@@ -124,6 +124,25 @@ class NoiseDiodeModel(object):
         """Inequality comparison operator."""
         return not self.__eq__(other)
 
+    def __str__(self):
+        """Verbose human-friendly string representation of noise diode model object."""
+        label = ''
+        for k, v in vars(self).iteritems():
+            if k in ('freq', 'temp'):
+                continue
+            label += '%s = %s\n' % (k, v)
+        label += 'freq range: %.0f to %.0f MHz\n' % (self.freq.min(), self.freq.max())
+        label += 'average temp: %.1f K' % (self.temp.mean(),)
+        return label
+
+    def __repr__(self):
+        """Short human-friendly string representation of noise diode model object."""
+        label = '%s ' % (getattr(self, 'antenna'),) if hasattr(self, 'antenna') else ''
+        label += '%s ' % (getattr(self, 'pol'),) if hasattr(self, 'pol') else ''
+        label += '%s ' % (getattr(self, 'diode'),) if hasattr(self, 'diode') else ''
+        label = "for '%s' diode" % (label.strip(),) if label else 'object'
+        return "<scape.gaincal.NoiseDiodeModel %s at 0x%x>" % (label, id(self))
+
     def temperature(self, freqs, randomise=False):
         """Obtain noise diode temperature at given frequencies.
 
