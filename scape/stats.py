@@ -299,6 +299,75 @@ def chi2_conf_interval(dof, mean=1.0, sigma=3.0):
     return lower, upper
 
 #--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  ratio_stats
+#--------------------------------------------------------------------------------------------------
+
+def ratio_stats(mean_num, std_num, mean_den, std_den, corrcoef=0, method='F'):
+    """Approximate 2nd-order statistics of ratio of correlated normal variables.
+
+    Given a normally distributed numerator *num* and denominator *den* with the
+    specified means, standard deviations and correlation coefficient, this
+    approximates the mean and standard deviation of the ratio *num* / *den*.
+    The function is vectorised, accepting arrays of matching size. Corner cases
+    are not checked yet, leading to division by zero...
+
+    Parameters
+    ----------
+    mean_num, std_num: float or array
+        Mean and standard deviation of numerator (std_num must be > 0)
+    mean_den, std_den: float or array
+        Mean and standard deviation of denominator (std_den must be > 0)
+    corrcoef : float or array, optional
+        Correlation coefficient of numerator and denominator (must be between
+        -1 and 1, but not exactly 1 or -1)
+    method : {'F', 'Marsaglia'}, optional
+        Approximation technique to use ('Marsaglia' is taken from [1]_, while
+        'F' seems to work better on a larger parameter space)
+    Returns
+    -------
+    mean_ratio, std_ratio : float or array
+        Approximate mean and standard deviation of ratio *num* / *den*
+
+    Notes
+    -----
+    This is inspired by the "practical" mean and standard deviation of a ratio
+    of correlated normal variables, as proposed in [1]_. The reference also
+    discusses the assumptions behind this approximation. Note that the ratio of
+    two normal variables is not normal itself, but may be approximately normal
+    for specific ranges of parameters. The method in [1]_ seems to break down
+    for large *mean_den*/*std_den* ratios, however, which is the most useful
+    regime for :mod:`scape`. The ratio is therefore modelled as an F-distributed
+    random variable instead, by default.
+
+    .. [1] G. Marsaglia, "Ratios of Normal Variables," Journal of Statistical
+       Software, vol. 16, no. 4, pp. 1-10, 2006.
+
+    """
+    # This follows the notation in [1]
+    # Transform num/den to standard form (a + x) / (b + y), with x and y uncorrelated standard normal vars
+    # Then num/den is distributed as 1/r (a + x) / (b + y) + s
+    # Therefore determine parameters a and b, scale r and translation s
+    s = corrcoef * std_num / std_den
+    b = mean_den / std_den
+    a = mean_num - s * mean_den
+    # Pick the sign of h so that a and b have the same sign
+    sign_h = 2 * (a >= 0) * (b >= 0) - 1
+    h = sign_h * std_num * np.sqrt(1. - corrcoef ** 2)
+    a /= h
+    r = std_den / h
+    if method == 'Marsaglia':
+        # Calculate the approximating or "practical" mean and variance of (a + x) / (b + y) a la Marsaglia
+        mean_axby = a / (1.01 * b - .2713)
+        var_axby = (a**2 + 1) / (b**2 + .108 * b - 3.795) - mean_axby**2
+        std_axby = np.sqrt(var_axby)
+    else:
+        # Calculate the approximate mean and standard deviation of (a + x) / (b + y) a la F-distribution
+        mean_axby = a * b / (b**2 - 1)
+        std_axby = np.abs(b) / (b**2 - 1) * np.sqrt((a**2 + b**2 - 1) / (b**2 - 2))
+    # Translate by s and scale by r
+    return s + mean_axby / r, std_axby / np.abs(r)
+
+#--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  identify_rfi_channels
 #--------------------------------------------------------------------------------------------------
 
