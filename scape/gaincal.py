@@ -351,7 +351,7 @@ def estimate_gain(dataset, interp_degree=1, time_width=900.0, freq_width='all', 
         time and frequency. The two inputs to these functions are arrays of
         timestamps and frequencies, of shapes (*T*,) and (*F*,), respectively,
         and the functions output real gain arrays of shape (*T*, *F*).
-    delta_re_hv, delta_im_hv : function, signature ``d = f(t)``
+    delta_re_hv, delta_im_hv : function, signature ``delta = f(time, freq)``
         Terms proportional to *cos(phi)* and *sin(phi)*, where *phi* is the
         phase of H relative to V. Each term is a function of time and frequency,
         and accepts arrays of timestamps and frequencies as inputs, of shapes
