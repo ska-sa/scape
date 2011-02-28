@@ -203,14 +203,37 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         if antenna2 == antenna:
             antenna2 = None
 
-        # Use antenna A for noise diode info and weather + pointing sensors
+        # Use first scan group to check for 'flags' and 'pointing' datasets (associated with processed / saved files)
+        try:
+            first_scan_group = f['Scans'].values()[0].values()[0]
+        except IndexError, AttributeError:
+            first_scan_group = {}
+
+        # Use antenna A for sensor data (weather, pointing, noise diode)
         sensors_group = antA_group['Sensors']
+
+        # Load weather sensor data
         enviro = {}
         for quantity in ['temperature', 'pressure', 'humidity', 'wind_speed', 'wind_direction']:
             sensor = sensor_name[quantity]
             # Environment sensors are optional
             if sensor in sensors_group:
                 enviro[quantity] = remove_duplicates(sensors_group[sensor])
+
+        # Load pointing sensor data and fit interpolator as a function of time
+        pointing_interp = {}
+        for coord in ('azim', 'elev'):
+            sensor = '%s_%s' % (selected_pointing, coord)
+            if sensor in sensors_group:
+                # Ensure pointing timestamps are unique before interpolation
+                original_coord = remove_duplicates(sensors_group[sensor])
+                # Linearly interpolate pointing coordinates to correlator data timestamps
+                # As long as azimuth is in natural antenna coordinates, no special angle interpolation required
+                pointing_interp[coord] = PiecewisePolynomial1DFit(max_degree=1)
+                pointing_interp[coord].fit(original_coord['timestamp'], original_coord['value'])
+            elif 'pointing' not in first_scan_group:
+                raise ValueError("Selected pointing sensor '%s' was not found in HDF5 file" % (sensor,))
+
         # Autodetect the noise diode to use, based on which sensor shows any activity
         if not noise_diode:
             # In a processed / intermediate file, there are no noise diode sensors - rather check model attribute
@@ -229,6 +252,23 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                 else:
                     noise_diode = 'coupler'
                     logger.info("Defaulting to '%s' noise diode (either no or both diodes are firing)" % noise_diode)
+        # Load noise diode flags and fit interpolator as a function of time
+        nd_interp = None
+        sensor = sensor_name[noise_diode + '_nd_on']
+        if sensor in sensors_group:
+            # Ensure noise diode timestamps are unique before interpolation
+            nd_on = remove_duplicates(sensors_group[sensor])
+            # Do step-wise interpolation (as flag is either 0 or 1 and holds its value until it toggles)
+            nd_interp = PiecewisePolynomial1DFit(max_degree=0)
+            try:
+                # Assumes that flag values are '1' and '0' (or 1 and 0) for True and False, respectively
+                nd_flags = nd_on['value'].astype(int)
+            except ValueError:
+                # Assumes that flag values are 'True' and 'False' for True and False, respectively
+                nd_flags = [(1 if flag == 'True' else 0) for flag in nd_on['value']]
+            nd_interp.fit(nd_on['timestamp'], nd_flags)
+        elif 'flags' not in first_scan_group:
+            logger.warning("Selected noise diode sensor '%s' not found in HDF5 file - setting nd_on to False" % sensor)
         # First try to load external noise diode models, if provided
         nd_h_model = nd_v_model = None
         if nd_models:
@@ -331,7 +371,17 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
             for scan in compscan_group:
                 scan_group = compscan_group[scan]
                 data = scan_group['data']
-                num_times = len(scan_group['timestamps'].value)
+                # Convert from millisecs to secs since Unix epoch, and be sure to use float64 to preserve digits
+                data_timestamps = scan_group['timestamps'].value.astype(np.float64) / 1000.0 + time_offset
+                num_times = len(data_timestamps)
+                # Move correlator data timestamps from start of each sample to the middle
+                if not data_timestamps_at_sample_centers:
+                    data_timestamps += 0.5 * sample_period
+                # If data timestamps have problems, warn and discard the scan
+                if np.any(data_timestamps < 1000000000.0) or (num_times > 1 and np.diff(data_timestamps).min() == 0.0):
+                    logger.warning("Discarded %s/%s - bad correlator timestamps (duplicates or way out of date)" %
+                                   (compscan, scan))
+                    continue
 
                 # Load correlation data either in float64 (single-dish) form or complex128 (interferometer) form
                 # Data has already been normalised by number of samples in integration (accum_per_int)
@@ -348,60 +398,22 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                     scan_data = [data[str(cid)] if cid is not None else np.zeros((num_times, num_chans), np.complex128)
                                  for cid in corr_id]
                     scan_data = np.dstack(scan_data).astype(np.complex128)
-                # Convert from millisecs to secs since Unix epoch, and be sure to use float64 to preserve digits
-                data_timestamps = scan_group['timestamps'].value.astype(np.float64) / 1000.0 + time_offset
-                # Move correlator data timestamps from start of each sample to the middle
-                if not data_timestamps_at_sample_centers:
-                    data_timestamps += 0.5 * sample_period
-                # If data timestamps have problems, warn and discard the scan
-                if np.any(data_timestamps < 1000000000.0) or \
-                   (len(data_timestamps) > 1 and np.diff(data_timestamps).min() == 0.0):
-                    logger.warning("Discarded %s/%s - bad correlator timestamps (duplicates or way out of date)" %
-                                   (compscan, scan))
-                    continue
 
-                # If per-scan pointing is available, use it - otherwise, select and interpolate original data
-                scan_pointing = scan_group['pointing'].value if 'pointing' in scan_group else None
-                if scan_pointing is None:
-                    interp_coords = []
-                    for coord in ('azim', 'elev'):
-                        sensor = '%s_%s' % (selected_pointing, coord)
-                        if sensor not in sensors_group:
-                            raise ValueError("Selected pointing sensor '%s' was not found in HDF5 file" % (sensor,))
-                        # Ensure pointing timestamps are unique before interpolation
-                        original_coord = remove_duplicates(sensors_group[sensor])
-                        # Linearly interpolate pointing coordinates to correlator data timestamps
-                        # As long as azimuth is in natural antenna coordinates, no special angle interpolation required
-                        interp = PiecewisePolynomial1DFit(max_degree=1)
-                        interp.fit(original_coord['timestamp'], original_coord['value'])
-                        interp_coords.append(interp(data_timestamps).astype(np.float32))
-                    scan_pointing = np.rec.fromarrays(interp_coords, names=('az', 'el'))
+                # Use per-scan pointing if it is available, otherwise interpolate original data
+                scan_pointing = scan_group['pointing'].value if 'pointing' in scan_group else \
+                                np.rec.fromarrays([pointing_interp['azim'](data_timestamps).astype(np.float32),
+                                                   pointing_interp['elev'](data_timestamps).astype(np.float32)],
+                                                  names=('az', 'el'))
                 # Convert contents of pointing from degrees to radians
                 # pylint: disable-msg=W0612
                 pointing_view = scan_pointing.view(np.float32)
                 pointing_view *= np.float32(np.pi / 180.0)
 
-                # If per-scan flags are available, use it - otherwise, select and interpolate original data
-                scan_flags = scan_group['flags'].value if 'flags' in scan_group else None
-                if scan_flags is None:
-                    sensor = sensor_name[noise_diode + '_nd_on']
-                    if sensor in sensors_group:
-                        # Ensure noise diode timestamps are unique before interpolation
-                        nd_on = remove_duplicates(sensors_group[sensor])
-                        # Do step-wise interpolation (as flag is either 0 or 1 and holds its value until it toggles)
-                        interp = PiecewisePolynomial1DFit(max_degree=0)
-                        try:
-                            # Assumes that flag values are '1' and '0' (or 1 and 0) for True and False, respectively
-                            nd_flags = nd_on['value'].astype(int)
-                        except ValueError:
-                            # Assumes that flag values are 'True' and 'False' for True and False, respectively
-                            nd_flags = [(1 if flag == 'True' else 0) for flag in nd_on['value']]
-                        interp.fit(nd_on['timestamp'], nd_flags)
-                        scan_flags = np.rec.fromarrays([interp(data_timestamps).astype(bool)], names=('nd_on',))
-                    else:
-                        logger.warning(("Selected noise diode sensor '%s'" % (sensor,)) +
-                                       " not found in HDF5 file - setting nd_on to False")
-                        scan_flags = np.rec.fromarrays([np.tile(False, data_timestamps.shape)], names=('nd_on',))
+                # Use per-scan flags if it is available, otherwise interpolate original data
+                scan_flags = scan_group['flags'].value if 'flags' in scan_group else \
+                             np.rec.fromarrays([nd_interp(data_timestamps).astype(bool)],
+                                               names=('nd_on',)) if nd_interp else \
+                             np.rec.fromarrays([np.tile(False, data_timestamps.shape)], names=('nd_on',))
                 scan_label = scan_group.attrs.get('label', '')
 
                 scanlist.append(Scan(scan_data, data_timestamps, scan_pointing, scan_flags, scan_label,
