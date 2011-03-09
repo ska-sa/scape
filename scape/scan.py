@@ -139,8 +139,9 @@ class Scan(object):
         """Verbose human-friendly string representation of scan object."""
         mean_az = rad2deg(minimise_angle_wrap(self.pointing['az']).mean())
         mean_el = rad2deg(minimise_angle_wrap(self.pointing['el']).mean())
-        return "'%s', data=%s, start='%s', az=%.1f, el=%.1f, path='%s'" % \
-               (self.label, self.data.shape, time.strftime('%Y/%m/%d %H:%M:%S', time.gmtime(self.timestamps[0])),
+        return "%sdata=%s, start='%s', az=%.1f, el=%.1f, path='%s'" % \
+               ("'%s', " % (self.label,) if self.label else '', self.data.shape,
+                time.strftime('%Y/%m/%d %H:%M:%S', time.gmtime(self.timestamps[0])),
                 mean_az, mean_el, self.path)
 
     def __repr__(self):

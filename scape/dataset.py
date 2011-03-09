@@ -238,8 +238,9 @@ class DataSet(object):
                   self.data_unit, len(self.freqs), self.freqs[0], self.freqs[-1],
                   self.bandwidths.sum(), self.dump_rate)]
         for compscan_ind, compscan in enumerate(self.compscans):
-            descr.append("%4d: target='%s' [%s]" %
-                         (compscan_ind, compscan.target.name, compscan.target.body_type))
+            descr.append("%4d: %starget='%s' [%s]" %
+                         (compscan_ind, "'%s', " % (compscan.label,) if compscan.label else '',
+                          compscan.target.name, compscan.target.body_type))
             if compscan.baseline:
                 descr[-1] += ', initial baseline offset=%f' % (compscan.baseline.poly[-1],)
             if compscan.beam:
