@@ -17,19 +17,28 @@ from .fitting import PiecewisePolynomial1DFit
 
 logger = logging.getLogger("scape.hdf5")
 
-# Parse baseline string into antenna indices
-baseline_pattern = re.compile('A(\d+)A(\d+)')
-# Parse antenna name
-antenna_name_pattern = re.compile('ant(\d+)')
+# Parse baseline string into antenna identifiers
+baseline_pattern = re.compile('A(\w+)A(\w+)')
+# Parse antenna name to extract identifier
+antenna_name_pattern = re.compile('ant(\w+)')
 
-# Mapping of desired fields to KAT sensor names
-sensor_name = {'temperature' : 'enviro_air_temperature',
-               'pressure' : 'enviro_air_pressure',
-               'humidity' : 'enviro_air_relative_humidity',
-               'wind_speed' : 'enviro_wind_speed',
-               'wind_direction' : 'enviro_wind_direction',
-               'coupler_nd_on' : 'rfe3_rfe15_noise_coupler_on',
-               'pin_nd_on' : 'rfe3_rfe15_noise_pin_on'}
+def has_data(group, dataset_name):
+    """Check whether HDF5 group contains a non-empty dataset with given name.
+
+    Parameters
+    ----------
+    group : :class:`h5py.Group` object
+        HDF5 group to query
+    dataset_name : string
+        Name of HDF5 dataset to query
+
+    Returns
+    -------
+    has_data : {True, False}
+        True if dataset exists in group and is non-empty
+
+    """
+    return dataset_name in group and group[dataset_name].shape != ()
 
 def remove_duplicates(sensor):
     """Remove duplicate timestamp values from sensor data.
@@ -79,10 +88,31 @@ def remove_duplicates(sensor):
 #--- FUNCTION :  load_dataset
 #--------------------------------------------------------------------------------------------------
 
+def load_dataset(filename, *args, **kwargs):
+    """Load data set from HDF5 file (auto-detecting format)."""
+    f = h5py.File(filename, 'r')
+    version = f.attrs.get('version', '1.x')
+    f.close()
+    return load_dataset_v2(filename, *args, **kwargs) if version.startswith('2.') else \
+           load_dataset_v1(filename, *args, **kwargs)
+
+#--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  load_dataset_v1
+#--------------------------------------------------------------------------------------------------
+
+# Mapping of desired fields to KAT sensor names (format version 1)
+sensor_name_v1 = {'temperature' : 'enviro_air_temperature',
+                  'pressure' : 'enviro_air_pressure',
+                  'humidity' : 'enviro_air_relative_humidity',
+                  'wind_speed' : 'enviro_wind_speed',
+                  'wind_direction' : 'enviro_wind_direction',
+                  'coupler_nd_on' : 'rfe3_rfe15_noise_coupler_on',
+                  'pin_nd_on' : 'rfe3_rfe15_noise_pin_on'}
+
 # pylint: disable-msg=W0613
-def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
-                 noise_diode=None, nd_models=None, time_offset=0.0, **kwargs):
-    """Load data set from HDF5 file.
+def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
+                    noise_diode=None, nd_models=None, time_offset=0.0, **kwargs):
+    """Load data set from HDF5 file (KAT format version 1).
 
     This loads a data set from an HDF5 file. The file contains all the baselines
     for the experiment, but :mod:`scape` only operates on one baseline at a time.
@@ -176,23 +206,21 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                 antA = antB = ants_group.keys()[0]
             except IndexError:
                 raise ValueError('Could not load first single-dish baseline - no antennas found in file')
-            logger.info("Loading single-dish baseline '%s%s'" % (antA.replace('ntenna', ''),
-                                                                 antB.replace('ntenna', '')))
+            logger.info("Loading single-dish baseline 'A%sA%s'" % (antA[7:], antB[7:]))
         elif baseline == 'AxAy':
             # First interferometric baseline found
             try:
                 antA, antB = ants_group.keys()[:2]
             except IndexError:
                 raise ValueError('Could not load first interferometric baseline - less than 2 antennas found in file')
-            logger.info("Loading interferometric baseline '%s%s'" % (antA.replace('ntenna', ''),
-                                                                     antB.replace('ntenna', '')))
+            logger.info("Loading interferometric baseline 'A%sA%s'" % (antA[7:], antB[7:]))
         else:
             # Select antennas involved in specified baseline
-            parsed_antenna_indices = baseline_pattern.match(baseline)
-            if parsed_antenna_indices is None:
-                raise ValueError("Please specify baseline with notation 'AxAy', " +
-                                 "where x is index of first antenna and y is index of second antenna")
-            antA, antB = ['Antenna' + index for index in parsed_antenna_indices.groups()]
+            parsed_antenna_ids = baseline_pattern.match(baseline)
+            if parsed_antenna_ids is None:
+                raise ValueError("Please specify baseline with notation 'AxAy', "
+                                 "where x is identifier of first antenna and y is identifier of second antenna")
+            antA, antB = ['Antenna' + ident for ident in parsed_antenna_ids.groups()]
         # Check that requested antennas are in data set
         if antA not in ants_group or antB not in ants_group:
             raise ValueError('Requested antenna pair not found in HDF5 file (wanted %s but file only contains %s)'
@@ -215,16 +243,16 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         # Load weather sensor data
         enviro = {}
         for quantity in ['temperature', 'pressure', 'humidity', 'wind_speed', 'wind_direction']:
-            sensor = sensor_name[quantity]
+            sensor = sensor_name_v1[quantity]
             # Environment sensors are optional
-            if sensor in sensors_group:
+            if has_data(sensors_group, sensor):
                 enviro[quantity] = remove_duplicates(sensors_group[sensor])
 
         # Load pointing sensor data and fit interpolator as a function of time
         pointing_interp = {}
         for coord in ('azim', 'elev'):
             sensor = '%s_%s' % (selected_pointing, coord)
-            if sensor in sensors_group:
+            if has_data(sensors_group, sensor):
                 # Ensure pointing timestamps are unique before interpolation
                 original_coord = remove_duplicates(sensors_group[sensor])
                 # Linearly interpolate pointing coordinates to correlator data timestamps
@@ -244,8 +272,9 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
             else:
                 nd_fired = {}
                 for nd in ('coupler', 'pin'):
-                    sensor = sensor_name[nd + '_nd_on']
-                    nd_fired[nd] = np.any(sensors_group[sensor]['value'] == '1') if sensor in sensors_group else False
+                    sensor = sensor_name_v1[nd + '_nd_on']
+                    nd_fired[nd] = np.any(sensors_group[sensor]['value'] == '1') \
+                                   if has_data(sensors_group, sensor) else False
                 if np.sum(nd_fired.values()) == 1:
                     noise_diode = nd_fired.keys()[nd_fired.values().index(True)]
                     logger.info("Using '%s' noise diode as it is the only one firing in data set" % noise_diode)
@@ -254,8 +283,8 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                     logger.info("Defaulting to '%s' noise diode (either no or both diodes are firing)" % noise_diode)
         # Load noise diode flags and fit interpolator as a function of time
         nd_interp = None
-        sensor = sensor_name[noise_diode + '_nd_on']
-        if sensor in sensors_group:
+        sensor = sensor_name_v1[noise_diode + '_nd_on']
+        if has_data(sensors_group, sensor):
             # Ensure noise diode timestamps are unique before interpolation
             nd_on = remove_duplicates(sensors_group[sensor])
             # Do step-wise interpolation (as flag is either 0 or 1 and holds its value until it toggles)
@@ -431,11 +460,363 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro
 
 #--------------------------------------------------------------------------------------------------
+#--- FUNCTION :  load_dataset_v2
+#--------------------------------------------------------------------------------------------------
+
+# Mapping of desired fields to KAT sensor names (format version 2)
+sensor_name_v2 = {'temperature' : 'asc.air.temperature',
+                  'pressure' : 'asc.air.pressure',
+                  'humidity' : 'asc.air.relative-humidity',
+                  'wind_speed' : 'asc.wind.speed',
+                  'wind_direction' : 'asc.wind.direction',
+                  'coupler_nd_on' : 'rfe3.rfe15.noise.coupler.on',
+                  'pin_nd_on' : 'rfe3.rfe15.noise.pin.on',
+                  'pos_actual_scan' : 'pos.actual-scan',
+                  'pos_actual_refrac' : 'pos.actual-refrac',
+                  'pos_actual_pointm' : 'pos.actual-pointm',
+                  'pos_request_scan' : 'pos.request-scan',
+                  'pos_request_refrac' : 'pos.request-refrac',
+                  'pos_request_pointm' : 'pos.request-pointm'}
+
+# pylint: disable-msg=W0613
+def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan',
+                    noise_diode=None, nd_models=None, time_offset=0.0, **kwargs):
+    """Load data set from HDF5 file (KAT format version 2).
+
+    This loads a data set from an HDF5 file. The file contains all the baselines
+    for the experiment, but :mod:`scape` only operates on one baseline at a time.
+    The *baseline* parameter selects which one will be loaded from the file.
+
+    Parameters
+    ----------
+    filename : string
+        Name of input HDF5 file
+    baseline : string, optional
+        Selected baseline as *AxAy*, where *x* is the identifier of the first
+        antenna (i.e. the part following 'ant' in its name) and *y* is the
+        identifier of the second antenna, and *x* < *y*. For single-dish data
+        the identifier is repeated, e.g. 'A1A1'. Alternatively, the baseline may
+        be 'sd' for the first single-dish baseline or 'if' for the first
+        interferometric baseline in the file.
+    selected_pointing : string, optional
+        Identifier of (az, el) sensors that will provide all the pointing data
+        of the data set. The actual sensor names are formed by appending '_azim'
+        and '_elev' to *selected_pointing*. This is ignored if the data set has
+        already been processed to contain a single source of pointing data.
+    noise_diode : {None, 'coupler', 'pin'}, optional
+        Load the model and on/off flags of this noise diode. The default is to
+        pick the noise diode with on/off activity if it is the only one showing
+        activity, otherwise defaulting to 'coupler'.
+    nd_models : None or string, optional
+        Override the noise diode models in the HDF5 file using the ones in this
+        directory. This assumes that the model files have the format
+        '%(antenna).%(diode).%(pol).csv' (e.g. 'ant1.coupler.h.csv').
+    time_offset : float, optional
+        Offset to add to correlator timestamps, in seconds
+    kwargs : dict, optional
+        Extra keyword arguments are ignored, as they typically apply to other formats
+
+    Returns
+    -------
+    compscanlist : list of :class:`compoundscan.CompoundScan` objects
+        List of compound scans
+    experiment_id : string
+        Experiment ID, a unique string used to link the data files of an
+        experiment together with blog entries, etc.
+    observer : string
+        Name of person that recorded the data set
+    description : string
+        Short description of the purpose of the data set
+    data_unit : {'counts', 'K', 'Jy'}
+        Physical unit of power data
+    corrconf : :class:`compoundscan.CorrelatorConfig` object
+        Correlator configuration object
+    antenna : string
+        Description string of single-dish antenna or first antenna of baseline pair
+    antenna2 : string or None
+        Description string of second antenna of baseline pair (None for single-dish)
+    nd_h_model, nd_v_model : :class:`NoiseDiodeModel` objects
+        Noise diode models for H and V polarisations on first antenna
+    enviro : dict of record arrays
+        Environmental (weather) measurements. The keys of the dict are strings
+        indicating the type of measurement ('temperature', 'pressure', etc),
+        while the values of the dict are record arrays with three elements per
+        record: 'timestamp', 'value' and 'status'. The 'timestamp' field is a
+        timestamp in UTC seconds since epoch, the 'value' field is the
+        corresponding value and the 'status' field is a string indicating the
+        sensor status.
+
+    Raises
+    ------
+    ValueError
+        If file has not been augmented to contain all data fields, or some fields
+        are missing
+    h5py.H5Error
+        If HDF5 error occurred
+
+    """
+    # pylint: disable-msg=R0914
+    with h5py.File(filename, 'r') as f:
+        # Only continue if file is correct version and has been properly augmented
+        version = f.attrs.get('version', '1.x')
+        if not version.startswith('2.'):
+            raise ValueError("Attempting to load version '%s' file with version 2 loader" % (version,))
+        if not 'augment_ts' in f.attrs:
+            raise ValueError('HDF5 file not augmented - please run k7_augment.py (provided by katsdisp package)')
+
+        # Get observation script attributes, with defaults
+        script_attrs = f['MetaData']['Configuration']['Observation'].attrs
+        experiment_id = script_attrs.get('script_experiment_id', None)
+        observer = script_attrs.get('script_observer', None)
+        description = script_attrs.get('script_description', None)
+
+        # Load antenna configuration group
+        ant_config = f['MetaData']['Configuration']['Antennas']
+        if baseline == 'sd':
+            # First single-dish baseline found
+            try:
+                antA = antB = ant_config.keys()[0]
+            except IndexError:
+                raise ValueError('Could not load first single-dish baseline - no antennas found in file')
+            logger.info("Loading single-dish baseline 'A%sA%s'" % (antA[3:], antB[3:]))
+        elif baseline == 'if':
+            # First interferometric baseline found
+            try:
+                antA, antB = ant_config.keys()[:2]
+            except IndexError:
+                raise ValueError('Could not load first interferometric baseline - less than 2 antennas found in file')
+            logger.info("Loading interferometric baseline 'A%sA%s'" % (antA[3:], antB[3:]))
+        else:
+            # Select antennas involved in specified baseline
+            parsed_antenna_ids = baseline_pattern.match(baseline)
+            if parsed_antenna_ids is None:
+                raise ValueError("Please specify baseline with notation 'AxAy', " +
+                                 "where x is identifier of first antenna and y is identifier of second antenna")
+            antA, antB = ['ant' + ident for ident in parsed_antenna_ids.groups()]
+        # Check that requested antennas are in data set
+        if antA not in ant_config or antB not in ant_config:
+            raise ValueError('Requested antenna pair not found in HDF5 file (wanted %s but file only contains %s)'
+                             % ([antA, antB], ant_config.keys()))
+        antA_config, antB_config = ant_config[antA], ant_config[antB]
+        # Get antenna description strings (antenna2 is None for single-dish data)
+        antenna, antenna2 = antA_config.attrs['description'], antB_config.attrs['description']
+        if antenna2 == antenna:
+            antenna2 = None
+
+        # Use antenna A for pointing sensors, noise diode flags and activity sensors (used to partition data)
+        sensors_group = f['MetaData']['Sensors']
+        ant_sensors = sensors_group['Antennas'][antA]
+        ped_sensors = sensors_group['Pedestals']['ped' + antA[3:]]
+
+        # Autodetect the noise diode to use, based on which sensor shows any activity
+        if not noise_diode:
+            nd_fired = {}
+            for nd in ('coupler', 'pin'):
+                sensor = sensor_name_v2[nd + '_nd_on']
+                nd_fired[nd] = np.any(ped_sensors[sensor]['value'] == '1') if has_data(ped_sensors, sensor) else False
+            if np.sum(nd_fired.values()) == 1:
+                noise_diode = nd_fired.keys()[nd_fired.values().index(True)]
+                logger.info("Using '%s' noise diode as it is the only one firing in data set" % noise_diode)
+            else:
+                noise_diode = 'coupler'
+                logger.info("Defaulting to '%s' noise diode (either no or both diodes are firing)" % noise_diode)
+        # First try to load external noise diode models, if provided
+        nd_h_model = nd_v_model = None
+        if nd_models:
+            nd_h_file = os.path.join(nd_models, '%s.%s.h.csv' % (antA, noise_diode))
+            nd_h_model = NoiseDiodeModel(nd_h_file)
+            logger.info("Loaded H noise diode model from '%s'" % (nd_h_file,))
+            nd_v_file = os.path.join(nd_models, '%s.%s.v.csv' % (antA, noise_diode))
+            nd_v_model = NoiseDiodeModel(nd_v_file)
+            logger.info("Loaded V noise diode model from '%s'" % (nd_v_file,))
+        else:
+            # Now try to load models for selected noise diode
+            try:
+                nd_dataset = antA_config['h_' + noise_diode + '_noise_diode_model']
+                nd_h_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
+                nd_dataset = antA_config['v_' + noise_diode + '_noise_diode_model']
+                nd_v_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
+            except KeyError:
+                # No models were found for the selected diode - quit and report any ones that are there instead
+                nd_set = set([name[1:].replace('noise_diode_model', '').strip('_')
+                              for name in antA_config if name.endswith('noise_diode_model')])
+                nd_set.discard('')
+                raise ValueError("Unknown noise diode '%s', found the following models instead: %s" %
+                                 (noise_diode, list(nd_set)))
+
+        # Get weather data
+        enviro_sensors = sensors_group['Enviro']
+        enviro = {}
+        for quantity in ['temperature', 'pressure', 'humidity', 'wind_speed', 'wind_direction']:
+            sensor = sensor_name_v2[quantity]
+            # Environment sensors are optional
+            if has_data(enviro_sensors, sensor):
+                enviro[quantity] = remove_duplicates(enviro_sensors[sensor])
+
+        # Load correlator configuration group
+        corr_config = f['MetaData']['Configuration']['Correlator']
+        # If center_freqs dataset is available, use it - otherwise, reconstruct it from DBE attributes
+        center_freqs = corr_config.get('center_freqs', None)
+        if center_freqs:
+            center_freqs = center_freqs.value / 1e6
+            bandwidths = corr_config['bandwidths'].value / 1e6
+            num_chans = len(center_freqs)
+        else:
+            num_chans = corr_config.attrs['n_chans']
+            band_center = corr_config.attrs['center_freq'] / 1e6
+            channel_bw = corr_config.attrs['bandwidth'] / 1e6 / num_chans
+            # Assume that lower-sideband downconversion has been used, which flips frequency axis
+            # Also subtract half a channel width to get frequencies at center of each channel
+            center_freqs = band_center - channel_bw * (np.arange(num_chans) - num_chans / 2 + 0.5)
+            bandwidths = np.tile(np.float64(channel_bw), num_chans)
+        channel_select = range(num_chans)
+        sample_period = corr_config.attrs['int_time']
+        dump_rate = 1.0 / sample_period
+        corrconf = CorrelatorConfig(center_freqs, bandwidths, channel_select, dump_rate)
+
+        # Figure out mapping of antennas and feeds to the correlation products involved
+        input_map = dict(corr_config.attrs['input_map'])
+        # Obtain DBE input associated with each polarisation of selected antennas (also show unavailable feeds)
+        antA_H = input_map.get(antA + 'H', 'UNAVAILABLE')
+        antA_V = input_map.get(antA + 'V', 'UNAVAILABLE')
+        antB_H = input_map.get(antB + 'H', 'UNAVAILABLE')
+        antB_V = input_map.get(antB + 'V', 'UNAVAILABLE')
+        # Mapping of polarisation product to DBE input string identifying pair of inputs multiplied together
+        pol_to_dbestr = {'HH' : antA_H + antB_H, 'VV' : antA_V + antB_V,
+                         'HV' : antA_H + antB_V, 'VH' : antA_V + antB_H}
+        # Mapping of DBE input string to correlation product index in form of (baseline, polarisation) pair
+        # This typically follows Miriad-style numbering
+        dbestr_to_corr_id = {}
+        for bl_ind, bl in enumerate(corr_config.attrs['bls_ordering']):
+            for pol_ind, pol in enumerate(corr_config.attrs['crosspol_ordering']):
+                dbestr_to_corr_id['%d%s%d%s' % (bl[0], pol[0], bl[1], pol[1])] = (bl_ind, pol_ind)
+        # Overall mapping from polarisation product to correlation product index (None for unavailable products)
+        pol_to_corr_id = dict([(pol, dbestr_to_corr_id.get(pol_to_dbestr[pol], (-1, -1))) for pol in scape_pol])
+
+        # Obtain visibility data and timestamps
+        data = f['Data']['correlator_data']
+        # Load timestamps as UT seconds since Unix epoch, and move them from start of each sample to the middle
+        data_timestamps = f['Data']['timestamps'].value + 0.5 * sample_period + time_offset
+        # If data timestamps have problems, warn about it
+        if np.any(data_timestamps < 1e9) or (len(data_timestamps) > 1 and np.diff(data_timestamps).min() == 0.0):
+            logger.warning("Bad correlator timestamps (duplicates or way out of date)")
+        dump_endtimes = data_timestamps + 0.5 * sample_period
+
+        # Load pointing sensor data and interpolate it to data timestamps (storing it in radians)
+        pointing = []
+        for coord in ('azim', 'elev'):
+            try:
+                sensor = '%s-%s' % (sensor_name_v2[selected_pointing], coord)
+            except KeyError:
+                raise ValueError("Unknown pointing sensor group '%s' specified" % (selected_pointing,))
+            if sensor not in ant_sensors:
+                raise ValueError("Selected pointing sensor '%s/%s' not found" % (ant_sensors.name, sensor))
+            # Ensure pointing timestamps are unique before interpolation
+            original_coord = remove_duplicates(ant_sensors[sensor])
+            # Linearly interpolate pointing coordinate to data timestamps
+            # As long as azimuth is in natural antenna coordinates, no special angle interpolation required
+            interp = PiecewisePolynomial1DFit(max_degree=1)
+            interp.fit(original_coord['timestamp'], original_coord['value'])
+            pointing.append(interp(data_timestamps).astype(np.float32) * np.float32(np.pi / 180.0))
+        pointing = np.rec.fromarrays(pointing, names=('az', 'el'))
+
+        # Load noise diode flags and interpolate it to data timestamps
+        sensor = sensor_name_v2[noise_diode + '_nd_on']
+        if has_data(ped_sensors, sensor):
+            # Ensure noise diode timestamps are unique before interpolation
+            nd_on = remove_duplicates(ped_sensors[sensor])
+            # Do step-wise interpolation (as flag is either 0 or 1 and holds its value until it toggles)
+            interp = PiecewisePolynomial1DFit(max_degree=0)
+            try:
+                # Assumes that flag values are '1' and '0' (or 1 and 0) for True and False, respectively
+                nd_flags = nd_on['value'].astype(int)
+            except ValueError:
+                # Assumes that flag values are 'True' and 'False' for True and False, respectively
+                nd_flags = [(1 if flag == 'True' else 0) for flag in nd_on['value']]
+            interp.fit(nd_on['timestamp'], nd_flags)
+            flags = np.rec.fromarrays([interp(data_timestamps).astype(bool)], names=('nd_on',))
+        else:
+            flags = np.rec.fromarrays([np.tile(False, data_timestamps.shape)], names=('nd_on',))
+
+        # Use the activity sensor of Antenna A to partition the data set into scans (and to label the scans)
+        activity_sensor = remove_duplicates(ant_sensors['activity'])
+        # Simplify the activities to derive the basic state of the antenna (slewing, scanning, tracking, stopped)
+        simplify = {'scan': 'scan', 'track': 'track', 'slew': 'slew', 'scan_ready': 'slew', 'scan_complete': 'slew'}
+        state = np.array([simplify.get(act, 'stop') for act in activity_sensor['value']])
+        state_changes = [n for n in xrange(len(state)) if (n == 0) or (state[n] != state[n - 1])]
+        scan_labels, state_timestamps = state[state_changes], activity_sensor['timestamp'][state_changes]
+        scan_starts = dump_endtimes.searchsorted(state_timestamps)
+        scan_ends = np.r_[scan_starts[1:] - 1, len(dump_endtimes) - 1]
+
+        # Use the target sensor of Antenna A to partition the data set into compound scans
+        target_sensor = remove_duplicates(ant_sensors['target'])
+        target, target_timestamps = target_sensor['value'], target_sensor['timestamp']
+        # Ignore empty and repeating targets (but keep any target following an empty one, as well as first target)
+        target_changes = [n for n in xrange(len(target)) if target[n] and ((n == 0) or (target[n] != target[n - 1]))]
+        compscan_targets, target_timestamps = target[target_changes], target_timestamps[target_changes]
+        compscan_starts = dump_endtimes.searchsorted(target_timestamps)
+        compscan_ends = np.r_[compscan_starts[1:] - 1, len(dump_endtimes) - 1]
+
+        # Associate labels with each compound scan
+        label, label_timestamps = f['Markup']['labels']['label'], f['Markup']['labels']['timestamp']
+        # Start with blank labels, with sufficient capacity in array to store longest label
+        max_str_len = max([len(l) for l in label]) if len(label) > 0 else 1
+        compscan_labels = np.zeros(len(compscan_targets), dtype='S%d' % (max_str_len,))
+        if label_timestamps[0] != 0.0:
+            # Associate each label with the closest target on the left (i.e. preceding the label)
+            associated_targets = (target_timestamps.searchsorted(label_timestamps) - 1).tolist()
+            # Pick first label associated with each target
+            unique_targets = [ind for ind in np.unique(associated_targets) if ind >= 0]
+            label = [label[associated_targets.index(ind)] for ind in unique_targets]
+            compscan_labels[unique_targets] = label
+
+        # Create each compound scan, as indicated by range of dump indices
+        compscanlist = []
+        for compscan_target, compscan_start, compscan_end, compscan_label in \
+            zip(compscan_targets, compscan_starts, compscan_ends, compscan_labels):
+            # Identify range of scans that fall within compound scan
+            first_scan = scan_starts.searchsorted(compscan_start, side='right') - 1
+            last_scan = scan_starts.searchsorted(compscan_end, side='right') - 1
+            compscan = range(first_scan, last_scan + 1)
+
+            # Create each scan within compound scan, as indicated by range of dump indices
+            scanlist = []
+            for scan_label, start, end in zip(scan_labels[compscan], scan_starts[compscan], scan_ends[compscan]):
+                start, end = max(start, compscan_start), min(end, compscan_end)
+                num_times = end + 1 - start
+                # Load correlation data either in float32 (single-dish) form or complex64 (interferometer) form
+                # Data has already been normalised by number of samples in integration (accum_per_int)
+                # Data of missing feeds are set to zero, as this simplifies the data structure (always 4 products)
+                if antenna2 is None:
+                    # Single-dish uses HH, VV, Re{HV}, Im{HV}
+                    corr_id = [pol_to_corr_id[pol] for pol in ['HH', 'VV', 'HV', 'HV']]
+                    # Add real (0) and imag (1) indices for each polarisation product, i.e. [Re, Re, Re, Im]
+                    corr_realimag_id = np.hstack((corr_id, np.array([0, 0, 0, 1])[:, np.newaxis]))
+                    # Extract time slice of appropriate correlation products (keeping all channels)
+                    scan_data = np.dstack([data[start:end + 1, :, bl_id, pol_id, real_imag]
+                                           if bl_id >= 0 else np.zeros((num_times, num_chans), np.float32)
+                                           for bl_id, pol_id, real_imag in corr_realimag_id])
+                else:
+                    corr_id = [pol_to_corr_id[pol] for pol in scape_pol]
+                    scan_data = np.dstack([data[start:end + 1, :, bl_id, pol_id].view(np.complex64)
+                                           if bl_id >= 0 else np.zeros((num_times, num_chans), np.complex64)
+                                           for bl_id, pol_id in corr_id])
+                scanlist.append(Scan(scan_data, data_timestamps[start:end + 1], pointing[start:end + 1],
+                                     flags[start:end + 1], scan_label, '%s[%d:%d]' % (filename, start, end + 1)))
+
+            if len(scanlist) > 0:
+                # V2 file stores target string as it appears in sensor store: in quotes to escape internal commas
+                compscanlist.append(CompoundScan(scanlist, compscan_target.strip('"'), compscan_label))
+
+        return compscanlist, experiment_id, observer, description, 'counts', \
+               corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro
+
+#--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  save_dataset
 #--------------------------------------------------------------------------------------------------
 
 def save_dataset(dataset, filename):
-    """Save data set to HDF5 file.
+    """Save data set to HDF5 file (in format version 1).
 
     This will overwrite any existing file with the same name.
 
@@ -458,23 +839,23 @@ def save_dataset(dataset, filename):
 
         # Create antennas group
         ants_group = f.create_group('Antennas')
-        # If antenna names follow standard pattern, number antenna groups appropriately - otherwise number them 1 and 2
-        antenna_index = antenna_name_pattern.match(dataset.antenna.name)
-        antA_name = ('Antenna%s' % antenna_index.groups()) if antenna_index is not None else 'Antenna1'
+        # If antenna names follow standard pattern, name antenna groups appropriately - otherwise number them 1 and 2
+        antenna_id = antenna_name_pattern.match(dataset.antenna.name)
+        antA_name = ('Antenna%s' % antenna_id.groups()) if antenna_id is not None else 'Antenna1'
         # Create first antenna group
         antA_group = ants_group.create_group(antA_name)
         antA_group.attrs['description'] = dataset.antenna.description
         # Create second antenna group if the data set is interferometric
         if dataset.antenna2 is not None:
-            antenna_index = antenna_name_pattern.match(dataset.antenna2.name)
-            antB_name = ('Antenna%s' % antenna_index.groups()) if antenna_index is not None else 'Antenna2'
+            antenna_id = antenna_name_pattern.match(dataset.antenna2.name)
+            antB_name = ('Antenna%s' % antenna_id.groups()) if antenna_id is not None else 'Antenna2'
             antB_group = ants_group.create_group(antB_name)
             antB_group.attrs['description'] = dataset.antenna2.description
 
         # Create receiver chain groups and enviro sensors for first antenna (other antenna left blank)
         sensors_group = antA_group.create_group('Sensors')
         for quantity in ['temperature', 'pressure', 'humidity', 'wind_speed', 'wind_direction']:
-            sensor = sensor_name[quantity]
+            sensor = sensor_name_v1[quantity]
             # Environment sensors are optional
             if quantity in dataset.enviro:
                 sensors_group.create_dataset(sensor, data=dataset.enviro[quantity], compression='gzip')
