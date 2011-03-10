@@ -653,22 +653,21 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
             if has_data(enviro_sensors, sensor):
                 enviro[quantity] = remove_duplicates(enviro_sensors[sensor])
 
+        # Get centre frequency in MHz, assuming it hasn't changed during the experiment
+        rfe_sensors, center_freq_sensor = sensors_group['RFE'], 'center-frequency-hz'
+        if not has_data(rfe_sensors, center_freq_sensor):
+            raise ValueError("Centre frequency sensor '%s/%s' not found" % (rfe_sensors.name, center_freq_sensor))
+        band_center = rfe_sensors[center_freq_sensor]['value'][0] / 1e6
+
         # Load correlator configuration group
         corr_config = f['MetaData']['Configuration']['Correlator']
-        # If center_freqs dataset is available, use it - otherwise, reconstruct it from DBE attributes
-        center_freqs = corr_config.get('center_freqs', None)
-        if center_freqs:
-            center_freqs = center_freqs.value / 1e6
-            bandwidths = corr_config['bandwidths'].value / 1e6
-            num_chans = len(center_freqs)
-        else:
-            num_chans = corr_config.attrs['n_chans']
-            band_center = corr_config.attrs['center_freq'] / 1e6
-            channel_bw = corr_config.attrs['bandwidth'] / 1e6 / num_chans
-            # Assume that lower-sideband downconversion has been used, which flips frequency axis
-            # Also subtract half a channel width to get frequencies at center of each channel
-            center_freqs = band_center - channel_bw * (np.arange(num_chans) - num_chans / 2 + 0.5)
-            bandwidths = np.tile(np.float64(channel_bw), num_chans)
+        # Construct channel centre frequencies (in MHz) from DBE attributes
+        num_chans = corr_config.attrs['n_chans']
+        channel_bw = corr_config.attrs['bandwidth'] / 1e6 / num_chans
+        # Assume that lower-sideband downconversion has been used, which flips frequency axis
+        # Also subtract half a channel width to get frequencies at center of each channel
+        center_freqs = band_center - channel_bw * (np.arange(num_chans) - num_chans / 2 + 0.5)
+        bandwidths = np.tile(np.float64(channel_bw), num_chans)
         channel_select = range(num_chans)
         sample_period = corr_config.attrs['int_time']
         dump_rate = 1.0 / sample_period
@@ -709,7 +708,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
                 sensor = '%s-%s' % (sensor_name_v2[selected_pointing], coord)
             except KeyError:
                 raise ValueError("Unknown pointing sensor group '%s' specified" % (selected_pointing,))
-            if sensor not in ant_sensors:
+            if not has_data(ant_sensors, sensor):
                 raise ValueError("Selected pointing sensor '%s/%s' not found" % (ant_sensors.name, sensor))
             # Ensure pointing timestamps are unique before interpolation
             original_coord = remove_duplicates(ant_sensors[sensor])
