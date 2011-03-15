@@ -191,14 +191,12 @@ def load_xdm_noise_models(filename, feed_id=None):
     # Create H and V models
     nd_h_model = NoiseDiodeModel(np.array(temperature_h.field('Freq') / 1e6, dtype='double'),
                                  np.array(temperature_h.field('Temp'), dtype='double'),
-                                 interp='Spline1DFit(std_y=lambda freq, temp: np.tile(1.0, len(temp)))',
-                                 antenna='XDM', pol='H', diode='injector', date='2009-03-27',
-                                 feed=('main' if feed_id == 0 else 'offset'))
+                                 interp='Spline1DFit()', antenna='XDM', pol='H', diode='injector',
+                                 date='2009-03-27', feed=('main' if feed_id == 0 else 'offset'))
     nd_v_model = NoiseDiodeModel(np.array(temperature_v.field('Freq') / 1e6, dtype='double'),
                                  np.array(temperature_v.field('Temp'), dtype='double'),
-                                 interp='Spline1DFit(std_y=lambda freq, temp: np.tile(1.0, len(temp)))',
-                                 antenna='XDM', pol='V', diode='injector', date='2009-03-27',
-                                 feed=('main' if feed_id == 0 else 'offset'))
+                                 interp='Spline1DFit()', antenna='XDM', pol='V', diode='injector',
+                                 date='2009-03-27', feed=('main' if feed_id == 0 else 'offset'))
     hdu.close()
     return nd_h_model, nd_v_model
 
