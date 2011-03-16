@@ -17,7 +17,6 @@ grouped together in :class:`compoundscan.CompoundScan` instead.
 import numpy as np
 import time
 
-from .stats import minimise_angle_wrap
 from katpoint import rad2deg
 
 # Order of polarisation terms on last dimension of correlation data array:
@@ -137,8 +136,8 @@ class Scan(object):
 
     def __str__(self):
         """Verbose human-friendly string representation of scan object."""
-        mean_az = rad2deg(minimise_angle_wrap(self.pointing['az']).mean())
-        mean_el = rad2deg(minimise_angle_wrap(self.pointing['el']).mean())
+        mean_az = rad2deg(self.pointing['az'].mean())
+        mean_el = rad2deg(self.pointing['el'].mean())
         return "%sdata=%s, start='%s', az=%.1f, el=%.1f, path='%s'" % \
                ("'%s', " % (self.label,) if self.label else '', self.data.shape,
                 time.strftime('%Y/%m/%d %H:%M:%S', time.gmtime(self.timestamps[0])),

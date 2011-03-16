@@ -6,7 +6,7 @@ import re
 import fitting
 from .fitting import Spline1DFit, Polynomial1DFit, Spline2DGridFit
 from .fitting import randomise as fitting_randomise
-from .stats import robust_mu_sigma, minimise_angle_wrap
+from .stats import robust_mu_sigma
 from .scan import scape_pol
 
 def load_csv_with_header(csv_file):
