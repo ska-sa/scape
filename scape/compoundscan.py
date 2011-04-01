@@ -219,13 +219,14 @@ class CompoundScan(object):
 
         Parameters
         ----------
-        pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'}, optional
+        pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX', 'YY'}, optional
             The coherency / Stokes parameter which will be fit. Beam fits are not
-            advised for 'Q', 'U' and 'V', which usually have non-Gaussian beams.
+            advised for 'Q', 'U', 'V', 'ReHV' and 'ImHV', which usually have
+            non-Gaussian beams.
         circular_beam : {'auto', True, False}, optional
             True forces beam to be circular, while False allows for an elliptical
-            beam. The default chooses this automatically (False for 'HH', 'VV',
-            'XX' and 'YY' pols, and True for the rest).
+            beam. The default chooses this automatically (False for 'HH' and 'VV'
+            and True for the rest).
         bl_degrees : sequence of 2 ints, optional
             Degrees of initial polynomial baseline, along *x* and *y* coordinate
         refine_beam : {True, False}, optional
@@ -260,7 +261,7 @@ class CompoundScan(object):
         # Refining the beam and baselines requires scan timestamps
         scan_timestamps = [scan.timestamps for scan in self.scans] if refine_beam else None
         # Fit beam and baselines directly to positive coherencies / Stokes params only, otherwise use I as proxy
-        positive_pol = pol not in ('Q', 'U', 'V')
+        positive_pol = pol in ('I', 'HH', 'VV', 'XX', 'YY')
         scan_total_power = [remove_spikes(scan.pol('I')[:, band], spike_width=spike_width) for scan in self.scans] \
                            if not positive_pol else None
         logger.debug("Fitting beam and initial baseline of degree (%d, %d) to pol '%s' of target '%s':" %

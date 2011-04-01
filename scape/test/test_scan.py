@@ -69,14 +69,14 @@ def transform_pol(scan, *args):
 
     """
     # Retrieve data from scan module
-    scape_pol, mount_coh = scape.scan.scape_pol, scape.scan.mount_coh
+    scape_pol_sd, scape_pol_if, mount_coh = scape.scan.scape_pol_sd, scape.scan.scape_pol_if, scape.scan.mount_coh
     # Create complex data array in standard coherency order (where V = X and H = Y)
     if scan.has_autocorr:
-        data_HV = scan.data[:, :, scape_pol.index('HV')] + 1j * scan.data[:, :, scape_pol.index('VH')]
-        data = np.dstack((scan.data[:, :, scape_pol.index('VV')], data_HV.conj(), data_HV,
-                          scan.data[:, :, scape_pol.index('HH')]))
+        data_HV = scan.data[:, :, scape_pol_sd.index('ReHV')] + 1j * scan.data[:, :, scape_pol_sd.index('ImHV')]
+        data = np.dstack((scan.data[:, :, scape_pol_sd.index('VV')], data_HV.conj(), data_HV,
+                          scan.data[:, :, scape_pol_sd.index('HH')]))
     else:
-        data = scan.data[:, :, [scape_pol.index(p) for p in mount_coh]]
+        data = scan.data[:, :, [scape_pol_if.index(p) for p in mount_coh]]
     # Iterate through matrix operators, from right to left
     for matrix in reversed(args):
         # Turn 4-element polarisation vector (on last dimension of data) effectively into row vector.
@@ -119,15 +119,25 @@ def generic_pol(scan, key):
 
     """
     # Retrieve data from scan module
-    scape_pol, sky_coh, stokes = scape.scan.scape_pol, scape.scan.sky_coh, scape.scan.stokes
+    scape_pol_sd, scape_pol_if = scape.scan.scape_pol_sd, scape.scan.scape_pol_if
+    sky_coh, stokes = scape.scan.sky_coh, scape.scan.stokes
 
-    # Mount coherencies are the simplest to extract - simply pick correct column in array (mostly)
-    if key in scape_pol:
-        if scan.has_autocorr and key in ('HV', 'VH'):
-            data_HV = scan.data[:, :, scape_pol.index('HV')] + 1j * scan.data[:, :, scape_pol.index('VH')]
-            return data_HV if key == 'HV' else data_HV.conj()
+    # Mount coherencies are the easiest to extract - simply pick correct subarray (mostly)
+    if key in scape_pol_sd:
+        # Re{HV} and Im{HV} are not explicitly stored in interferometer data - extract them from HV instead
+        if not self.has_autocorr and key in ('ReHV', 'ImHV'):
+            HV = self.data[:, :, scape_pol_if.index('HV')]
+            return HV.real if key == 'ReHV' else HV.imag
         else:
-            return scan.data[:, :, scape_pol.index(key)]
+            return self.data[:, :, scape_pol_sd.index(key)]
+    elif key in scape_pol_if:
+        # HV and VH are not explicitly stored in single-dish data - calculate them instead
+        if self.has_autocorr and key in ('HV', 'VH'):
+            ReHV, ImHV = self.data[:, :, scape_pol_sd.index('ReHV')], self.data[:, :, scape_pol_sd.index('ImHV')]
+            return ReHV + 1j * ImHV if key == 'HV' else ReHV - 1j * ImHV
+        else:
+            return self.data[:, :, scape_pol_if.index(key)]
+
     # The rest of the polarisation terms are sky-based, and need parallactic angle correction.
     # The mount rotation on the sky is equivalent to a *negative* parallactic angle rotation, and
     # is compensated for by rotating the data through the *positive* parallactic angle itself.
@@ -151,7 +161,7 @@ def generic_pol(scan, key):
         data = transform_pol(scan, rot_mueller, stokes_from_coh)[:, :, stokes.index(key)]
         return data.real if scan.has_autocorr else data
     else:
-        raise KeyError("Polarisation key should be one of %s" % (scape_pol + sky_coh + stokes,))
+        raise KeyError("Polarisation key should be one of %s" % list(set(scape_pol_sd + scape_pol_if + sky_coh + stokes)),)
 
 def assert_almost_equal(actual, desired, decimal=15):
     """Assert actual is close to desired, within relative tolerance.

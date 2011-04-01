@@ -11,7 +11,7 @@ import numpy as np
 import katpoint
 
 from .gaincal import NoiseDiodeModel
-from .scan import Scan, scape_pol
+from .scan import Scan, scape_pol_if
 from .compoundscan import CorrelatorConfig, CompoundScan
 from .fitting import PiecewisePolynomial1DFit
 
@@ -383,10 +383,10 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
             input_map = corrconf_group['input_map'].value
             dbestr_to_corr_id = dict(zip(input_map['dbe_inputs'], input_map['correlator_product_id']))
             # Overall mapping from polarisation product to correlation product index (None for unavailable products)
-            pol_to_corr_id = dict([(pol, dbestr_to_corr_id.get(pol_to_dbestr[pol])) for pol in scape_pol])
+            pol_to_corr_id = dict([(pol, dbestr_to_corr_id.get(pol_to_dbestr[pol])) for pol in scape_pol_if])
         else:
             # Simplified mapping, used in processed / intermediate files
-            pol_to_corr_id = dict([(pol, n) for n, pol in enumerate(scape_pol)])
+            pol_to_corr_id = dict([(pol, n) for n, pol in enumerate(scape_pol_if)])
 
         # Load each compound scan group
         compscanlist = []
@@ -423,7 +423,7 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
                     scan_data = np.dstack([scan_data[0].real, scan_data[1].real,
                                            scan_data[2].real, scan_data[3].imag]).astype(np.float64)
                 else:
-                    corr_id = [pol_to_corr_id[pol] for pol in scape_pol]
+                    corr_id = [pol_to_corr_id[pol] for pol in scape_pol_if]
                     scan_data = [data[str(cid)] if cid is not None else np.zeros((num_times, num_chans), np.complex128)
                                  for cid in corr_id]
                     scan_data = np.dstack(scan_data).astype(np.complex128)
@@ -690,7 +690,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
             for pol_ind, pol in enumerate(corr_config.attrs['crosspol_ordering']):
                 dbestr_to_corr_id['%d%s%d%s' % (bl[0], pol[0], bl[1], pol[1])] = (bl_ind, pol_ind)
         # Overall mapping from polarisation product to correlation product index (None for unavailable products)
-        pol_to_corr_id = dict([(pol, dbestr_to_corr_id.get(pol_to_dbestr[pol], (-1, -1))) for pol in scape_pol])
+        pol_to_corr_id = dict([(pol, dbestr_to_corr_id.get(pol_to_dbestr[pol], (-1, -1))) for pol in scape_pol_if])
 
         # Obtain visibility data and timestamps
         data = f['Data']['correlator_data']
@@ -796,7 +796,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
                                            if bl_id >= 0 else np.zeros((num_times, num_chans), np.float32)
                                            for bl_id, pol_id, real_imag in corr_realimag_id])
                 else:
-                    corr_id = [pol_to_corr_id[pol] for pol in scape_pol]
+                    corr_id = [pol_to_corr_id[pol] for pol in scape_pol_if]
                     scan_data = np.dstack([data[start:end + 1, :, bl_id, pol_id].view(np.complex64)
                                            if bl_id >= 0 else np.zeros((num_times, num_chans), np.complex64)
                                            for bl_id, pol_id in corr_id])
@@ -878,7 +878,7 @@ def save_dataset(dataset, filename):
         corrconf_group.create_dataset('channel_select', data=select_flags)
         corrconf_group.attrs['dump_rate_hz'] = dataset.corrconf.dump_rate
         # Simplified correlator ID lookup
-        pol_to_corr_id = dict([(pol, n) for n, pol in enumerate(scape_pol)])
+        pol_to_corr_id = dict([(pol, n) for n, pol in enumerate(scape_pol_if)])
 
         scans_group = f.create_group('Scans')
         for compscan_ind, compscan in enumerate(dataset.compscans):
@@ -889,8 +889,8 @@ def save_dataset(dataset, filename):
             for scan_ind, scan in enumerate(compscan.scans):
                 scan_group = compscan_group.create_group('Scan%d' % scan_ind)
                 # Always save power data in complex128 form
-                corr_id = [str(pol_to_corr_id[pol]) for pol in scape_pol]
-                complex_data = np.rec.fromarrays([scan.pol(key) for key in scape_pol],
+                corr_id = [str(pol_to_corr_id[pol]) for pol in scape_pol_if]
+                complex_data = np.rec.fromarrays([scan.pol(key) for key in scape_pol_if],
                                                  names=corr_id, formats=['complex128'] * 4)
                 scan_group.create_dataset('data', data=complex_data, compression='gzip')
                 # Save data timestamps in milliseconds

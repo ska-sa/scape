@@ -20,8 +20,10 @@ import time
 from katpoint import rad2deg
 
 # Order of polarisation terms on last dimension of correlation data array:
-# Standard scape order
-scape_pol = ['HH', 'VV', 'HV', 'VH']
+# Standard scape order for real single-dish data
+scape_pol_sd = ['HH', 'VV', 'ReHV', 'ImHV']
+# Standard scape order for complex interferometer (i.e. single-baseline) data
+scape_pol_if = ['HH', 'VV', 'HV', 'VH']
 # Mount coherencies
 mount_coh = ['VV', 'VH', 'HV', 'HH']
 # Sky coherencies
@@ -213,7 +215,7 @@ class Scan(object):
 
         Parameters
         ----------
-        key : {'VV', 'VH', 'HV', 'HH', 'XX', 'XY', 'YX', 'YY', 'I', 'Q', 'U', 'V'}
+        key : {'VV', 'VH', 'HV', 'HH', 'ReHV', 'ImHV', 'XX', 'XY', 'YX', 'YY', 'I', 'Q', 'U', 'V'}
             Polarisation term to extract
 
         Returns
@@ -229,17 +231,24 @@ class Scan(object):
         """
         # pylint: disable-msg=C0103
         # Mount coherencies are the easiest to extract - simply pick correct subarray (mostly)
-        if key in scape_pol:
+        if key in scape_pol_sd:
+            # Re{HV} and Im{HV} are not explicitly stored in interferometer data - extract them from HV instead
+            if not self.has_autocorr and key in ('ReHV', 'ImHV'):
+                HV = self.data[:, :, scape_pol_if.index('HV')]
+                return HV.real if key == 'ReHV' else HV.imag
+            else:
+                return self.data[:, :, scape_pol_sd.index(key)]
+        elif key in scape_pol_if:
+            # HV and VH are not explicitly stored in single-dish data - calculate them instead
             if self.has_autocorr and key in ('HV', 'VH'):
-                # HV maps to Re{HV} and VH maps to Im{HV} in single-dish case
-                ReHV, ImHV = self.data[:, :, scape_pol.index('HV')], self.data[:, :, scape_pol.index('VH')]
+                ReHV, ImHV = self.data[:, :, scape_pol_sd.index('ReHV')], self.data[:, :, scape_pol_sd.index('ImHV')]
                 return ReHV + 1j * ImHV if key == 'HV' else ReHV - 1j * ImHV
             else:
-                return self.data[:, :, scape_pol.index(key)]
+                return self.data[:, :, scape_pol_if.index(key)]
         # For convenience, define mount coherencies as views of data array (no copying involved)
-        HH, VV = self.data[:, :, scape_pol.index('HH')], self.data[:, :, scape_pol.index('VV')]
-        HV, VH = self.data[:, :, scape_pol.index('HV')], self.data[:, :, scape_pol.index('VH')]
-        ReHV, ImHV = HV, VH
+        HH, VV = self.data[:, :, scape_pol_sd.index('HH')], self.data[:, :, scape_pol_sd.index('VV')]
+        ReHV, ImHV = self.data[:, :, scape_pol_sd.index('ReHV')], self.data[:, :, scape_pol_sd.index('ImHV')]
+        HV, VH = ReHV, ImHV
         # The rest of the polarisation terms are sky-based, and need parallactic angle correction.
         # The mount rotation on the sky is equivalent to a *negative* parallactic angle rotation, and
         # is compensated for by rotating the data through the *positive* parallactic angle itself.
@@ -299,7 +308,7 @@ class Scan(object):
                     return sin2pa * (VV - HH) + cos2pa * (VH + HV)
                 elif key == 'V':
                     return 1j * (HV - VH)
-        raise KeyError("Polarisation key should be one of %s" % (scape_pol + sky_coh + stokes,))
+        raise KeyError("Polarisation key should be one of %s" % list(set(scape_pol_sd + scape_pol_if + sky_coh + stokes)),)
 
     def swap_h_and_v(self, antenna=0):
         """Swap around H and V polarisations (feeds) in the correlation data.
@@ -312,18 +321,18 @@ class Scan(object):
         """
         # Single-dish only has one antenna, so "both" antennas must swap their feeds around
         if self.has_autocorr:
-            hh_vv = [scape_pol.index('HH'), scape_pol.index('VV')]
+            hh_vv = [scape_pol_sd.index('HH'), scape_pol_sd.index('VV')]
             self.data[:, :, hh_vv] = self.data[:, :, np.flipud(hh_vv)]
             # The imaginary part of HV changes sign, as HV => VH (its conjugate)
-            self.data[:, :, scape_pol.index('VH')] *= -1.0
+            self.data[:, :, scape_pol_sd.index('ImHV')] *= -1.0
         else:
-            orig = [scape_pol.index(p) for p in ('HH', 'VV', 'HV', 'VH')]
+            orig = [scape_pol_if.index(p) for p in ('HH', 'VV', 'HV', 'VH')]
             if antenna == 1:
-                self.data[:, :, [scape_pol.index(p) for p in ('VH', 'HV', 'VV', 'HH')]] = self.data[:, :, orig]
+                self.data[:, :, [scape_pol_if.index(p) for p in ('VH', 'HV', 'VV', 'HH')]] = self.data[:, :, orig]
             elif antenna == 2:
-                self.data[:, :, [scape_pol.index(p) for p in ('HV', 'VH', 'HH', 'VV')]] = self.data[:, :, orig]
+                self.data[:, :, [scape_pol_if.index(p) for p in ('HV', 'VH', 'HH', 'VV')]] = self.data[:, :, orig]
             else:
-                self.data[:, :, [scape_pol.index(p) for p in ('VV', 'HH', 'VH', 'HV')]] = self.data[:, :, orig]
+                self.data[:, :, [scape_pol_if.index(p) for p in ('VV', 'HH', 'VH', 'HV')]] = self.data[:, :, orig]
         return self
 
     def select(self, timekeep=None, freqkeep=None, copy=False):

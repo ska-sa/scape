@@ -7,7 +7,7 @@ import fitting
 from .fitting import Spline1DFit, Polynomial1DFit, Spline2DGridFit
 from .fitting import randomise as fitting_randomise
 from .stats import robust_mu_sigma
-from .scan import scape_pol
+from .scan import scape_pol_sd
 
 def load_csv_with_header(csv_file):
     """Load CSV file containing commented-out header with key-value pairs.
@@ -379,8 +379,8 @@ def estimate_gain(dataset, interp_degree=1, time_width=900.0, freq_width='all', 
     temp_nd_h = dataset.nd_h_model.temperature(dataset.freqs, randomise)
     temp_nd_v = dataset.nd_v_model.temperature(dataset.freqs, randomise)
     # The HH (and VV) gain is defined as (Pon - Poff) / Tcal, in counts per K
-    deltas[:, :, scape_pol.index('HH')] /= temp_nd_h
-    deltas[:, :, scape_pol.index('VV')] /= temp_nd_v
+    deltas[:, :, scape_pol_sd.index('HH')] /= temp_nd_h
+    deltas[:, :, scape_pol_sd.index('VV')] /= temp_nd_v
 
     # Create time-frequency bins and average data into these bins
     time_bins, time_avg = _partition_into_bins(nd_jump_times, time_width)
@@ -404,14 +404,14 @@ def estimate_gain(dataset, interp_degree=1, time_width=900.0, freq_width='all', 
 
     # Do a spline interpolation of HH and VV gains between time-frequency bins
     gain_hh = Spline2DGridFit(degree=interp_degree, bbox=bbox)
-    gain_hh.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol.index('HH')])
+    gain_hh.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol_sd.index('HH')])
     gain_vv = Spline2DGridFit(degree=interp_degree, bbox=bbox)
-    gain_vv.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol.index('VV')])
+    gain_vv.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol_sd.index('VV')])
     # Also interpolate the complex-valued HV (real and imag separately), used to derive phase angle between H and V
     delta_re_hv = Spline2DGridFit(degree=interp_degree, bbox=bbox)
-    delta_re_hv.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol.index('HV')])
+    delta_re_hv.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol_sd.index('ReHV')])
     delta_im_hv = Spline2DGridFit(degree=interp_degree, bbox=bbox)
-    delta_im_hv.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol.index('VH')])
+    delta_im_hv.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol_sd.index('ImHV')])
 
     # Return interpolators in convenient form, where t and f are separate arguments (instead of a single list input)
     return lambda t, f: gain_hh([t, f]), lambda t, f: gain_vv([t, f]), \
@@ -434,7 +434,7 @@ def calibrate_gain(dataset, **kwargs):
 
     """
     gain_hh, gain_vv, delta_re_hv, delta_im_hv = estimate_gain(dataset, **kwargs)
-    hh, vv, re_hv, im_hv = [scape_pol.index(pol) for pol in ['HH', 'VV', 'HV', 'VH']]
+    hh, vv, re_hv, im_hv = [scape_pol_sd.index(pol) for pol in ['HH', 'VV', 'ReHV', 'ImHV']]
     for scan in dataset.scans:
         # Interpolate gains based on scan timestamps
         smooth_gain_hh = gain_hh(scan.timestamps, dataset.freqs)

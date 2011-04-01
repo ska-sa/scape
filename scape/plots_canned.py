@@ -966,8 +966,9 @@ def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, spike_width
         If *pol* is not one of the allowed names
 
     """
-    if not pol in ('I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
-        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX' or 'YY' (i.e. real)")
+    if not pol in ('I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'HH', 'VV', "
+                         "'ReHV', 'ImHV', 'XX' or 'YY' (i.e. real)")
     if ax is None:
         ax = plt.gca()
     time_origin = np.array([scan.timestamps.min() for scan in compscan.scans]).min()
