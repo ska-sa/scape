@@ -84,6 +84,26 @@ def remove_duplicates(sensor):
                          (katpoint.Timestamp(x[ind]).local(), sensor.name, z[ind], z[replacement][ind]))
     return np.rec.fromarrays([x[unique_ind], y[unique_ind], z[unique_ind]], dtype=sensor.dtype)
 
+def get_single_value(group, name):
+    """Return single value from attribute or dataset with given name in group.
+
+    If data is retrieved from a dataset, this functions raises an error if the
+    values in the dataset are not all the same. Otherwise it returns the first
+    value.
+
+    """
+    value = group.attrs.get(name, None)
+    if value is not None:
+        return value
+    dataset = group.get(name, None)
+    if dataset is None:
+        raise ValueError("Could not find attribute or dataset named %r/%r" % (group.name, name))
+    if not dataset.len():
+        raise ValueError("Found dataset named %r/%r but it was empty" % (group.name, name))
+    if not all(dataset.value == dataset.value[0]):
+        raise ValueError("Not all values in %r/%r are equal. Values found: %r" % (group.name, name, dataset.value))
+    return dataset.value[0]
+
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  load_dataset
 #--------------------------------------------------------------------------------------------------
@@ -572,17 +592,19 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
 
         # Load antenna configuration group
         ant_config = f['MetaData']['Configuration']['Antennas']
+        # These antennas were used by the observation script
+        ants_used = script_attrs.get('script_ants', '').split(',')
         if baseline == 'sd':
             # First single-dish baseline found
             try:
-                antA = antB = ant_config.keys()[0]
+                antA = antB = ants_used[0] if len(ants_used) > 0 else ant_config.keys()[0]
             except IndexError:
                 raise ValueError('Could not load first single-dish baseline - no antennas found in file')
             logger.info("Loading single-dish baseline 'A%sA%s'" % (antA[3:], antB[3:]))
         elif baseline == 'if':
             # First interferometric baseline found
             try:
-                antA, antB = ant_config.keys()[:2]
+                antA, antB = ants_used[:2] if len(ants_used) > 1 else ant_config.keys()[:2]
             except IndexError:
                 raise ValueError('Could not load first interferometric baseline - less than 2 antennas found in file')
             logger.info("Loading interferometric baseline 'A%sA%s'" % (antA[3:], antB[3:]))
@@ -669,7 +691,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         center_freqs = band_center - channel_bw * (np.arange(num_chans) - num_chans / 2 + 0.5)
         bandwidths = np.tile(np.float64(channel_bw), num_chans)
         channel_select = range(num_chans)
-        sample_period = corr_config.attrs['int_time']
+        sample_period = get_single_value(corr_config, 'int_time')
         dump_rate = 1.0 / sample_period
         corrconf = CorrelatorConfig(center_freqs, bandwidths, channel_select, dump_rate)
 
