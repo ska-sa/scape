@@ -585,13 +585,13 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
             raise ValueError('HDF5 file not augmented - please run k7_augment.py (provided by katsdisp package)')
 
         # Get observation script attributes, with defaults
-        script_attrs = f['MetaData']['Configuration']['Observation'].attrs
+        script_attrs = f['MetaData/Configuration/Observation'].attrs
         experiment_id = script_attrs.get('script_experiment_id', None)
         observer = script_attrs.get('script_observer', None)
         description = script_attrs.get('script_description', None)
 
         # Load antenna configuration group
-        ant_config = f['MetaData']['Configuration']['Antennas']
+        ant_config = f['MetaData/Configuration/Antennas']
         # These antennas were used by the observation script
         ants_used = script_attrs.get('script_ants', '').split(',')
         if baseline == 'sd':
@@ -626,9 +626,9 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
             antenna2 = None
 
         # Use antenna A for pointing sensors, noise diode flags and activity sensors (used to partition data)
-        sensors_group = f['MetaData']['Sensors']
+        sensors_group = f['MetaData/Sensors']
         ant_sensors = sensors_group['Antennas'][antA]
-        ped_sensors = sensors_group['Pedestals']['ped' + antA[3:]]
+        ped_sensors = sensors_group['Pedestals/ped' + antA[3:]]
 
         # Autodetect the noise diode to use, based on which sensor shows any activity
         if not noise_diode:
@@ -682,7 +682,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         band_center = rfe_sensors[center_freq_sensor]['value'][0] / 1e6
 
         # Load correlator configuration group
-        corr_config = f['MetaData']['Configuration']['Correlator']
+        corr_config = f['MetaData/Configuration/Correlator']
         # Construct channel centre frequencies (in MHz) from DBE attributes
         num_chans = corr_config.attrs['n_chans']
         channel_bw = corr_config.attrs['bandwidth'] / 1e6 / num_chans
@@ -715,9 +715,9 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         pol_to_corr_id = dict([(pol, dbestr_to_corr_id.get(pol_to_dbestr[pol], (-1, -1))) for pol in scape_pol_if])
 
         # Obtain visibility data and timestamps
-        data = f['Data']['correlator_data']
+        data = f['Data/correlator_data']
         # Load timestamps as UT seconds since Unix epoch, and move them from start of each sample to the middle
-        data_timestamps = f['Data']['timestamps'].value + 0.5 * sample_period + time_offset
+        data_timestamps = f['Data/timestamps'].value + 0.5 * sample_period + time_offset
         # If data timestamps have problems, warn about it
         if np.any(data_timestamps < 1e9) or (len(data_timestamps) > 1 and np.diff(data_timestamps).min() == 0.0):
             logger.warning("Bad correlator timestamps (duplicates or way out of date)")
@@ -779,7 +779,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         compscan_ends = np.r_[compscan_starts[1:] - 1, len(dump_endtimes) - 1]
 
         # Associate labels with each compound scan
-        label, label_timestamps = f['Markup']['labels']['label'], f['Markup']['labels']['timestamp']
+        label, label_timestamps = f['Markup/labels']['label'], f['Markup/labels']['timestamp']
         # Start with blank labels, with sufficient capacity in array to store longest label
         max_str_len = max([len(l) for l in label]) if len(label) > 0 else 1
         compscan_labels = np.zeros(len(compscan_targets), dtype='S%d' % (max_str_len,))
@@ -827,7 +827,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
 
             if len(scanlist) > 0:
                 # V2 file stores target string as it appears in sensor store: in quotes to escape internal commas
-                compscanlist.append(CompoundScan(scanlist, compscan_target.strip('"'), compscan_label))
+                compscanlist.append(CompoundScan(scanlist, compscan_target[1:-1], compscan_label))
 
         return compscanlist, experiment_id, observer, description, 'counts', \
                corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro
