@@ -100,6 +100,7 @@ def extract_scan_data(scans, quantity, pol='I'):
     # Create dict of standard quantities and the corresponding functions that will extract them from a Scan object,
     # plus their axis labels
     lf = {# Time-like quantities
+          'abs_time' : ('Time (seconds since Unix epoch)', lambda scan: scan.timestamps),
           'time'     : ('Time (s), since %s' % (Timestamp(start).local(),), lambda scan: scan.timestamps - start),
           'az'       : ('Azimuth angle (deg)', lambda scan: rad2deg(scan.pointing['az'])),
           'el'       : ('Elevation angle (deg)', lambda scan: rad2deg(scan.pointing['el'])),
