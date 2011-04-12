@@ -684,8 +684,8 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         # Load correlator configuration group
         corr_config = f['MetaData/Configuration/Correlator']
         # Construct channel centre frequencies (in MHz) from DBE attributes
-        num_chans = corr_config.attrs['n_chans']
-        channel_bw = corr_config.attrs['bandwidth'] / 1e6 / num_chans
+        num_chans = get_single_value(corr_config, 'n_chans')
+        channel_bw = get_single_value(corr_config, 'bandwidth') / 1e6 / num_chans
         # Assume that lower-sideband downconversion has been used, which flips frequency axis
         # Also subtract half a channel width to get frequencies at center of each channel
         center_freqs = band_center - channel_bw * (np.arange(num_chans) - num_chans / 2 + 0.5)
@@ -694,9 +694,11 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         sample_period = get_single_value(corr_config, 'int_time')
         dump_rate = 1.0 / sample_period
         corrconf = CorrelatorConfig(center_freqs, bandwidths, channel_select, dump_rate)
+        # Scale data by the number of accumulations per dump
+        data_scale_factor = get_single_value(corr_config, 'n_accs')
 
         # Figure out mapping of antennas and feeds to the correlation products involved
-        input_map = dict(corr_config.attrs['input_map'])
+        input_map = dict(get_single_value(corr_config, 'input_map'))
         # Obtain DBE input associated with each polarisation of selected antennas (also show unavailable feeds)
         antA_H = input_map.get(antA + 'H', 'UNAVAILABLE')
         antA_V = input_map.get(antA + 'V', 'UNAVAILABLE')
@@ -708,8 +710,8 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         # Mapping of DBE input string to correlation product index in form of (baseline, polarisation) pair
         # This typically follows Miriad-style numbering
         dbestr_to_corr_id = {}
-        for bl_ind, bl in enumerate(corr_config.attrs['bls_ordering']):
-            for pol_ind, pol in enumerate(corr_config.attrs['crosspol_ordering']):
+        for bl_ind, bl in enumerate(get_single_value(corr_config, 'bls_ordering')):
+            for pol_ind, pol in enumerate(get_single_value(corr_config, 'crosspol_ordering')):
                 dbestr_to_corr_id['%d%s%d%s' % (bl[0], pol[0], bl[1], pol[1])] = (bl_ind, pol_ind)
         # Overall mapping from polarisation product to correlation product index (None for unavailable products)
         pol_to_corr_id = dict([(pol, dbestr_to_corr_id.get(pol_to_dbestr[pol], (-1, -1))) for pol in scape_pol_if])
@@ -722,6 +724,8 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         if np.any(data_timestamps < 1e9) or (len(data_timestamps) > 1 and np.diff(data_timestamps).min() == 0.0):
             logger.warning("Bad correlator timestamps (duplicates or way out of date)")
         dump_endtimes = data_timestamps + 0.5 * sample_period
+        # Assume data are raw integers straight from the correlator in this case
+        raw_data = data.dtype != np.float32
 
         # Load pointing sensor data and interpolate it to data timestamps (storing it in radians)
         pointing = []
@@ -781,7 +785,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         # Associate labels with each compound scan
         label, label_timestamps = f['Markup/labels']['label'], f['Markup/labels']['timestamp']
         # Start with blank labels, with sufficient capacity in array to store longest label
-        max_str_len = max([len(l) for l in label]) if len(label) > 0 else 1
+        max_str_len = (max([len(l) for l in label]) + 1) if len(label) > 0 else 1
         compscan_labels = np.zeros(len(compscan_targets), dtype='S%d' % (max_str_len,))
         if label_timestamps[0] != 0.0:
             # Associate each label with the closest target on the left (i.e. preceding the label)
@@ -814,15 +818,18 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
                     # Add real (0) and imag (1) indices for each polarisation product, i.e. [Re, Re, Re, Im]
                     corr_realimag_id = np.hstack((corr_id, np.array([0, 0, 0, 1])[:, np.newaxis]))
                     # Extract time slice of appropriate correlation products (keeping all channels)
-                    scan_data = np.dstack([data[start:end + 1, :, bl_id, pol_id, real_imag]
+                    scan_data = np.dstack([(data[start:end + 1, :, bl_id, pol_id, real_imag].astype(np.float32)
+                                            if raw_data else data[start:end + 1, :, bl_id, pol_id, real_imag])
                                            if bl_id >= 0 else np.zeros((num_times, num_chans), np.float32)
                                            for bl_id, pol_id, real_imag in corr_realimag_id])
                 else:
                     corr_id = [pol_to_corr_id[pol] for pol in scape_pol_if]
-                    scan_data = np.dstack([data[start:end + 1, :, bl_id, pol_id].view(np.complex64)
+                    scan_data = np.dstack([(data[start:end + 1, :, bl_id, pol_id].astype(np.float32).view(np.complex64)
+                                            if raw_data else data[start:end + 1, :, bl_id, pol_id].view(np.complex64))
                                            if bl_id >= 0 else np.zeros((num_times, num_chans), np.complex64)
                                            for bl_id, pol_id in corr_id])
-                scanlist.append(Scan(scan_data, data_timestamps[start:end + 1], pointing[start:end + 1],
+                scanlist.append(Scan(scan_data / np.float32(data_scale_factor) if raw_data else scan_data,
+                                     data_timestamps[start:end + 1], pointing[start:end + 1],
                                      flags[start:end + 1], scan_label, '%s[%d:%d]' % (filename, start, end + 1)))
 
             if len(scanlist) > 0:
