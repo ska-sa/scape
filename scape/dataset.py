@@ -508,3 +508,34 @@ class DataSet(object):
         for compscan in self.compscans:
             compscan.fit_beam_and_baselines(*args, **kwargs)
         return self
+
+    def perturb(self):
+        """Perturb visibility data according to expected uncertainty.
+
+        This generates random Gaussian data with the theoretical standard
+        deviation of the visibility data (individually determined per timestamp,
+        frequency channel and polarisation term) and adds it to the data. This
+        is typically used to perturb the data to generate a surrogate data set
+        as part of a Monte Carlo run. It assumes that each visibility is a good
+        estimate of the true underlying visibility, i.e. that the data standard
+        deviation is small (valid for typically large bandwidths and dump
+        periods). It also assumes that the visibilities are uncorrelated in
+        time, frequency and across polarisation terms.
+
+        """
+        # This is the ratio of mean power to standard deviation of power (aka signal-to-noise ratio)
+        # and is equal to sqrt(K), where K is number of samples averaged together in power estimate.
+        # K is also known as accum_per_int (number of spectral samples going into one dump).
+        # Since spectral samples are complex, the time-bandwidth product does not include a factor of 2.
+        snr = np.sqrt((self.bandwidths * 1e6) / self.dump_rate)
+        for scan in self.scans:
+            if not scan.has_autocorr:
+                logger.warning('Perturbation of data set currently only works for single-dish data')
+                break
+            hh, vv, rehv, imhv = [scan.data[:, :, n] for n in range(4)]
+            # These formulas are based on the moments of real and complex Wishart distributions
+            # It replaces the true covariance elements with their sample estimates (assuming the estimates are good)
+            std = np.dstack([hh, vv, np.sqrt((hh * vv + rehv ** 2 - imhv ** 2) / 2),
+                                     np.sqrt((hh * vv - rehv ** 2 + imhv ** 2) / 2)])
+            std /= snr[np.newaxis, :, np.newaxis]
+            scan.data += std * np.random.standard_normal(scan.data.shape)
