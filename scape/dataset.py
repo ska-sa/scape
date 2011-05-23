@@ -91,6 +91,9 @@ class DataSet(object):
         Correlator dump rate, in Hz (same as in *corrconf*)
     scans : list of :class:`scan.Scan` objects
         Flattened list of all scans in data set
+    nd_gain : dict of functions or None
+        Receiver gains as functions of time and frequency (per polarisation),
+        derived from noise diode calibration (None if no calibration was done)
 
     Raises
     ------
@@ -136,6 +139,7 @@ class DataSet(object):
         self.nd_h_model = nd_h_model
         self.nd_v_model = nd_v_model
         self.enviro = enviro
+        self.nd_gain = None
 
         # Create global scan list and fill in caches and links in lower-level objects
         self.scans = []

@@ -308,7 +308,7 @@ def _partition_into_bins(x, width):
         bin_start += len(bin_inds)
     return bins, np.hstack([x[bin].mean() for bin in bins])
 
-def estimate_gain(dataset, interp_degree=1, time_width=900.0, freq_width='all', randomise=False, **kwargs):
+def estimate_gain(dataset, interp_degree=1, time_width=900.0, freq_width='all', save=True, randomise=False, **kwargs):
     """Estimate gain and relative phase of both polarisations via injected noise.
 
     Each successful noise diode transition in the data set is used to estimate
@@ -339,6 +339,8 @@ def estimate_gain(dataset, interp_degree=1, time_width=900.0, freq_width='all', 
         channels within *freq_width* MHz of each other are averaged together.
         If this is string 'all', gains are averaged together over all channels.
         If this is 0 or string 'none', no averaging is done along frequency axis.
+    save : {True, False}, optional
+        True if estimated gain functions are stored in dataset object
     randomise : {False, True}, optional
         True if raw data and noise diode spectrum smoothing should be randomised
     kwargs : dict, optional
@@ -403,19 +405,23 @@ def estimate_gain(dataset, interp_degree=1, time_width=900.0, freq_width='all', 
     interp_degree[1] = min(interp_degree[1], 2 * (len(freq_avg) // 2) - 1)
 
     # Do a spline interpolation of HH and VV gains between time-frequency bins
-    gain_hh = Spline2DGridFit(degree=interp_degree, bbox=bbox)
-    gain_hh.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol_sd.index('HH')])
-    gain_vv = Spline2DGridFit(degree=interp_degree, bbox=bbox)
-    gain_vv.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol_sd.index('VV')])
+    gain_hh_interp = Spline2DGridFit(degree=interp_degree, bbox=bbox)
+    gain_hh_interp.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol_sd.index('HH')])
+    gain_vv_interp = Spline2DGridFit(degree=interp_degree, bbox=bbox)
+    gain_vv_interp.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol_sd.index('VV')])
     # Also interpolate the complex-valued HV (real and imag separately), used to derive phase angle between H and V
-    delta_re_hv = Spline2DGridFit(degree=interp_degree, bbox=bbox)
-    delta_re_hv.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol_sd.index('ReHV')])
-    delta_im_hv = Spline2DGridFit(degree=interp_degree, bbox=bbox)
-    delta_im_hv.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol_sd.index('ImHV')])
+    delta_re_hv_interp = Spline2DGridFit(degree=interp_degree, bbox=bbox)
+    delta_re_hv_interp.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol_sd.index('ReHV')])
+    delta_im_hv_interp = Spline2DGridFit(degree=interp_degree, bbox=bbox)
+    delta_im_hv_interp.fit([time_avg, freq_avg], deltas_avg[:, :, scape_pol_sd.index('ImHV')])
 
     # Return interpolators in convenient form, where t and f are separate arguments (instead of a single list input)
-    return lambda t, f: gain_hh([t, f]), lambda t, f: gain_vv([t, f]), \
-           lambda t, f: delta_re_hv([t, f]), lambda t, f: delta_im_hv([t, f])
+    gain_hh, gain_vv = lambda t, f: gain_hh_interp([t, f]), lambda t, f: gain_vv_interp([t, f])
+    delta_re_hv, delta_im_hv = lambda t, f: delta_re_hv_interp([t, f]), lambda t, f: delta_im_hv_interp([t, f])
+    if save:
+        dataset.nd_gain = {'gain_hh' : gain_hh, 'gain_vv' : gain_vv,
+                           'delta_re_hv' : delta_re_hv, 'delta_im_hv' : delta_im_hv}
+    return gain_hh, gain_vv, delta_re_hv, delta_im_hv
 
 def calibrate_gain(dataset, **kwargs):
     """Calibrate H and V gains and relative phase, based on noise injection.
@@ -433,7 +439,12 @@ def calibrate_gain(dataset, **kwargs):
         Extra keyword arguments are passed to :func:`estimate_gain`
 
     """
-    gain_hh, gain_vv, delta_re_hv, delta_im_hv = estimate_gain(dataset, **kwargs)
+    # Use stored gain functions if available, otherwise estimate the gain first
+    if dataset.nd_gain is not None:
+        gain_hh, gain_vv = dataset.nd_gain['gain_hh'], dataset.nd_gain['gain_vv']
+        delta_re_hv, delta_im_hv = dataset.nd_gain['delta_re_hv'], dataset.nd_gain['delta_im_hv']
+    else:
+        gain_hh, gain_vv, delta_re_hv, delta_im_hv = estimate_gain(dataset, **kwargs)
     hh, vv, re_hv, im_hv = [scape_pol_sd.index(pol) for pol in ['HH', 'VV', 'ReHV', 'ImHV']]
     for scan in dataset.scans:
         # Interpolate gains based on scan timestamps
