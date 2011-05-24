@@ -333,7 +333,7 @@ class DataSet(object):
         Returns
         -------
         dataset : :class:`DataSet` object
-            Data set with selection of scans with possibly smaller data arrays.
+            New data set with selection of scans (possibly shared with self)
 
         Raises
         ------
@@ -400,7 +400,7 @@ class DataSet(object):
         Returns
         -------
         dataset : :class:`DataSet` object
-            Data set with calibrated power data
+            Data set with calibrated power data (modifies self too)
 
         """
         # Only operate on raw data
@@ -441,7 +441,7 @@ class DataSet(object):
         Returns
         -------
         dataset : :class:`DataSet` object
-            Data set with averaged power data
+            Data set with averaged power data (modifies self too)
 
         Notes
         -----
@@ -506,7 +506,7 @@ class DataSet(object):
         Returns
         -------
         dataset : :class:`DataSet` object
-            Data set with fitted beam/baseline functions added
+            Data set with fitted beam/baseline functions added (modifies self too)
 
         """
         for compscan in self.compscans:
@@ -526,6 +526,11 @@ class DataSet(object):
         periods). It also assumes that the visibilities are uncorrelated in
         time, frequency and across polarisation terms.
 
+        Returns
+        -------
+        dataset : :class:`DataSet` object
+            Perturbed data set (modifies self too)
+
         """
         # This is the ratio of mean power to standard deviation of power (aka signal-to-noise ratio)
         # and is equal to sqrt(K), where K is number of samples averaged together in power estimate.
@@ -543,3 +548,4 @@ class DataSet(object):
                                      np.sqrt((hh * vv - rehv ** 2 + imhv ** 2) / 2)])
             std /= snr[np.newaxis, :, np.newaxis]
             scan.data += std * np.random.standard_normal(scan.data.shape)
+        return self
