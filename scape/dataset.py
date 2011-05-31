@@ -141,8 +141,7 @@ class DataSet(object):
         self.enviro = enviro
         self.nd_gain = None
 
-        # Create global scan list and fill in caches and links in lower-level objects
-        self.scans = []
+        # Fill in caches and links in lower-level objects
         for compscan in self.compscans:
             # Add link to parent in each compound scan object
             compscan.dataset = self
@@ -161,7 +160,6 @@ class DataSet(object):
                 else:
                     good_scans.append(scan)
             compscan.scans = good_scans
-            self.scans.extend(compscan.scans)
 
     def __eq__(self, other):
         """Equality comparison operator."""
@@ -259,6 +257,11 @@ class DataSet(object):
                "antenna='%s'" % self.antenna.name if self.antenna2 is None else
                "baseline='%s - %s'" % (self.antenna.name, self.antenna2.name),
                len(self.compscans), id(self))
+
+    @property
+    def scans(self):
+        """Flattened list of all scans in data set."""
+        return np.concatenate([cs.scans for cs in self.compscans]).tolist()
 
     def save(self, filename, **kwargs):
         """Save data set object to file.
