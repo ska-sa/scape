@@ -22,6 +22,7 @@ import katpoint
 
 from .beam_baseline import fit_beam_and_baselines
 from .stats import remove_spikes
+from .fitting import scalar
 
 logger = logging.getLogger("scape.compoundscan")
 
@@ -307,16 +308,16 @@ class CompoundScan(object):
                 assert dist_next_closest < np.inf, 'Beam is refined but less than 2 scan-based baselines found'
                 # Return a weighted sum of the per-scan baseline heights at the closest two samples
                 # Baseline height is linear combination - assumes beam center is *between* nearest two scans
-                baseline_closest = self.scans[closest_scan].baseline(closest_time[closest_scan])
-                baseline_next_closest = self.scans[next_closest_scan].baseline(closest_time[next_closest_scan])
+                baseline_closest = scalar(self.scans[closest_scan].baseline(closest_time[closest_scan]))
+                baseline_next_closest = scalar(self.scans[next_closest_scan].baseline(closest_time[next_closest_scan]))
                 return (dist_next_closest * baseline_closest + dist_closest * baseline_next_closest) / \
                        (dist_closest + dist_next_closest)
             else:
                 # Return compound scan-based baseline height at beam center
-                return self.baseline(np.expand_dims(self.beam.center, 1))
+                return scalar(self.baseline(np.expand_dims(self.beam.center, 1)))
         elif self.baseline:
             # Without a beam, return the baseline height at the target position
-            return self.baseline([[0.], [0.]])
+            return scalar(self.baseline([[0.], [0.]]))
         else:
             # Without no baseline or beam, return None
             return None
