@@ -13,7 +13,7 @@ except ImportError:
 
 from katpoint import rad2deg, Timestamp, construct_azel_target
 from .fitting import PiecewisePolynomial1DFit
-from .stats import robust_mu_sigma, remove_spikes, minimise_angle_wrap
+from .stats import robust_mu_sigma, remove_spikes, minimise_angle_wrap, identify_rfi_channels
 from .beam_baseline import fwhm_to_sigma, extract_measured_beam, interpolate_measured_beam
 from .plots_basic import plot_segments, plot_line_segments, plot_compacted_images, plot_marker_3d, \
                          gaussian_ellipses, plot_db_contours, ordinal_suffix
@@ -893,7 +893,7 @@ def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=N
     compacted_start = [0.0] + np.cumsum(end - start).tolist()
     time_origin = start.min()
     # Identify RFI channels, and return extra data
-    rfi_channels, rfi_count, rfi_data = dataset.identify_rfi_channels(sigma, min_bad_scans, extra_outputs=True)
+    rfi_channels, rfi_count, rfi_data = identify_rfi_channels(dataset, sigma, min_bad_scans, extra_outputs=True)
     channel_list = np.arange(0, num_channels, channel_skip, dtype='int')
     non_rfi_channels = list(set(range(num_channels)) - set(rfi_channels))
     rfi_channels = [n for n in channel_list if n in rfi_channels]
