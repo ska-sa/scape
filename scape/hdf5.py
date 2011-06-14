@@ -87,22 +87,26 @@ def remove_duplicates(sensor):
 def get_single_value(group, name):
     """Return single value from attribute or dataset with given name in group.
 
-    If data is retrieved from a dataset, this functions raises an error if the
-    values in the dataset are not all the same. Otherwise it returns the first
-    value.
+    If `name` is an attribute of the HDF5 group `group`, it is returned,
+    otherwise it is interpreted as an HDF5 dataset of `group` and the last value
+    of `name` is returned. This is meant to retrieve static configuration values
+    that potentially get set more than once during capture initialisation, but
+    then does not change during actual capturing.
+
+    Parameters
+    ----------
+    group : :class:`h5py.Group` object
+        HDF5 group to query
+    name : string
+        Name of HDF5 attribute or dataset to query
+
+    Returns
+    -------
+    value : object
+        Attribute or last value of dataset
 
     """
-    value = group.attrs.get(name, None)
-    if value is not None:
-        return value
-    dataset = group.get(name, None)
-    if dataset is None:
-        raise ValueError("Could not find attribute or dataset named '%s/%s'" % (group.name, name))
-    if not dataset.len():
-        raise ValueError("Found dataset named '%s/%s' but it was empty" % (group.name, name))
-    if not all(dataset.value == dataset.value[0]):
-        raise ValueError("Not all values in '%s/%s' are equal. Values found: %s" % (group.name, name, dataset.value))
-    return dataset.value[0]
+    return group.attrs[name] if name in group.attrs else group[name].value[-1]
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  load_dataset
