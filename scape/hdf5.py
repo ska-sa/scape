@@ -716,7 +716,6 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         # If data timestamps have problems, warn about it
         if np.any(data_timestamps < 1e9) or (len(data_timestamps) > 1 and np.diff(data_timestamps).min() == 0.0):
             logger.warning("Bad correlator timestamps (duplicates or way out of date)")
-        dump_endtimes = data_timestamps + 0.5 * sample_period
 
         # Load pointing sensor data and interpolate it to data timestamps (storing it in radians)
         pointing = []
@@ -761,15 +760,25 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         simplify = {'scan': 'scan', 'track': 'track', 'slew': 'slew', 'scan_ready': 'slew', 'scan_complete': 'slew'}
         state = np.array([simplify.get(act, 'stop') for act in activity])
         # Cull spurious short-lived activities (e.g. track immediately preceding scan_ready)
-        state_durations = np.diff(np.r_[activity_timestamps, dump_endtimes[-1]])
+        state_durations = np.diff(np.r_[activity_timestamps, data_timestamps[-1] + 0.5 * sample_period])
         non_spurious = state_durations > 0.5 * sample_period
         state, activity_timestamps = state[non_spurious], activity_timestamps[non_spurious]
         # Identify times where the state changes - these become scan boundaries
         state_changes = [n for n in xrange(len(state)) if (n == 0) or (state[n] != state[n - 1])]
         scan_labels, scan_timestamps = state[state_changes], activity_timestamps[state_changes]
-        # Convert scan boundary times to sample indices
-        scan_starts = dump_endtimes.searchsorted(scan_timestamps)
-        scan_ends = np.r_[scan_starts[1:] - 1, len(dump_endtimes) - 1]
+        # Convert scan boundary times to sample indices (pick the first dump that is fully within scan boundaries)
+        scan_boundaries = np.r_[data_timestamps.searchsorted(scan_timestamps + 0.5 * sample_period),
+                                len(data_timestamps)]
+        # Expand 'slew' and 'stop' scans to include the initial dump straddling the scan boundary
+        off_target_scans = (scan_labels == 'slew') | (scan_labels == 'stop')
+        scan_boundaries[off_target_scans] -= 1
+        # Cull any empty scans
+        non_empty = (np.diff(scan_boundaries) > 0)
+        scan_boundaries = np.r_[scan_boundaries[non_empty], len(data_timestamps)]
+        scan_labels, scan_timestamps = scan_labels[non_empty], scan_timestamps[non_empty]
+        # Ensure that we include all dumps in scans
+        scan_boundaries[0] = 0
+        scan_starts, scan_ends = scan_boundaries[:-1], scan_boundaries[1:] - 1
 
         # Use the target sensor of Antenna A to partition the data set into compound scans
         target_sensor = remove_duplicates(ant_sensors['target'])
@@ -777,8 +786,14 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         # Ignore empty and repeating targets (but keep any target following an empty one, as well as first target)
         target_changes = [n for n in xrange(len(target)) if target[n] and ((n == 0) or (target[n] != target[n - 1]))]
         compscan_targets, target_timestamps = target[target_changes], target_timestamps[target_changes]
-        compscan_starts = dump_endtimes.searchsorted(target_timestamps)
-        compscan_ends = np.r_[compscan_starts[1:] - 1, len(dump_endtimes) - 1]
+        # Convert compscan boundary times to sample indices (pick the dump containing target change)
+        compscan_boundaries = np.r_[data_timestamps.searchsorted(target_timestamps - 0.5 * sample_period),
+                                    len(data_timestamps)]
+        # Cull any empty compound scans
+        non_empty = (np.diff(compscan_boundaries) > 0)
+        compscan_boundaries = np.r_[compscan_boundaries[non_empty], len(data_timestamps)]
+        compscan_targets, target_timestamps = compscan_targets[non_empty], target_timestamps[non_empty]
+        compscan_starts, compscan_ends = compscan_boundaries[:-1], compscan_boundaries[1:] - 1
 
         # Associate labels with each compound scan
         label, label_timestamps = f['Markup/labels']['label'], f['Markup/labels']['timestamp']
