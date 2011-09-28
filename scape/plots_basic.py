@@ -568,7 +568,8 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
         ax = plt.gca()
 
     # Normalise z to lie between 0 and 1
-    z = (z - z.min()) / (z.max() - z.min())
+    z_min, z_max = z.min(), z.max()
+    z = (z - z_min) / (z_max - z_min) if z_max > z_min else np.zeros(z.shape)
     # Threshold z, so that the minimum size will have the desired ratio to the maximum size
     z[z < min_size/max_size] = min_size/max_size
     # Determine median spacing between vectors
