@@ -701,10 +701,11 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
 
         # Figure out mapping of antennas and feeds to the correlation products involved
         # Mapping of polarisation product to pair of input labels indicating inputs that are multiplied together
-        pol_to_inputpair = {'HH' : (antA + 'H', antB + 'H'), 'VV' : (antA + 'V', antB + 'V'),
-                            'HV' : (antA + 'H', antB + 'V'), 'VH' : (antA + 'V', antB + 'H')}
+        pol_to_inputpair = {'HH' : (antA + 'h', antB + 'h'), 'VV' : (antA + 'v', antB + 'v'),
+                            'HV' : (antA + 'h', antB + 'v'), 'VH' : (antA + 'v', antB + 'h')}
         # Map from input label pair to correlation product index (which typically follows Miriad-style numbering)
-        corrprod_map = dict([(tuple(input_pair), corr_id) for corr_id, input_pair in
+        # Ensure all input labels are lower-case to avoid mixed-case issues
+        corrprod_map = dict([((input_pair[0].lower(), input_pair[1].lower()), corr_id) for corr_id, input_pair in
                              enumerate(get_single_value(corr_config, 'bls_ordering'))])
         # Overall mapping from polarisation product to correlation product index (-1 for unavailable products)
         pol_to_corr_id = dict([(pol, corrprod_map.get(pol_to_inputpair[pol], -1)) for pol in scape_pol_if])
