@@ -224,14 +224,14 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
 
         # Load antennas group
         ants_group = f['Antennas']
-        if baseline == 'AxAx':
+        if baseline in ('AxAx', 'sd'):
             # First single-dish baseline found
             try:
                 antA = antB = ants_group.keys()[0]
             except IndexError:
                 raise ValueError('Could not load first single-dish baseline - no antennas found in file')
             logger.info("Loading single-dish baseline 'A%sA%s'" % (antA[7:], antB[7:]))
-        elif baseline == 'AxAy':
+        elif baseline in ('AxAy', 'if'):
             # First interferometric baseline found
             try:
                 antA, antB = ants_group.keys()[:2]
