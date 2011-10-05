@@ -374,7 +374,8 @@ class DataSet(object):
                             timekeep &= ~flag_data
                         else:
                             timekeep &= flag_data
-                if (labelkeep is None) or (scan.label in labelkeep):
+                # Discard scan if all times are discarded or label is wrong
+                if ((timekeep is None) or np.any(timekeep)) and ((labelkeep is None) or (scan.label in labelkeep)):
                     scanlist.append(scan.select(timekeep, freqkeep, copy))
             if scanlist:
                 compscanlist.append(CompoundScan(scanlist, compscan.target))
