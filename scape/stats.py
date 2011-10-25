@@ -419,8 +419,15 @@ def identify_rfi_channels(data, sigma=8.0, min_bad_scans=0.25, extra_outputs=Fal
         norm_power = (power - offset[np.newaxis, :]) / scale[np.newaxis, :]
         # Form a template of the desired signal as a function of time
         template = np.median(norm_power, axis=1)
+        # If the template is all zeros, this implies zero total power - skip this scan
+        if np.all(template == 0):
+            if extra_outputs:
+                rfi_data.append((norm_power, template, np.zeros(norm_power.shape)))
+            continue
         # Use this as average power, after adding back scaling and offset
         mean_signal_power = np.outer(template, scale) + offset[np.newaxis, :]
+        # Replace zeros in template with next biggest value to prevent expected_std from blowing up
+        template[template == 0] = template[template != 0].min()
         # Determine expected standard deviation of power data, assuming it has chi-square distribution
         # Also divide by an extra sqrt(template) factor, which allows more leeway where template is small
         # This is useful for absorbing small discrepancies in baseline when scanning across a source
