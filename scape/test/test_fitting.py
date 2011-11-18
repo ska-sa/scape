@@ -610,11 +610,13 @@ class Spline2DGridFitTestCases(unittest.TestCase):
         y_ensemble = []
         for m in xrange(3000):
             interp = fitting.Spline2DGridFit((3, 3))
-            interp.fit(self.x, self.y + 0.1*np.random.randn(*self.y.shape))
+            interp.fit(self.x, self.y + 0.1 * np.random.randn(*self.y.shape))
             y_ensemble.append(interp(self.testx))
         std_y_mc = np.dstack(y_ensemble).std(axis=2)
         # This is only accurate to a few percent, because of the relatively small number of Monte Carlo samples
-        np.testing.assert_almost_equal(std_testy, std_y_mc, decimal=1)
+        rel_std_diff = np.abs(std_y_mc - std_testy) / np.abs(std_testy)
+        rel_std_diff_p90 = sorted(rel_std_diff.ravel())[int(0.90 * rel_std_diff.size)]
+        self.assertTrue(rel_std_diff_p90 < 0.1)
 
 class RbfScatterFitTestCases(unittest.TestCase):
     """Check the RbfScatterFit class (only if Rbf is installed in SciPy)."""

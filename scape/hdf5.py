@@ -895,7 +895,7 @@ def save_dataset(dataset, filename):
             sensor = sensor_name_v1[quantity]
             # Environment sensors are optional
             if quantity in dataset.enviro:
-                sensors_group.create_dataset(sensor, data=dataset.enviro[quantity], compression='gzip')
+                sensors_group.create_dataset(sensor, data=dataset.enviro[quantity])
         # For now, both H and V are created, even if original dataset had only a single feed, to keep things simple
         # The correlator data for the missing feed are already zeros in this situation
         h_group, v_group = antA_group.create_group('H'), antA_group.create_group('V')
