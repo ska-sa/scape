@@ -632,14 +632,15 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         # Use antenna A for pointing sensors, noise diode flags and activity sensors (used to partition data)
         sensors_group = f['MetaData/Sensors']
         ant_sensors = sensors_group['Antennas'][antA]
-        ped_sensors = sensors_group['Pedestals/ped' + antA[3:]]
+        # The noise diode sensors either reside in the old Pedestals group (deprecated) or the Antennas group
+        nd_sensors = sensors_group['Pedestals/ped' + antA[3:]] if 'Pedestals' in sensors_group else ant_sensors
 
         # Autodetect the noise diode to use, based on which sensor shows any activity
         if not noise_diode:
             nd_fired = {}
             for nd in ('coupler', 'pin'):
                 sensor = sensor_name_v2[nd + '_nd_on']
-                nd_fired[nd] = np.any(ped_sensors[sensor]['value'] == '1') if has_data(ped_sensors, sensor) else False
+                nd_fired[nd] = np.any(nd_sensors[sensor]['value'] == '1') if has_data(nd_sensors, sensor) else False
             if np.sum(nd_fired.values()) == 1:
                 noise_diode = nd_fired.keys()[nd_fired.values().index(True)]
                 logger.info("Using '%s' noise diode as it is the only one firing in data set" % noise_diode)
@@ -738,9 +739,9 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
 
         # Load noise diode flags and interpolate it to data timestamps
         sensor = sensor_name_v2[noise_diode + '_nd_on']
-        if has_data(ped_sensors, sensor):
+        if has_data(nd_sensors, sensor):
             # Ensure noise diode timestamps are unique before interpolation
-            nd_on = remove_duplicates(ped_sensors[sensor])
+            nd_on = remove_duplicates(nd_sensors[sensor])
             # Do step-wise interpolation (as flag is either 0 or 1 and holds its value until it toggles)
             interp = PiecewisePolynomial1DFit(max_degree=0)
             try:
