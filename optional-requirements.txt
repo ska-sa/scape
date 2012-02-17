@@ -1,0 +1,5 @@
+acsm
+h5py
+matplotlib
+pyfits
+setuptools
