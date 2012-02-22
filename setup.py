@@ -19,8 +19,9 @@ setup (
         "Topic :: Scientific/Engineering :: Astronomy",
     ],
     platforms = [ "OS Independent" ],
+    install_requires = ['nose',],
     keywords="kat kat7 ska",
     zip_safe = False,
     # Bitten Test Suite
-    test_suite = "scape.test.suite",
+    test_suite = "nose.collector",
 )
