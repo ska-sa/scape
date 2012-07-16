@@ -385,8 +385,8 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
             channel_bw = corrconf_group.attrs['channel_bandwidth_hz'] / 1e6
             num_chans = corrconf_group.attrs['num_freq_channels']
             # Assume that lower-sideband downconversion has been used, which flips frequency axis
-            # Also subtract half a channel width to get frequencies at center of each channel
-            center_freqs = band_center - channel_bw * (np.arange(num_chans) - num_chans / 2 + 0.5)
+            # Don't subtract half a channel width as channel 0 is centred on 0 Hz in baseband
+            center_freqs = band_center - channel_bw * (np.arange(num_chans) - num_chans / 2)
             bandwidths = np.tile(np.float64(channel_bw), num_chans)
         channel_select = corrconf_group['channel_select'].value.nonzero()[0].tolist()
         dump_rate = corrconf_group.attrs['dump_rate_hz']
@@ -692,8 +692,8 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         num_chans = get_single_value(corr_config, 'n_chans')
         channel_bw = get_single_value(corr_config, 'bandwidth') / 1e6 / num_chans
         # Assume that lower-sideband downconversion has been used, which flips frequency axis
-        # Also subtract half a channel width to get frequencies at center of each channel
-        center_freqs = band_center - channel_bw * (np.arange(num_chans) - num_chans / 2 + 0.5)
+        # Don't subtract half a channel width as channel 0 is centred on 0 Hz in baseband
+        center_freqs = band_center - channel_bw * (np.arange(num_chans) - num_chans / 2)
         bandwidths = np.tile(np.float64(channel_bw), num_chans)
         channel_select = range(num_chans)
         sample_period = get_single_value(corr_config, 'int_time')
