@@ -10,6 +10,7 @@ import katfile
 from .gaincal import NoiseDiodeModel
 from .scan import Scan, scape_pol_if
 from .compoundscan import CorrelatorConfig, CompoundScan
+from .hdf5 import remove_duplicates
 
 logger = logging.getLogger("scape.kathdf5")
 
@@ -158,7 +159,7 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         sensor_name = ('Antennas/Antenna%s/%s' % (antA.name[3:], sensor_name_v1[quantity])) if d.version < '2.0' else \
                       ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],))
         if sensor_name in d.file:
-            enviro[quantity] = d.file[sensor_name].value
+            enviro[quantity] = remove_duplicates(d.file[sensor_name])
 
     # Autodetect the noise diode to use, based on which sensor shows any activity
     if not noise_diode:
