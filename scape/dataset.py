@@ -16,7 +16,8 @@ try:
 except ImportError:
     xdmfits_found = False
 try:
-    from .hdf5 import load_dataset as hdf5_load
+    from .kathdf5 import load_dataset as hdf5_load
+    from .hdf5 import load_dataset as old_hdf5_load
     from .hdf5 import save_dataset as hdf5_save
     hdf5_found = True
 except ImportError:
@@ -117,8 +118,12 @@ class DataSet(object):
             elif (ext == '.h5') or (ext == '.hdf5'):
                 if not hdf5_found:
                     raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
-                compscanlist, experiment_id, observer, description, data_unit, \
-                corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = hdf5_load(filename, **kwargs)
+                if kwargs.get('katfile', False):
+                    compscanlist, experiment_id, observer, description, data_unit, \
+                    corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = hdf5_load(filename, **kwargs)
+                else:
+                    compscanlist, experiment_id, observer, description, data_unit, \
+                    corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = old_hdf5_load(filename, **kwargs)
             else:
                 raise ValueError("File extension '%s' not understood" % ext)
 
