@@ -56,8 +56,8 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
 
     Parameters
     ----------
-    filename : string
-        Name of input HDF5 file
+    filename : string or :class:`katfile.DataSet`
+        Name of input HDF5 file or katfile dataset object
     baseline : string, optional
         Selected baseline as *AxAy*, where *x* is the number of the first antenna
         and *y* is the number of the second antenna (1-based), and *x* < *y*.
@@ -119,7 +119,12 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         are missing
 
     """
-    d = katfile.open(filename, time_offset=time_offset, **kwargs)
+    if isinstance(filename, katfile.DataSet):
+        d = filename
+        filename = d.name
+    else:
+        d = katfile.open(filename, time_offset=time_offset, **kwargs)
+        d.select(**kwargs)
 
     if baseline in ('AxAx', 'sd'):
         # First single-dish baseline found

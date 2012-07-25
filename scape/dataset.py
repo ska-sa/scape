@@ -109,7 +109,12 @@ class DataSet(object):
                  nd_h_model=None, nd_v_model=None, enviro=None, **kwargs):
         # Load dataset from file
         if filename:
-            ext = os.path.splitext(filename)[1]
+            # If not a string, assume it is a katfile dataset object
+            if isinstance(filename, basestring):
+                ext = os.path.splitext(filename)[1]
+            else:
+                ext = '.h5'
+                kwargs['katfile'] = True
             if ext == '.fits':
                 if not xdmfits_found:
                     raise ImportError('XDM FITS support could not be loaded - please check xdmfits module')
