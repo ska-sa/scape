@@ -257,14 +257,7 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
             scan_pointing = np.rec.fromarrays([d.sensor[az_sensor].astype(np.float32) * np.float32(np.pi / 180.0),
                                                d.sensor[el_sensor].astype(np.float32) * np.float32(np.pi / 180.0)],
                                               names=('az', 'el'))
-            if nd_sensor:
-                nd_flags = d.sensor[nd_sensor]
-                # Kill first True noise diode flag, as this interferes with scape's noise diode calibration for now
-                nd_on = np.nonzero(nd_flags)[0]
-                if len(nd_on) > 0:
-                    nd_flags[nd_on[0]] = False
-            else:
-                nd_flags = np.tile(False, scan_timestamps.shape)
+            nd_flags = d.sensor[nd_sensor] if nd_sensor else np.tile(False, scan_timestamps.shape)
             scan_flags = np.rec.fromarrays([nd_flags], names=('nd_on',))
 
             scanlist.append(Scan(scan_data, scan_timestamps, scan_pointing, scan_flags, state,
