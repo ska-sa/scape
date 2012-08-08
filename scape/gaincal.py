@@ -180,7 +180,8 @@ class NoSuitableNoiseDiodeDataFound(Exception):
     """No suitable noise diode on/off blocks were found in data set."""
     pass
 
-def estimate_nd_jumps(dataset, min_samples=3, min_duration=None, jump_significance=10.0):
+def estimate_nd_jumps(dataset, min_samples=3, min_duration=None, max_samples=9, max_duration=None,
+                      jump_significance=10.0):
     """Estimate jumps in power when noise diode toggles state in data set.
 
     This examines all time instants where the noise diode flag changes state
@@ -198,6 +199,11 @@ def estimate_nd_jumps(dataset, min_samples=3, min_duration=None, jump_significan
     min_duration : float, optional
         Minimum duration of each time segment in seconds. If specified, it
         overrides the *min_samples* value.
+    max_samples : int, optional
+        Maximum number of samples in each time segment, to avoid incorporating scans
+    max_duration : float, optional
+        Maximum duration of each time segment in seconds. If specified, it
+        overrides the *max_samples* value.
     jump_significance : float, optional
         The jump in power level should be at least this number of standard devs
 
@@ -219,14 +225,16 @@ def estimate_nd_jumps(dataset, min_samples=3, min_duration=None, jump_significan
     nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma, nd_jump_info = [], [], [], []
     if min_duration is not None:
         min_samples = int(np.ceil(dataset.dump_rate * min_duration))
+    if max_duration is not None:
+        max_samples = int(np.ceil(dataset.dump_rate * max_duration))
     for scan_ind, scan in enumerate(dataset.scans):
-        num_times = len(scan.timestamps)
-        # In absence of valid flag, all data is valid
-        valid_flag = scan.flags['valid'] if 'valid' in scan.flags.dtype.names else np.tile(True, num_times)
         # Find indices where noise diode flag changes value, or continue on to the next scan
         jumps = (np.diff(scan.flags['nd_on']).nonzero()[0] + 1).tolist()
         if len(jumps) == 0:
             continue
+        num_times = len(scan.timestamps)
+        # In absence of valid flag, all data is valid
+        valid_flag = scan.flags['valid'] if 'valid' in scan.flags.dtype.names else np.tile(True, num_times)
         # The samples immediately before and after the noise diode changes state are invalid for gain calibration
         valid_flag[np.array(jumps) - 1] = False
         valid_flag[jumps] = False
@@ -241,6 +249,8 @@ def estimate_nd_jumps(dataset, min_samples=3, min_duration=None, jump_significan
             # Skip the jump if one or both segments are too short
             if min(len(before_segment), len(after_segment)) < min_samples:
                 continue
+            # Limit segments to small local region around jump to avoid incorporating scans, etc.
+            before_segment, after_segment = before_segment[-max_samples:], after_segment[:max_samples]
             # Utilise both off -> on and on -> off transitions
             # (mid is the first sample of the segment after the jump)
             if scan.flags['nd_on'][mid]:
