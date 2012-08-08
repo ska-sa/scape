@@ -284,14 +284,14 @@ def _partition_into_bins(x, width):
 
     This partitions the sequence *x* into bins, where the values in each bin are
     within *width* of each other. The bins are populated sequentially from the
-    sorted values of *x*. If *width* is 'all', all values are binned together in
-    a single bin, while a width of 0 or 'none' puts each value in its own bin.
+    sorted values of *x*. If *width* is None, all values are binned together in
+    a single bin, while a width of 0 puts each value in its own bin.
 
     Parameters
     ----------
-    x : sequence of numbers
+    x : sequence
         Sequence of values to partition
-    width : number or 'all' or 'none'
+    width : float or None
         Bin width, so that the range of values in each bin are less than *width*
 
     Returns
@@ -306,9 +306,9 @@ def _partition_into_bins(x, width):
     x = np.atleast_1d(x)
     bins, bin_start = [], 0
     ind = np.argsort(x)
-    if width == 'all':
+    if width is None:
         return [ind], np.array([x.mean()])
-    elif (width <= 0) or (width == 'none'):
+    elif width <= 0.0:
         return [[n] for n in ind], x[ind]
     relative_x = x[ind] - x[ind[0]]
     while bin_start < len(relative_x):
@@ -318,7 +318,7 @@ def _partition_into_bins(x, width):
         bin_start += len(bin_inds)
     return bins, np.hstack([x[bin].mean() for bin in bins])
 
-def estimate_gain(dataset, interp_degree=1, time_width=900.0, freq_width='all', save=True, randomise=False, **kwargs):
+def estimate_gain(dataset, interp_degree=1, time_width=0.0, freq_width=None, save=True, randomise=False, **kwargs):
     """Estimate gain and relative phase of both polarisations via injected noise.
 
     Each successful noise diode transition in the data set is used to estimate
@@ -339,16 +339,16 @@ def estimate_gain(dataset, interp_degree=1, time_width=900.0, freq_width='all', 
     interp_degree : integer or sequence of 2 integers, optional
         Maximum degree of spline interpolating gains between averaged
         measurements (single degree or separate degrees for time and frequency)
-    time_width : float or 'all' or 'none', optional
+    time_width : float or None, optional
         Width of averaging bin along time axis, in seconds. Gains measured within
         *time_width* seconds of each other will be averaged together. If this is
-        the string 'all', gains are averaged together for all times. If this is
-        0 or the string 'none', no averaging is done along the time axis.
-    freq_width : float or 'all' or 'none', optional
+        None, gains are averaged together for all times. If this is 0, no
+        averaging is done along the time axis.
+    freq_width : float or None, optional
         Width of averaging bin along frequency axis, in MHz. Gains measured in
         channels within *freq_width* MHz of each other are averaged together.
-        If this is string 'all', gains are averaged together over all channels.
-        If this is 0 or string 'none', no averaging is done along frequency axis.
+        If this is None, gains are averaged together over all channels.
+        If this is 0, no averaging is done along frequency axis.
     save : {True, False}, optional
         True if estimated gain functions are stored in dataset object
     randomise : {False, True}, optional
