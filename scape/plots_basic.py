@@ -269,11 +269,11 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
             raise ValueError('Shape mismatch between z and (y, x) (segment shapes are %s vs %s)' %
                              ([np.shape(s) for s in z], yx_shape))
         plot_type = 'image'
-    elif np.isscalar(x[0][0]) and np.isscalar(y[0][0]):
+    elif np.shape(x[0][0]) == () and np.shape(y[0][0]) == ():# handle the case where y[0][0] is masked
         plot_type = 'line'
-    elif np.isscalar(x[0][0]) and np.shape(y[0][0]) == (2,) and monotonic_axis != 'y':
+    elif np.shape(x[0][0]) == () and np.shape(y[0][0]) == (2,) and monotonic_axis != 'y':
         plot_type = 'barv'
-    elif np.shape(x[0][0]) == (2,) and np.isscalar(y[0][0]) and monotonic_axis != 'x':
+    elif np.shape(x[0][0]) == (2,) and np.shape(y[0][0]) == () and monotonic_axis != 'x':
         plot_type = 'barh'
     else:
         raise ValueError('Could not figure out whether to plot lines, bars or images based on x, y, z shapes')
