@@ -243,20 +243,18 @@ def estimate_nd_jumps(dataset, min_samples=3, min_duration=None, max_samples=9, 
         after_jump = jumps[1:] + [num_times]
         # For every jump, obtain segments before and after jump with constant noise diode state
         for start, mid, end in zip(before_jump, at_jump, after_jump):
-            # Restrict these segments to indices where data is valid
-            before_segment = valid_flag[start:mid].nonzero()[0] + start
-            after_segment = valid_flag[mid:end].nonzero()[0] + mid
-            # Skip the jump if one or both segments are too short
-            if min(len(before_segment), len(after_segment)) < min_samples:
-                continue
-            # Limit segments to small local region around jump to avoid incorporating scans, etc.
-            before_segment, after_segment = before_segment[-max_samples:], after_segment[:max_samples]
-            # Utilise both off -> on and on -> off transitions
+            # Only accept on -> off transitions. Noise diode should be 'off' just after the jump.
             # (mid is the first sample of the segment after the jump)
             if scan.flags['nd_on'][mid]:
-                off_segment, on_segment = before_segment, after_segment
-            else:
-                on_segment, off_segment = before_segment, after_segment
+                continue
+            # Restrict these segments to indices where data is valid
+            on_segment = valid_flag[start:mid].nonzero()[0] + start
+            off_segment = valid_flag[mid:end].nonzero()[0] + mid
+            # Skip the jump if one or both segments are too short
+            if min(len(on_segment), len(off_segment)) < min_samples:
+                continue
+            # Limit segments to small local region around jump to avoid incorporating scans, etc.
+            on_segment, off_segment = on_segment[-max_samples:], off_segment[:max_samples]
             # Calculate mean and standard deviation of the *averaged* power data in the two segments.
             # Use robust estimators to suppress spikes and transients in data. Since the estimated mean
             # of data is less variable than the data itself, we have to divide the data sigma by sqrt(N).
