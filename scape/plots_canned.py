@@ -68,7 +68,7 @@ class SingleAxisData(object):
 #--- FUNCTION :  extract_scan_data
 #--------------------------------------------------------------------------------------------------
 
-def extract_scan_data(scans, quantity, pol='I'):
+def extract_scan_data(scans, quantity, pol='absI'):
     """Extract data from list of Scan objects for plotting purposes.
 
     Parameters
@@ -79,7 +79,7 @@ def extract_scan_data(scans, quantity, pol='I'):
         Quantity to extract from scans, given as either a standard name or a
         tuple containing the axis label and function which will produce the data
         when run on a Scan object
-    pol : {'HH', 'VV', 'VH', 'HV', 'XX', 'YY', 'XY', 'YX', 'I', 'Q', 'U', 'V'}
+    pol : {'absI', 'absHH', 'absVV', 'HH', 'VV', 'VH', 'HV', 'XX', 'YY', 'XY', 'YX', 'I', 'Q', 'U', 'V'}, optional
         Polarisation term to extract in the case of visibility data
 
     Returns
@@ -163,7 +163,7 @@ def extract_scan_data(scans, quantity, pol='I'):
 #--- FUNCTION :  extract_xyz_data
 #--------------------------------------------------------------------------------------------------
 
-def extract_xyz_data(data, x, y, z=None, pol='I', band='all', monotonic_axis='auto', scan_labels=None, full_output=False):
+def extract_xyz_data(data, x, y, z=None, pol='absI', band='all', monotonic_axis='auto', scan_labels=None, full_output=False):
     """Extract data from scans for plotting purposes.
 
     This extracts quantities from a sequence of scans for plotting purposes. The
@@ -197,7 +197,7 @@ def extract_xyz_data(data, x, y, z=None, pol='I', band='all', monotonic_axis='au
         given either as standard names or as tuples containing the axis label and
         function which will produce the data when run on a :class:`Scan` object.
         Only z is allowed to be None (i.e. omitted).
-    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'HV', 'VH', 'XX', 'YY', 'XY', 'YX'}, optional
+    pol : {'absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'HV', 'VH', 'XX', 'YY', 'XY', 'YX'}, optional
         Polarisation term to plot if x, y or z specifies visibility data
     band : 'all' or integer, optional
         Single frequency channel/band to select from visibility data (the default
@@ -313,7 +313,7 @@ def extract_xyz_data(data, x, y, z=None, pol='I', band='all', monotonic_axis='au
 #--- FUNCTION :  plot_xyz
 #--------------------------------------------------------------------------------------------------
 
-def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, band='all',
+def plot_xyz(data, x='time', y='amp', z=None, pol='absI', labels=None, sigma=1.0, band='all',
              power_in_dB=False, compact=True, monotonic_axis='auto', ax=None, **kwargs):
     """Generic plotting of 2 or 3 quantities extracted from sequence of scans.
 
@@ -379,7 +379,7 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, b
         given either as standard names or as tuples containing the axis label and
         function which will produce the data when run on a :class:`Scan` object.
         Only z is allowed to be None (i.e. omitted).
-    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'HV', 'VH', 'XX', 'YY', 'XY', 'YX'}, optional
+    pol : {'absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'HV', 'VH', 'XX', 'YY', 'XY', 'YX'}, optional
         Polarisation term to plot if x, y or z specifies visibility data
     labels : sequence of strings, optional
         Sequence of text labels, one per scan (default is scan index)
@@ -492,7 +492,7 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='I', labels=None, sigma=1.0, b
 #--- FUNCTION :  plot_spectrum
 #--------------------------------------------------------------------------------------------------
 
-def plot_spectrum(dataset, pol='I', scan=-1, sigma=1.0, vertical=True, dB=True, ax=None):
+def plot_spectrum(dataset, pol='absI', scan=-1, sigma=1.0, vertical=True, dB=True, ax=None):
     """Spectrum plot of power data as a function of frequency.
 
     This plots the power spectrum of the given scan (either in Stokes or
@@ -504,7 +504,7 @@ def plot_spectrum(dataset, pol='I', scan=-1, sigma=1.0, vertical=True, dB=True, 
     ----------
     dataset : :class:`scape.DataSet` object
         Data set to plot
-    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'}, optional
+    pol : {'absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'}, optional
         The coherency / Stokes parameter to display (must be real)
     scan : int, optional
         Index of scan in data set to plot (-1 to plot all scans together)
@@ -531,8 +531,9 @@ def plot_spectrum(dataset, pol='I', scan=-1, sigma=1.0, vertical=True, dB=True, 
         If *pol* is not one of the allowed names
 
     """
-    if not pol in ('I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
-        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX' or 'YY' (i.e. real)")
+    if not pol in ('absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'absI', 'absHH', 'absVV', "
+                         "'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX' or 'YY' (i.e. real)")
     if ax is None:
         ax = plt.gca()
     if scan >= 0:
@@ -753,7 +754,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
 #--- FUNCTION :  plot_spectrogram
 #--------------------------------------------------------------------------------------------------
 
-def plot_spectrogram(dataset, pol='I', add_scan_ids=True, dB=True, ax=None):
+def plot_spectrogram(dataset, pol='absI', add_scan_ids=True, dB=True, ax=None):
     """Plot spectrogram of all scans in data set in compacted form.
 
     This plots the spectrogram of each scan in the data set on a single set of
@@ -766,7 +767,7 @@ def plot_spectrogram(dataset, pol='I', add_scan_ids=True, dB=True, ax=None):
     ----------
     dataset : :class:`scape.DataSet` object
         Data set to plot
-    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'HV', 'VH', 'XX', 'YY', 'XY', 'YX'}, optional
+    pol : {'absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'HV', 'VH', 'XX', 'YY', 'XY', 'YX'}, optional
         The coherency / Stokes parameter to display (must be real for single-dish)
     add_scan_ids : {True, False}, optional
         True if scan index numbers are to be added to plot
@@ -794,9 +795,9 @@ def plot_spectrogram(dataset, pol='I', add_scan_ids=True, dB=True, ax=None):
         ax = plt.gca()
     db_func = (lambda x: 10.0 * np.log10(x)) if dB else (lambda x: x)
     if dataset.scans[0].has_autocorr:
-        if not pol in ('I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
-            raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', " +
-                             "'HH', 'VV', 'XX' or 'YY' (i.e. real) for single-dish data")
+        if not pol in ('absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
+            raise ValueError("Polarisation key should be one of 'absI', 'absHH', 'absVV', "
+                             "'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX' or 'YY' (i.e. real) for single-dish data")
         imdata = [db_func(scan.pol(pol)).transpose() for scan in dataset.scans]
     else:
         imdata = [db_func(np.abs(scan.pol(pol))).transpose() for scan in dataset.scans]
@@ -931,7 +932,7 @@ def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=N
 #--- FUNCTION :  plot_compound_scan_in_time
 #--------------------------------------------------------------------------------------------------
 
-def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, spike_width=0, band=0, ax=None):
+def plot_compound_scan_in_time(compscan, pol='absI', add_scan_ids=True, spike_width=0, band=0, ax=None):
     """Plot compound scan data in time with superimposed beam/baseline fit.
 
     This plots time series of the selected polarisation power in all the scans
@@ -943,7 +944,7 @@ def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, spike_width
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to plot
-    pol : {'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
+    pol : {'absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'XX', 'YY'}, optional
         The coherency / Stokes parameter to display (must be real)
     add_scan_ids : {True, False}, optional
         True if scan index numbers are to be added to plot
@@ -967,9 +968,9 @@ def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, spike_width
         If *pol* is not one of the allowed names
 
     """
-    if not pol in ('I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX', 'YY'):
-        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'HH', 'VV', "
-                         "'ReHV', 'ImHV', 'XX' or 'YY' (i.e. real)")
+    if not pol in ('absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'absI', 'absHH', 'absVV', "
+                         "'I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX' or 'YY' (i.e. real)")
     if ax is None:
         ax = plt.gca()
     time_origin = np.array([scan.timestamps.min() for scan in compscan.scans]).min()
@@ -1027,7 +1028,7 @@ def plot_compound_scan_in_time(compscan, pol='I', add_scan_ids=True, spike_width
 #--- FUNCTION :  plot_compound_scan_on_target
 #--------------------------------------------------------------------------------------------------
 
-def plot_compound_scan_on_target(compscan, pol='I', subtract_baseline=True, levels=None,
+def plot_compound_scan_on_target(compscan, pol='absI', subtract_baseline=True, levels=None,
                                  add_scan_ids=True, spike_width=0, band=0, ax=None):
     """Plot compound scan data in target space with beam fit.
 
@@ -1039,7 +1040,7 @@ def plot_compound_scan_on_target(compscan, pol='I', subtract_baseline=True, leve
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to plot
-    pol : {'I', 'HH', 'VV', 'XX', 'YY'}, optional
+    pol : {'absI', 'absHH', 'absVV', 'I', 'HH', 'VV', 'XX', 'YY'}, optional
         The coherency / Stokes parameter to display (must be real and positive)
     subtract_baseline : {True, False}, optional
         True to subtract baselines (only scans with baselines are then shown)
@@ -1068,8 +1069,9 @@ def plot_compound_scan_on_target(compscan, pol='I', subtract_baseline=True, leve
         If *pol* is not one of the allowed names
 
     """
-    if not pol in ('I', 'HH', 'VV', 'XX', 'YY'):
-        raise ValueError("Polarisation key should be one of 'I', 'HH', 'VV', 'XX' or 'YY' (i.e. positive)")
+    if not pol in ('absI', 'absHH', 'absVV', 'I', 'HH', 'VV', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'absI', 'absHH', 'absVV', "
+                         "'I', 'HH', 'VV', 'XX' or 'YY' (i.e. positive)")
     if ax is None:
         ax = plt.gca()
     if levels is None:
@@ -1178,7 +1180,7 @@ def plot_data_set_in_mount_space(dataset, levels=None, spike_width=0, band=0, ax
         levels = [0.5, 0.1]
 
     for compscan in dataset.compscans:
-        total_power = np.hstack([remove_spikes(np.abs(scan.pol('I')[:, band]), spike_width=spike_width)
+        total_power = np.hstack([remove_spikes(np.abs(scan.pol('absI')[:, band]), spike_width=spike_width)
                                  for scan in compscan.scans])
         target_coords = np.hstack([scan.target_coords for scan in compscan.scans])
         center_time = np.median(np.hstack([scan.timestamps for scan in compscan.scans]))
@@ -1222,7 +1224,7 @@ def plot_data_set_in_mount_space(dataset, levels=None, spike_width=0, band=0, ax
 #--- FUNCTION :  plot_measured_beam_pattern
 #--------------------------------------------------------------------------------------------------
 
-def plot_measured_beam_pattern(compscan, pol='I', band=0, subtract_baseline=True,
+def plot_measured_beam_pattern(compscan, pol='absI', band=0, subtract_baseline=True,
                                add_samples=True, add_colorbar=True, ax=None, **kwargs):
     """Plot measured beam pattern contained in compound scan.
 
@@ -1230,7 +1232,7 @@ def plot_measured_beam_pattern(compscan, pol='I', band=0, subtract_baseline=True
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to plot
-    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'}, optional
+    pol : {'absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'}, optional
         The coherency / Stokes parameter to display (must be real)
     band : int, optional
         Frequency band to plot

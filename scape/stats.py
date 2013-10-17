@@ -412,7 +412,7 @@ def identify_rfi_channels(data, sigma=8.0, min_bad_scans=0.25, extra_outputs=Fal
     rfi_data = []
     for scan in scans:
         # Normalise power in scan by removing spikes, offsets and differences in scale
-        power = remove_spikes(scan.pol('I'))
+        power = remove_spikes(scan.pol('absI'))
         offset = power.min(axis=0)
         scale = power.max(axis=0) - offset
         scale[scale <= 0.0] = 1.0

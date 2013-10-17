@@ -251,6 +251,13 @@ class ScanTestCases(unittest.TestCase):
         assert_almost_equal(self.scan_if.pol('XX') + self.scan_if.pol('YY'), self.scan_if.pol('I'))
         np.testing.assert_equal(1j * (self.scan_if.pol('HV') - self.scan_if.pol('VH')), self.scan_if.pol('V'))
         assert_almost_equal(1j * (self.scan_if.pol('YX') - self.scan_if.pol('XY')), self.scan_if.pol('V'), decimal=13)
+        # Check absolute powers
+        np.testing.assert_equal(self.scan_sd.pol('absI'), self.scan_sd.pol('I'))
+        np.testing.assert_equal(self.scan_if.pol('absI'), np.abs(self.scan_if.pol('HH')) + np.abs(self.scan_if.pol('VV')))
+        np.testing.assert_equal(self.scan_sd.pol('absHH'), self.scan_sd.pol('HH'))
+        np.testing.assert_equal(self.scan_if.pol('absHH'), np.abs(self.scan_if.pol('HH')))
+        np.testing.assert_equal(self.scan_sd.pol('absVV'), self.scan_sd.pol('VV'))
+        np.testing.assert_equal(self.scan_if.pol('absVV'), np.abs(self.scan_if.pol('VV')))
 
     def test_select(self):
         """Test Scan time/frequency selection."""

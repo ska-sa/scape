@@ -783,7 +783,7 @@ def save_fits_image(filename, x, y, Z, target_name='', coord_system='radec',
         Centre frequency of z data, in Hz (if bigger than 0, add a frequency axis)
     bandwidth_Hz : float, optional
         Bandwidth of z data, in Hz
-    pol : {None, 'I', 'Q', 'U', 'V', 'HH', 'VV', 'VH', 'HV', 'XX', 'YY', 'XY', 'YX'}, optional
+    pol : {None, 'absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'VH', 'HV', 'XX', 'YY', 'XY', 'YX'}, optional
         Polarisation of z data (if not None, add a Stokes axis)
     observe_date : string, optional
         UT timestamp of start of observation (format YYYY-MM-DD[Thh:mm:ss[.sss]])
@@ -829,7 +829,8 @@ def save_fits_image(filename, x, y, Z, target_name='', coord_system='radec',
     if pol is not None:
         stokes_code = {'I' : 1, 'Q' : 2, 'U' : 3, 'V' : 4,
                        'XX' : -5, 'YY' : -6, 'XY' : -7, 'YX' : -8,
-                       'HH' : -5, 'VV' : -6, 'HV' : -7, 'VH' : -8}
+                       'HH' : -5, 'VV' : -6, 'HV' : -7, 'VH' : -8,
+                       'absI' : 1, 'absHH' : -5, 'absVV' : -6}
         axes.append('STOKES')
         ref_pixel.append(1)
         ref_world.append(stokes_code[pol])

@@ -119,11 +119,20 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         are missing
 
     """
+    # Parse antennas involved in explicitly specified baseline
+    if baseline not in ('AxAx', 'sd', 'AxAy', 'if'):
+        parsed_antenna_ids = baseline_pattern.match(baseline)
+        if parsed_antenna_ids is None:
+            raise ValueError("Please specify baseline with notation 'AxAy', "
+                             "where x is identifier of first antenna and y is identifier of second antenna")
+        antA_name, antB_name = [('ant' + ident) for ident in parsed_antenna_ids.groups()]
+
     if isinstance(filename, katfile.DataSet):
         d = filename
         filename = d.name
     else:
-        d = katfile.open(filename, time_offset=time_offset, **kwargs)
+        ref_ant = antA_name if baseline not in ('AxAx', 'sd', 'AxAy', 'if') else ''
+        d = katfile.open(filename, ref_ant=ref_ant, time_offset=time_offset, **kwargs)
         d.select(**kwargs)
 
     if baseline in ('AxAx', 'sd'):
@@ -141,19 +150,14 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
             raise ValueError('Could not load first interferometric baseline - less than 2 antennas found in file')
         logger.info("Loading interferometric baseline 'A%sA%s'" % (antA.name[3:], antB.name[3:]))
     else:
-        # Select antennas involved in specified baseline
-        parsed_antenna_ids = baseline_pattern.match(baseline)
-        if parsed_antenna_ids is None:
-            raise ValueError("Please specify baseline with notation 'AxAy', "
-                             "where x is identifier of first antenna and y is identifier of second antenna")
-        antA, antB = [('ant' + ident) for ident in parsed_antenna_ids.groups()]
+        # Select antennas involved in explicitly specified baseline
         ant_lookup = dict([(ant.name, ant) for ant in d.ants])
         try:
-            antA, antB = ant_lookup[antA], ant_lookup[antB]
+            antA, antB = ant_lookup[antA_name], ant_lookup[antB_name]
         except KeyError:
             # Check that requested antennas are in data set
             raise ValueError('Requested antenna pair not found in HDF5 file (wanted %s but file only contains %s)'
-                             % ([antA, antB], ant_lookup.keys()))
+                             % ([antA_name, antB_name], ant_lookup.keys()))
     antenna, antenna2 = antA.description, antB.description
     if antenna == antenna2:
         antenna2 = None
@@ -221,10 +225,20 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
     corrconf = CorrelatorConfig(d.channel_freqs * 1e-6, np.tile(d.channel_width * 1e-6, num_chans),
                                 range(num_chans), 1.0 / d.dump_period)
 
-    # Mapping of polarisation product to DBE input string identifying the pair of inputs multiplied together
-    pol_to_dbestr = dict([(pol, ['%s%s' % (antA.name, pol[0].lower()), '%s%s' % (antB.name, pol[1].lower())])
-                          for pol in scape_pol_if])
-    pol_to_corr_id = dict([(pol, d.corr_products.tolist().index(pol_to_dbestr[pol])) for pol in scape_pol_if])
+    # Mapping of polarisation product to corrprod index identifying the pair of inputs multiplied together
+    # Each polarisation product has 3 options: normal (corr_id positive), conjugate (corr_id negative), absent (zero)
+    pol_to_corr_id = {}
+    for pol in scape_pol_if:
+        corrprod = ['%s%s' % (antA.name, pol[0].lower()), '%s%s' % (antB.name, pol[1].lower())]
+        try:
+            # Add one to index to ensure positivity (otherwise 0 and -0 can't be distinguished)
+            pol_to_corr_id[pol] = d.corr_products.tolist().index(corrprod) + 1
+        except ValueError:
+            try:
+                # If corrprod not found, swap inputs around and remember to conjugate vis data via minus sign
+                pol_to_corr_id[pol] = - d.corr_products.tolist().index(corrprod[::-1]) - 1
+            except ValueError:
+                pol_to_corr_id[pol] = 0
     # Pointing sensors
     az_sensor = 'Antennas/%s/%sazim' % (antA.name, (selected_pointing + '_') if d.version < '2.0' else
                                                    (sensor_name_v2[selected_pointing] + '-'))
@@ -245,14 +259,16 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
             if antenna2 is None:
                 # Single-dish uses HH, VV, Re{HV}, Im{HV}
                 corr_id = [pol_to_corr_id[pol] for pol in ['HH', 'VV', 'HV', 'HV']]
-                scan_data = [d.vis[:, :, cid][:, :, 0] if cid >= 0 else np.zeros((num_times, num_chans), np.float32)
-                             for cid in corr_id]
+                scan_data = [d.vis[:, :, cid - 1][:, :, 0] if cid > 0 else
+                             d.vis[:, :, -cid - 1][:, :, 0].conj() if cid < 0 else
+                             np.zeros((num_times, num_chans), np.float32) for cid in corr_id]
                 scan_data = np.dstack([scan_data[0].real, scan_data[1].real,
                                        scan_data[2].real, scan_data[3].imag]).astype(np.float32)
             else:
                 corr_id = [pol_to_corr_id[pol] for pol in scape_pol_if]
-                scan_data = [d.vis[:, :, cid][:, :, 0] if cid >= 0 else np.zeros((num_times, num_chans), np.complex64)
-                             for cid in corr_id]
+                scan_data = [d.vis[:, :, cid - 1][:, :, 0] if cid > 0 else
+                             d.vis[:, :, -cid - 1][:, :, 0].conj() if cid < 0 else
+                             np.zeros((num_times, num_chans), np.complex64) for cid in corr_id]
                 scan_data = np.dstack(scan_data).astype(np.complex64)
             scan_pointing = np.rec.fromarrays([d.sensor[az_sensor].astype(np.float32) * np.float32(np.pi / 180.0),
                                                d.sensor[el_sensor].astype(np.float32) * np.float32(np.pi / 180.0)],

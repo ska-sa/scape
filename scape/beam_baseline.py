@@ -492,7 +492,7 @@ def interpolate_measured_beam(x, y, z, num_grid_rows=201):
 #--- FUNCTION :  extract_measured_beam
 #--------------------------------------------------------------------------------------------------
 
-def extract_measured_beam(compscan, pol='I', band=0, subtract_baseline=True, spike_width=0):
+def extract_measured_beam(compscan, pol='absI', band=0, subtract_baseline=True, spike_width=0):
     """Extract measured beam pattern from power data in compound scan.
 
     This interprets the compound scan as a raster scan and extracts the selected
@@ -505,7 +505,7 @@ def extract_measured_beam(compscan, pol='I', band=0, subtract_baseline=True, spi
     ----------
     compscan : :class:`compoundscan.CompoundScan` object
         Compound scan object to provide beam pattern
-    pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX', 'YY'}, optional
+    pol : {'absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX', 'YY'}, optional
         The coherency / Stokes parameter that will be mapped (must be real)
     band : int, optional
         Frequency band of measured beam pattern
@@ -527,8 +527,9 @@ def extract_measured_beam(compscan, pol='I', band=0, subtract_baseline=True, spi
         Sequence of normalised power measurements
 
     """
-    if not pol in ('I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX', 'YY'):
-        raise ValueError("Polarisation key should be one of 'I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX' or 'YY' (i.e. real)")
+    if not pol in ('absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX', 'YY'):
+        raise ValueError("Polarisation key should be one of 'absI', 'absHH', 'absVV', "
+                         "'I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX' or 'YY' (i.e. real)")
     # If there are no baselines in data set, don't subtract them
     if np.array([scan.baseline is None for scan in compscan.scans]).all():
         subtract_baseline = False

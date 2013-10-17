@@ -201,7 +201,7 @@ class CompoundScan(object):
         return "<scape.CompoundScan '%s' target='%s' scans=%d at 0x%x>" % \
                (self.label, self.target.name, len(self.scans), id(self))
 
-    def fit_beam_and_baselines(self, pol='I', circular_beam='auto', bl_degrees=(1, 3),
+    def fit_beam_and_baselines(self, pol='absI', circular_beam='auto', bl_degrees=(1, 3),
                                refine_beam=True, spike_width=0, band=0):
         """Simultaneously fit beam and baselines to all scans in a compound scan.
 
@@ -220,7 +220,7 @@ class CompoundScan(object):
 
         Parameters
         ----------
-        pol : {'I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX', 'YY'}, optional
+        pol : {'absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX', 'YY'}, optional
             The coherency / Stokes parameter which will be fit. Beam fits are not
             advised for 'Q', 'U', 'V', 'ReHV' and 'ImHV', which usually have
             non-Gaussian beams.
@@ -253,6 +253,10 @@ class CompoundScan(object):
         # The antenna beamwidth factor is somewhere between 1.03 and 1.22
         ant = self.dataset.antenna
         expected_width = ant.beamwidth * katpoint.lightspeed / (self.dataset.freqs[band]*1e6) / ant.diameter
+        # An interferometer measures the beam voltage pattern while a single dish measures the beam power pattern
+        # Since power = voltage ^ 2, a Gaussian voltage pattern ends up being sqrt(2) wider than the power pattern
+        if self.dataset.antenna2:
+            expected_width *= np.sqrt(2.0)
         if not circular_beam:
             expected_width = [expected_width, expected_width]
         # Degrees of freedom is time-bandwidth product (2 * BW * t_dump) of each sample
@@ -262,11 +266,11 @@ class CompoundScan(object):
         # Refining the beam and baselines requires scan timestamps
         scan_timestamps = [scan.timestamps for scan in self.scans] if refine_beam else None
         # Fit beam and baselines directly to positive coherencies / Stokes params only, otherwise use I as proxy
-        positive_pol = pol in ('I', 'HH', 'VV', 'XX', 'YY')
-        scan_total_power = [remove_spikes(scan.pol('I')[:, band], spike_width=spike_width) for scan in self.scans] \
+        positive_pol = pol in ('absI', 'absHH', 'absVV', 'I', 'HH', 'VV', 'XX', 'YY')
+        scan_total_power = [remove_spikes(scan.pol('absI')[:, band], spike_width=spike_width) for scan in self.scans] \
                            if not positive_pol else None
         logger.debug("Fitting beam and initial baseline of degree (%d, %d) to pol '%s' of target '%s':" %
-                     (bl_degrees[0], bl_degrees[1], pol if positive_pol else 'I', self.target.name))
+                     (bl_degrees[0], bl_degrees[1], pol if positive_pol else 'absI', self.target.name))
         self.beam, baselines, self.baseline = fit_beam_and_baselines(scan_coords, scan_data, expected_width, dof,
                                                                      bl_degrees, scan_timestamps, scan_total_power)
         for scan, bl in zip(self.scans, baselines):

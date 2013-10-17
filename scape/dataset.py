@@ -425,6 +425,9 @@ class DataSet(object):
         if self.nd_h_model is None or self.nd_v_model is None:
             logger.warning('No noise diode model found in data set - gain calibration not done')
             return self
+        if not self.compscans:
+            logger.warning('Empty data set - gain calibration not done')
+            return self
         try:
             return calibrate_gain(self, randomise=randomise, **kwargs)
         except NoSuitableNoiseDiodeDataFound:
@@ -546,6 +549,9 @@ class DataSet(object):
             Perturbed data set (modifies self too)
 
         """
+        if not self.compscans:
+            logger.warning('Empty data set - Perturbation not done')
+            return self
         # This is the ratio of mean power to standard deviation of power (aka signal-to-noise ratio)
         # and is equal to sqrt(K), where K is number of samples averaged together in power estimate.
         # K is also known as accum_per_int (number of spectral samples going into one dump).

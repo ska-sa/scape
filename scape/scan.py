@@ -30,6 +30,8 @@ mount_coh = ['VV', 'VH', 'HV', 'HH']
 sky_coh = ['XX', 'XY', 'YX', 'YY']
 # Stokes parameters
 stokes = ['I', 'Q', 'U', 'V']
+# Absolute powers - safe versions of (I, HH, VV) guaranteed to be real and positive
+abs_powers = ['absI', 'absHH', 'absVV']
 
 #--------------------------------------------------------------------------------------------------
 #--- CLASS :  Scan
@@ -213,9 +215,17 @@ class Scan(object):
           on the same coordinate system fixed on the sky. The coordinate system
           is important for the correct interpretation of position angles.
 
+        - **Absolute powers** (*absI*, *absHH*, *absVV*). These are safe versions
+          of (*I*, *HH*, *VV*) that are guaranteed to be real and positive. In
+          the single-dish case they correspond directly to (*I*, *HH*, *VV*),
+          while in the interferometer case they are abs(HH) + abs(VV), abs(HH)
+          and abs(VV), respectively. These are useful for fitting beams and
+          baselines.
+
         Parameters
         ----------
-        key : {'VV', 'VH', 'HV', 'HH', 'ReHV', 'ImHV', 'XX', 'XY', 'YX', 'YY', 'I', 'Q', 'U', 'V'}
+        key : {'VV', 'VH', 'HV', 'HH', 'ReHV', 'ImHV', 'XX', 'XY', 'YX', 'YY',
+               'I', 'Q', 'U', 'V', 'absI', 'absHH', 'absVV'}
             Polarisation term to extract
 
         Returns
@@ -308,7 +318,14 @@ class Scan(object):
                     return sin2pa * (VV - HH) + cos2pa * (VH + HV)
                 elif key == 'V':
                     return 1j * (HV - VH)
-        raise KeyError("Polarisation key should be one of %s" % list(set(scape_pol_sd + scape_pol_if + sky_coh + stokes)),)
+        elif key == 'absI':
+            return np.abs(HH) + np.abs(VV)
+        elif key == 'absHH':
+            return np.abs(HH)
+        elif key == 'absVV':
+            return np.abs(VV)
+        raise KeyError("Polarisation key should be one of %s" %
+                       list(set(scape_pol_sd + scape_pol_if + sky_coh + stokes + abs_powers)),)
 
     def swap_h_and_v(self, antenna=0):
         """Swap around H and V polarisations (feeds) in the correlation data.
