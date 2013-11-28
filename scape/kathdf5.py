@@ -1,11 +1,11 @@
-"""Read HDF5 files using katfile interface."""
+"""Read HDF5 files using katdal interface."""
 
 import logging
 import re
 import os.path
 
 import numpy as np
-import katfile
+import katdal
 
 from .gaincal import NoiseDiodeModel
 from .scan import Scan, scape_pol_if
@@ -48,7 +48,7 @@ sensor_name_v2 = {'temperature' : 'asc.air.temperature',
 # pylint: disable-msg=W0613
 def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                  noise_diode=None, nd_models=None, time_offset=0.0, **kwargs):
-    """Load data set from HDF5 file via katfile interface.
+    """Load data set from HDF5 file via katdal interface.
 
     This loads a data set from an HDF5 file. The file contains all the baselines
     for the experiment, but :mod:`scape` only operates on one baseline at a time.
@@ -56,8 +56,8 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
 
     Parameters
     ----------
-    filename : string or :class:`katfile.DataSet`
-        Name of input HDF5 file or katfile dataset object
+    filename : string or :class:`katdal.DataSet`
+        Name of input HDF5 file or katdal dataset object
     baseline : string, optional
         Selected baseline as *AxAy*, where *x* is the number of the first antenna
         and *y* is the number of the second antenna (1-based), and *x* < *y*.
@@ -114,7 +114,7 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
 
     Raises
     ------
-    katfile.BrokenFile, ValueError
+    katdal.BrokenFile, ValueError
         If file has not been augmented to contain all data fields, or some fields
         are missing
 
@@ -127,13 +127,14 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
                              "where x is identifier of first antenna and y is identifier of second antenna")
         antA_name, antB_name = [('ant' + ident) for ident in parsed_antenna_ids.groups()]
 
-    if isinstance(filename, katfile.DataSet):
+    if isinstance(filename, katdal.DataSet):
         d = filename
         filename = d.name
     else:
         ref_ant = antA_name if baseline not in ('AxAx', 'sd', 'AxAy', 'if') else ''
-        d = katfile.open(filename, ref_ant=ref_ant, time_offset=time_offset, **kwargs)
-        d.select(**kwargs)
+        d = katdal.open(filename, ref_ant=ref_ant, time_offset=time_offset, **kwargs)
+        #Turn off exceptions for unknown kwargs
+        d.select(strict=False,**kwargs)
 
     if baseline in ('AxAx', 'sd'):
         # First single-dish baseline found

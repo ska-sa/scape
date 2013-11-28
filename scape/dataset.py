@@ -109,7 +109,7 @@ class DataSet(object):
                  nd_h_model=None, nd_v_model=None, enviro=None, **kwargs):
         # Load dataset from file
         if filename:
-            # If not a string, assume it is a katfile dataset object
+            # If not a string, assume it is a katdal dataset object
             if isinstance(filename, basestring):
                 ext = os.path.splitext(filename)[1]
             else:
