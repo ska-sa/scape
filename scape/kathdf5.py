@@ -15,7 +15,7 @@ from .hdf5 import remove_duplicates
 logger = logging.getLogger("scape.kathdf5")
 
 # Parse baseline string into antenna identifiers
-baseline_pattern = re.compile('A(\w+)A(\w+)')
+#antenna_pattern = re.compile('A(\w+)')
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  load_dataset
@@ -46,7 +46,7 @@ sensor_name_v2 = {'temperature' : 'asc.air.temperature',
                   'pos_request_pointm' : 'pos.request-pointm'}
 
 # pylint: disable-msg=W0613
-def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
+def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
                  noise_diode=None, nd_models=None, time_offset=0.0, **kwargs):
     """Load data set from HDF5 file via katdal interface.
 
@@ -59,11 +59,12 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
     filename : string or :class:`katdal.DataSet`
         Name of input HDF5 file or katdal dataset object
     baseline : string, optional
-        Selected baseline as *AxAy*, where *x* is the number of the first antenna
-        and *y* is the number of the second antenna (1-based), and *x* < *y*.
-        For single-dish data the antenna number is repeated, e.g. 'A1A1'.
-        Alternatively, the baseline may be 'AxAx' for the first single-dish
-        baseline or 'AxAy' for the first interferometric baseline in the file.
+        Selected baseline as *<ant1>,<ant2>*, where *<ant1>* is the number of
+        the first antenna and *<ant2>* is the number of the second antenna.
+        For single-dish data the antenna number is repeated, e.g. 'ant1,ant1'
+        or just a singl antenna name can be given.
+        Alternatively, the baseline may be 'sd' for the first single-dish
+        baseline or 'if' for the first interferometric baseline in the file.
     selected_pointing : string, optional
         Identifier of (az, el) sensors that will provide all the pointing data
         of the data set. The actual sensor names are formed by appending '_azim'
@@ -120,36 +121,37 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
 
     """
     # Parse antennas involved in explicitly specified baseline
-    if baseline not in ('AxAx', 'sd', 'AxAy', 'if'):
-        parsed_antenna_ids = baseline_pattern.match(baseline)
-        if parsed_antenna_ids is None:
-            raise ValueError("Please specify baseline with notation 'AxAy', "
-                             "where x is identifier of first antenna and y is identifier of second antenna")
-        antA_name, antB_name = [('ant' + ident) for ident in parsed_antenna_ids.groups()]
+    if baseline not in ('sd', 'if'):
+        #Baseline separator is a comma- so find the comma (or assume single dish if no comma found)
+        parsed_antenna_ids = baseline.split(',')
+        if (parsed_antenna_ids is None) or len(parsed_antenna_ids) > 2:
+            raise ValueError("Please specify baseline with notation '<ant1>,<ant2>', "
+                             "where <ant1> is the name of first antenna and <ant2> is the name of second antenna")
+        antA_name, antB_name = parsed_antenna_ids[0], parsed_antenna_ids[-1]
 
     if isinstance(filename, katdal.DataSet):
         d = filename
         filename = d.name
     else:
-        ref_ant = antA_name if baseline not in ('AxAx', 'sd', 'AxAy', 'if') else ''
+        ref_ant = antA_name if baseline not in ('sd', 'if') else ''
         d = katdal.open(filename, ref_ant=ref_ant, time_offset=time_offset, **kwargs)
         #Turn off exceptions for unknown kwargs
         d.select(strict=False,**kwargs)
 
-    if baseline in ('AxAx', 'sd'):
+    if baseline in ('sd'):
         # First single-dish baseline found
         try:
             antA = antB = d.ants[0]
         except IndexError:
             raise ValueError('Could not load first single-dish baseline - no antennas found in file')
-        logger.info("Loading single-dish baseline 'A%sA%s'" % (antA.name[3:], antB.name[3:]))
-    elif baseline in ('AxAy', 'if'):
+        logger.info("Loading single-dish baseline '%s,%s'" % (antA.name, antB.name))
+    elif baseline in ('if'):
         # First interferometric baseline found
         try:
             antA, antB = d.ants[:2]
         except IndexError:
             raise ValueError('Could not load first interferometric baseline - less than 2 antennas found in file')
-        logger.info("Loading interferometric baseline 'A%sA%s'" % (antA.name[3:], antB.name[3:]))
+        logger.info("Loading interferometric baseline '%s,%s'" % (antA.name, antB.name))
     else:
         # Select antennas involved in explicitly specified baseline
         ant_lookup = dict([(ant.name, ant) for ant in d.ants])
