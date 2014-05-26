@@ -45,6 +45,9 @@ sensor_name_v2 = {'temperature' : 'asc.air.temperature',
                   'pos_request_refrac' : 'pos.request-refrac',
                   'pos_request_pointm' : 'pos.request-pointm'}
 
+# Mapping of desired fields to KAT sensor names (format version 2)
+              
+
 # pylint: disable-msg=W0613
 def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
                  noise_diode=None, nd_models=None, time_offset=0.0, **kwargs):
@@ -129,47 +132,53 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
                              "where <ant1> is the name of first antenna and <ant2> is the name of second antenna")
         antA_name, antB_name = parsed_antenna_ids[0], parsed_antenna_ids[-1]
 
-    if isinstance(filename, katdal.DataSet):
-        d = filename
-        filename = d.name
-    else:
-        ref_ant = antA_name if baseline not in ('sd', 'if') else ''
-        d = katdal.open(filename, ref_ant=ref_ant, time_offset=time_offset, **kwargs)
-        #Turn off exceptions for unknown kwargs
-        d.select(strict=False,**kwargs)
+    #Get antennas in file
+    file_ants = filename.ants if isinstance(filename, katdal.DataSet) else katdal.get_ants(filename)
 
-    if baseline in ('sd'):
+    if baseline is 'sd':
         # First single-dish baseline found
         try:
-            antA = antB = d.ants[0]
+            antA = antB = file_ants[0]
         except IndexError:
             raise ValueError('Could not load first single-dish baseline - no antennas found in file')
         logger.info("Loading single-dish baseline '%s,%s'" % (antA.name, antB.name))
-    elif baseline in ('if'):
+    elif baseline is 'if':
         # First interferometric baseline found
         try:
-            antA, antB = d.ants[:2]
+            antA, antB = file_ants[:2]
         except IndexError:
             raise ValueError('Could not load first interferometric baseline - less than 2 antennas found in file')
         logger.info("Loading interferometric baseline '%s,%s'" % (antA.name, antB.name))
     else:
         # Select antennas involved in explicitly specified baseline
-        ant_lookup = dict([(ant.name, ant) for ant in d.ants])
+        ant_lookup = dict([(ant.name, ant) for ant in file_ants])
         try:
             antA, antB = ant_lookup[antA_name], ant_lookup[antB_name]
         except KeyError:
             # Check that requested antennas are in data set
             raise ValueError('Requested antenna pair not found in HDF5 file (wanted %s but file only contains %s)'
                              % ([antA_name, antB_name], ant_lookup.keys()))
+        logger.info("Loading baseline '%s,%s'" % (antA.name, antB.name))
+
     antenna, antenna2 = antA.description, antB.description
     if antenna == antenna2:
         antenna2 = None
 
+    #Load the katdal object
+    if isinstance(filename, katdal.DataSet):
+        d = filename
+        filename = d.name
+    else:
+        d = katdal.open(filename, ref_ant=antA, time_offset=time_offset, **kwargs)
+        #Turn off exceptions for unknown kwargs
+        d.select(strict=False,**kwargs)
+
     # Load weather sensor data
     enviro = {}
     for quantity in ['temperature', 'pressure', 'humidity', 'wind_speed', 'wind_direction']:
-        sensor_name = ('Antennas/Antenna%s/%s' % (antA.name[3:], sensor_name_v1[quantity])) if d.version < '2.0' else \
-                      ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],))
+        sensor_name =   ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],)) if d.version < '1.0'
+                        ('Antennas/Antenna%s/%s' % (antA.name[3:], sensor_name_v1[quantity])) if d.version < '2.0' else \
+                        ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],)) if d.version < '1.0'
         if sensor_name in d.file:
             enviro[quantity] = remove_duplicates(d.file[sensor_name])
 
