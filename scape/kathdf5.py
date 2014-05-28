@@ -227,24 +227,23 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
         logger.info("Loaded V noise diode model from '%s'" % (nd_v_file,))
     else:
         def nd_dataset_name(ant, pol, nd):
-            return ('Antennas/Antenna%s/%s/%s_nd_model' % (ant[3:], pol.upper(), nd)) \
-                   if d.version < '2.0' else \
-                   ('MetaData/Configuration/Antennas/%s/%s_%s_noise_diode_model' % (ant, pol.lower(), nd))
+            return ('TelescopeModel/%s/%s_%s_noise_diode_model' % (ant, pol.lower(), nd)) if d.version.startswith('3.') else \
+                   ('MetaData/Configuration/Antennas/%s/%s_%s_noise_diode_model' % (ant, pol.lower(), nd)) if d.version.startswith('2.') else \
+                   ('Antennas/Antenna%s/%s/%s_nd_model' % (ant[3:], pol.upper(), nd))
         nd_h_name = nd_dataset_name(antA.name, 'H', noise_diode)
         nd_v_name = nd_dataset_name(antA.name, 'V', noise_diode)
         if nd_h_name in d.file:
             nd_dataset = d.file[nd_h_name]
             nd_h_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
-            if nd_v_name not in d.file:
-                nd_v_model = NoiseDiodeModel()
+        else:
+            logger.warning("Cannot find %s noise diode H polarisation model for antenna %s - using default." % (noise_diode, antA.name,))
+            nd_h_model = NoiseDiodeModel()
         if nd_v_name in d.file:
             nd_dataset = d.file[nd_v_name]
             nd_v_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
-            if nd_h_name not in d.file:
-                nd_h_model = NoiseDiodeModel()
-        if nd_h_model is None and nd_v_model is None:
-            raise ValueError("Unknown noise diode '%s'" % (noise_diode,))
-
+        else:
+            logger.warning("Cannot find %s noise diode V polarisation model for antenna %s - using default." % (noise_diode, antA.name,))
+            nd_v_model = NoiseDiodeModel()
     # Load correlator configuration group
     num_chans = len(d.channel_freqs)
     corrconf = CorrelatorConfig(d.channel_freqs * 1e-6, np.tile(d.channel_width * 1e-6, num_chans),
