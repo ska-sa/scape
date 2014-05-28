@@ -46,11 +46,11 @@ sensor_name_v2 = {'temperature' : 'asc.air.temperature',
                   'pos_request_pointm' : 'pos.request-pointm'}
 
 # Mapping of desired fields to KAT sensor names (format version 3)
-sensor_name_v3 = {'temperature' : 'asc.air.temperature',
-                  'pressure' : 'asc.air.pressure',
-                  'humidity' : 'asc.air.relative-humidity',
-                  'wind_speed' : 'asc.wind.speed',
-                  'wind_direction' : 'asc.wind.direction',
+sensor_name_v3 = {'temperature' : 'air_temperature',
+                  'pressure' : 'air_pressure',
+                  'humidity' : 'air_relative_humiduty',
+                  'wind_speed' : 'wind_speed',
+                  'wind_direction' : 'wind_direction',
                   'coupler_nd_on' : 'rfe3.rfe15.noise.coupler.on',
                   'pin_nd_on' : 'rfe3.rfe15.noise.pin.on',
                   'pos_actual_scan' : 'pos.actual-scan',
@@ -188,11 +188,13 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
     # Load weather sensor data
     enviro = {}
     for quantity in ['temperature', 'pressure', 'humidity', 'wind_speed', 'wind_direction']:
-        sensor_name =   ('Antennas/Antenna%s/%s' % (antA.name[3:], sensor_name_v1[quantity])) if d.version.startswith('1.') else \
-                        ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],)) if d.version.startswith('2.')
+        sensor_name =   ('TelescopeModel/anc_asc/%s' % (sensor_name_v3[quantity],)) if d.version.startswith('3.') else \
+                        ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],)) if d.version.startswith('2.') else \
+                        ('Antennas/Antenna%s/%s' % (antA.name[3:], sensor_name_v1[quantity]))
+                        
         if sensor_name in d.file:
             enviro[quantity] = remove_duplicates(d.file[sensor_name])
-
+    
     # Autodetect the noise diode to use, based on which sensor shows any activity
     if not noise_diode:
         nd_fired = {}
