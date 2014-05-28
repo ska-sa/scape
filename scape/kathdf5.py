@@ -45,8 +45,20 @@ sensor_name_v2 = {'temperature' : 'asc.air.temperature',
                   'pos_request_refrac' : 'pos.request-refrac',
                   'pos_request_pointm' : 'pos.request-pointm'}
 
-# Mapping of desired fields to KAT sensor names (format version 2)
-              
+# Mapping of desired fields to KAT sensor names (format version 3)
+sensor_name_v3 = {'temperature' : 'asc.air.temperature',
+                  'pressure' : 'asc.air.pressure',
+                  'humidity' : 'asc.air.relative-humidity',
+                  'wind_speed' : 'asc.wind.speed',
+                  'wind_direction' : 'asc.wind.direction',
+                  'coupler_nd_on' : 'rfe3.rfe15.noise.coupler.on',
+                  'pin_nd_on' : 'rfe3.rfe15.noise.pin.on',
+                  'pos_actual_scan' : 'pos.actual-scan',
+                  'pos_actual_refrac' : 'pos.actual-refrac',
+                  'pos_actual_pointm' : 'pos.actual-pointm',
+                  'pos_request_scan' : 'pos.request-scan',
+                  'pos_request_refrac' : 'pos.request-refrac',
+                  'pos_request_pointm' : 'pos.request-pointm'}
 
 # pylint: disable-msg=W0613
 def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
@@ -169,16 +181,15 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
         d = filename
         filename = d.name
     else:
-        d = katdal.open(filename, ref_ant=antA, time_offset=time_offset, **kwargs)
+        d = katdal.open(filename, ref_ant=antA.name, time_offset=time_offset, **kwargs)
         #Turn off exceptions for unknown kwargs
         d.select(strict=False,**kwargs)
 
     # Load weather sensor data
     enviro = {}
     for quantity in ['temperature', 'pressure', 'humidity', 'wind_speed', 'wind_direction']:
-        sensor_name =   ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],)) if d.version < '1.0'
-                        ('Antennas/Antenna%s/%s' % (antA.name[3:], sensor_name_v1[quantity])) if d.version < '2.0' else \
-                        ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],)) if d.version < '1.0'
+        sensor_name =   ('Antennas/Antenna%s/%s' % (antA.name[3:], sensor_name_v1[quantity])) if d.version.startswith('1.') else \
+                        ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],)) if d.version.startswith('2.')
         if sensor_name in d.file:
             enviro[quantity] = remove_duplicates(d.file[sensor_name])
 
