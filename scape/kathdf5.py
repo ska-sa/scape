@@ -26,9 +26,7 @@ sensor_name_v1 = {'temperature' : 'enviro_air_temperature',
                   'pressure' : 'enviro_air_pressure',
                   'humidity' : 'enviro_air_relative_humidity',
                   'wind_speed' : 'enviro_wind_speed',
-                  'wind_direction' : 'enviro_wind_direction',
-                  'coupler_nd_on' : 'rfe3_rfe15_noise_coupler_on',
-                  'pin_nd_on' : 'rfe3_rfe15_noise_pin_on'}
+                  'wind_direction' : 'enviro_wind_direction'}
 
 # Mapping of desired fields to KAT sensor names (format version 2)
 sensor_name_v2 = {'temperature' : 'asc.air.temperature',
@@ -36,8 +34,6 @@ sensor_name_v2 = {'temperature' : 'asc.air.temperature',
                   'humidity' : 'asc.air.relative-humidity',
                   'wind_speed' : 'asc.wind.speed',
                   'wind_direction' : 'asc.wind.direction',
-                  'coupler_nd_on' : 'rfe3.rfe15.noise.coupler.on',
-                  'pin_nd_on' : 'rfe3.rfe15.noise.pin.on',
                   'pos_actual_scan' : 'pos.actual-scan',
                   'pos_actual_refrac' : 'pos.actual-refrac',
                   'pos_actual_pointm' : 'pos.actual-pointm',
@@ -50,15 +46,7 @@ sensor_name_v3 = {'temperature' : 'air_temperature',
                   'pressure' : 'air_pressure',
                   'humidity' : 'air_relative_humiduty',
                   'wind_speed' : 'wind_speed',
-                  'wind_direction' : 'wind_direction',
-                  'coupler_nd_on' : 'rfe3.rfe15.noise.coupler.on',
-                  'pin_nd_on' : 'rfe3.rfe15.noise.pin.on',
-                  'pos_actual_scan' : 'pos.actual-scan',
-                  'pos_actual_refrac' : 'pos.actual-refrac',
-                  'pos_actual_pointm' : 'pos.actual-pointm',
-                  'pos_request_scan' : 'pos.request-scan',
-                  'pos_request_refrac' : 'pos.request-refrac',
-                  'pos_request_pointm' : 'pos.request-pointm'}
+                  'wind_direction' : 'wind_direction'}
 
 # pylint: disable-msg=W0613
 def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
@@ -264,10 +252,10 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
             except ValueError:
                 pol_to_corr_id[pol] = 0
     # Pointing sensors
-    az_sensor = 'Antennas/%s/%sazim' % (antA.name, (selected_pointing + '_') if d.version < '2.0' else
-                                                   (sensor_name_v2[selected_pointing] + '-'))
-    el_sensor = 'Antennas/%s/%selev' % (antA.name, (selected_pointing + '_') if d.version < '2.0' else
-                                                   (sensor_name_v2[selected_pointing] + '-'))
+    az_sensor = 'Antennas/%s/%sazim' % (antA.name, (sensor_name_v2[selected_pointing] + '-') if d.version.startswith('2.') else \
+                                                   (selected_pointing + '_'))
+    el_sensor = 'Antennas/%s/%selev' % (antA.name, (sensor_name_v2[selected_pointing] + '-') if d.version.startswith('2.') else \
+                                                   (selected_pointing + '_'))
 
     # Load each compound scan group
     compscanlist = []
