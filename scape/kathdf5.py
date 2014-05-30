@@ -14,9 +14,6 @@ from .hdf5 import remove_duplicates
 
 logger = logging.getLogger("scape.kathdf5")
 
-# Parse baseline string into antenna identifiers
-#antenna_pattern = re.compile('A(\w+)')
-
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  load_dataset
 #--------------------------------------------------------------------------------------------------
@@ -62,9 +59,9 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
     filename : string or :class:`katdal.DataSet`
         Name of input HDF5 file or katdal dataset object
     baseline : string, optional
-        Selected baseline as *<ant1>,<ant2>*, where *<ant1>* is the number of
-        the first antenna and *<ant2>* is the number of the second antenna.
-        For single-dish data the antenna number is repeated, e.g. 'ant1,ant1'
+        Selected baseline as *<ant1>,<ant2>*, where *<ant1>* is the name of
+        the first antenna and *<ant2>* is the name of the second antenna.
+        For single-dish data the antenna name is repeated, e.g. 'ant1,ant1'
         or just a single antenna name can be given.
         Alternatively, the baseline may be 'sd' for the first single-dish
         baseline or 'if' for the first interferometric baseline in the file.
@@ -172,17 +169,16 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
         d = katdal.open(filename, ref_ant=antA.name, time_offset=time_offset, **kwargs)
         #Turn off exceptions for unknown kwargs
         d.select(strict=False,**kwargs)
-
     # Load weather sensor data
     enviro = {}
     for quantity in ['temperature', 'pressure', 'humidity', 'wind_speed', 'wind_direction']:
         sensor_name =   ('TelescopeModel/anc_asc/%s' % (sensor_name_v3[quantity],)) if d.version.startswith('3.') else \
                         ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],)) if d.version.startswith('2.') else \
                         ('Antennas/Antenna%s/%s' % (antA.name[3:], sensor_name_v1[quantity]))
-                        
+
         if sensor_name in d.file:
             enviro[quantity] = remove_duplicates(d.file[sensor_name])
-    
+
     # Autodetect the noise diode to use, based on which sensor shows any activity
     if not noise_diode:
         nd_fired = {}
