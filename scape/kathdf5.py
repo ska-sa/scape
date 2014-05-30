@@ -14,9 +14,6 @@ from .hdf5 import remove_duplicates
 
 logger = logging.getLogger("scape.kathdf5")
 
-# Parse baseline string into antenna identifiers
-baseline_pattern = re.compile('A(\w+)A(\w+)')
-
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  load_dataset
 #--------------------------------------------------------------------------------------------------
@@ -26,9 +23,7 @@ sensor_name_v1 = {'temperature' : 'enviro_air_temperature',
                   'pressure' : 'enviro_air_pressure',
                   'humidity' : 'enviro_air_relative_humidity',
                   'wind_speed' : 'enviro_wind_speed',
-                  'wind_direction' : 'enviro_wind_direction',
-                  'coupler_nd_on' : 'rfe3_rfe15_noise_coupler_on',
-                  'pin_nd_on' : 'rfe3_rfe15_noise_pin_on'}
+                  'wind_direction' : 'enviro_wind_direction'}
 
 # Mapping of desired fields to KAT sensor names (format version 2)
 sensor_name_v2 = {'temperature' : 'asc.air.temperature',
@@ -36,8 +31,6 @@ sensor_name_v2 = {'temperature' : 'asc.air.temperature',
                   'humidity' : 'asc.air.relative-humidity',
                   'wind_speed' : 'asc.wind.speed',
                   'wind_direction' : 'asc.wind.direction',
-                  'coupler_nd_on' : 'rfe3.rfe15.noise.coupler.on',
-                  'pin_nd_on' : 'rfe3.rfe15.noise.pin.on',
                   'pos_actual_scan' : 'pos.actual-scan',
                   'pos_actual_refrac' : 'pos.actual-refrac',
                   'pos_actual_pointm' : 'pos.actual-pointm',
@@ -45,8 +38,15 @@ sensor_name_v2 = {'temperature' : 'asc.air.temperature',
                   'pos_request_refrac' : 'pos.request-refrac',
                   'pos_request_pointm' : 'pos.request-pointm'}
 
+# Mapping of desired fields to KAT sensor names (format version 3)
+sensor_name_v3 = {'temperature' : 'air_temperature',
+                  'pressure' : 'air_pressure',
+                  'humidity' : 'air_relative_humiduty',
+                  'wind_speed' : 'wind_speed',
+                  'wind_direction' : 'wind_direction'}
+
 # pylint: disable-msg=W0613
-def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
+def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
                  noise_diode=None, nd_models=None, time_offset=0.0, **kwargs):
     """Load data set from HDF5 file via katdal interface.
 
@@ -59,11 +59,12 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
     filename : string or :class:`katdal.DataSet`
         Name of input HDF5 file or katdal dataset object
     baseline : string, optional
-        Selected baseline as *AxAy*, where *x* is the number of the first antenna
-        and *y* is the number of the second antenna (1-based), and *x* < *y*.
-        For single-dish data the antenna number is repeated, e.g. 'A1A1'.
-        Alternatively, the baseline may be 'AxAx' for the first single-dish
-        baseline or 'AxAy' for the first interferometric baseline in the file.
+        Selected baseline as *<ant1>,<ant2>*, where *<ant1>* is the name of
+        the first antenna and *<ant2>* is the name of the second antenna.
+        For single-dish data the antenna name is repeated, e.g. 'ant1,ant1'
+        or just a single antenna name can be given.
+        Alternatively, the baseline may be 'sd' for the first single-dish
+        baseline or 'if' for the first interferometric baseline in the file.
     selected_pointing : string, optional
         Identifier of (az, el) sensors that will provide all the pointing data
         of the data set. The actual sensor names are formed by appending '_azim'
@@ -120,54 +121,61 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
 
     """
     # Parse antennas involved in explicitly specified baseline
-    if baseline not in ('AxAx', 'sd', 'AxAy', 'if'):
-        parsed_antenna_ids = baseline_pattern.match(baseline)
-        if parsed_antenna_ids is None:
-            raise ValueError("Please specify baseline with notation 'AxAy', "
-                             "where x is identifier of first antenna and y is identifier of second antenna")
-        antA_name, antB_name = [('ant' + ident) for ident in parsed_antenna_ids.groups()]
+    if baseline not in ('sd', 'if'):
+        #Baseline separator is a comma- so find the comma (or assume single dish if no comma found)
+        parsed_antenna_ids = baseline.split(',')
+        if (parsed_antenna_ids is None) or len(parsed_antenna_ids) > 2:
+            raise ValueError("Please specify baseline with notation '<ant1>,<ant2>', "
+                             "where <ant1> is the name of first antenna and <ant2> is the name of second antenna")
+        antA_name, antB_name = parsed_antenna_ids[0], parsed_antenna_ids[-1]
 
-    if isinstance(filename, katdal.DataSet):
-        d = filename
-        filename = d.name
-    else:
-        ref_ant = antA_name if baseline not in ('AxAx', 'sd', 'AxAy', 'if') else ''
-        d = katdal.open(filename, ref_ant=ref_ant, time_offset=time_offset, **kwargs)
-        #Turn off exceptions for unknown kwargs
-        d.select(strict=False,**kwargs)
+    #Get antennas in file
+    file_ants = filename.ants if isinstance(filename, katdal.DataSet) else katdal.get_ants(filename)
 
-    if baseline in ('AxAx', 'sd'):
+    if baseline is 'sd':
         # First single-dish baseline found
         try:
-            antA = antB = d.ants[0]
+            antA = antB = file_ants[0]
         except IndexError:
             raise ValueError('Could not load first single-dish baseline - no antennas found in file')
-        logger.info("Loading single-dish baseline 'A%sA%s'" % (antA.name[3:], antB.name[3:]))
-    elif baseline in ('AxAy', 'if'):
+        logger.info("Loading single-dish baseline '%s,%s'" % (antA.name, antB.name))
+    elif baseline is 'if':
         # First interferometric baseline found
         try:
-            antA, antB = d.ants[:2]
+            antA, antB = file_ants[:2]
         except IndexError:
             raise ValueError('Could not load first interferometric baseline - less than 2 antennas found in file')
-        logger.info("Loading interferometric baseline 'A%sA%s'" % (antA.name[3:], antB.name[3:]))
+        logger.info("Loading interferometric baseline '%s,%s'" % (antA.name, antB.name))
     else:
         # Select antennas involved in explicitly specified baseline
-        ant_lookup = dict([(ant.name, ant) for ant in d.ants])
+        ant_lookup = dict([(ant.name, ant) for ant in file_ants])
         try:
             antA, antB = ant_lookup[antA_name], ant_lookup[antB_name]
         except KeyError:
             # Check that requested antennas are in data set
             raise ValueError('Requested antenna pair not found in HDF5 file (wanted %s but file only contains %s)'
                              % ([antA_name, antB_name], ant_lookup.keys()))
+        logger.info("Loading baseline '%s,%s'" % (antA.name, antB.name))
+
     antenna, antenna2 = antA.description, antB.description
     if antenna == antenna2:
         antenna2 = None
 
+    #Load the katdal object
+    if isinstance(filename, katdal.DataSet):
+        d = filename
+        filename = d.name
+    else:
+        d = katdal.open(filename, ref_ant=antA.name, time_offset=time_offset, **kwargs)
+        #Turn off exceptions for unknown kwargs
+        d.select(strict=False,**kwargs)
     # Load weather sensor data
     enviro = {}
     for quantity in ['temperature', 'pressure', 'humidity', 'wind_speed', 'wind_direction']:
-        sensor_name = ('Antennas/Antenna%s/%s' % (antA.name[3:], sensor_name_v1[quantity])) if d.version < '2.0' else \
-                      ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],))
+        sensor_name =   ('TelescopeModel/anc_asc/%s' % (sensor_name_v3[quantity],)) if d.version.startswith('3.') else \
+                        ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],)) if d.version.startswith('2.') else \
+                        ('Antennas/Antenna%s/%s' % (antA.name[3:], sensor_name_v1[quantity]))
+
         if sensor_name in d.file:
             enviro[quantity] = remove_duplicates(d.file[sensor_name])
 
@@ -203,24 +211,23 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
         logger.info("Loaded V noise diode model from '%s'" % (nd_v_file,))
     else:
         def nd_dataset_name(ant, pol, nd):
-            return ('Antennas/Antenna%s/%s/%s_nd_model' % (ant[3:], pol.upper(), nd)) \
-                   if d.version < '2.0' else \
-                   ('MetaData/Configuration/Antennas/%s/%s_%s_noise_diode_model' % (ant, pol.lower(), nd))
+            return ('TelescopeModel/%s/%s_%s_noise_diode_model' % (ant, pol.lower(), nd)) if d.version.startswith('3.') else \
+                   ('MetaData/Configuration/Antennas/%s/%s_%s_noise_diode_model' % (ant, pol.lower(), nd)) if d.version.startswith('2.') else \
+                   ('Antennas/Antenna%s/%s/%s_nd_model' % (ant[3:], pol.upper(), nd))
         nd_h_name = nd_dataset_name(antA.name, 'H', noise_diode)
         nd_v_name = nd_dataset_name(antA.name, 'V', noise_diode)
         if nd_h_name in d.file:
             nd_dataset = d.file[nd_h_name]
             nd_h_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
-            if nd_v_name not in d.file:
-                nd_v_model = NoiseDiodeModel()
+        else:
+            logger.warning("Cannot find %s noise diode H polarisation model for antenna %s - using default." % (noise_diode, antA.name,))
+            nd_h_model = NoiseDiodeModel()
         if nd_v_name in d.file:
             nd_dataset = d.file[nd_v_name]
             nd_v_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
-            if nd_h_name not in d.file:
-                nd_h_model = NoiseDiodeModel()
-        if nd_h_model is None and nd_v_model is None:
-            raise ValueError("Unknown noise diode '%s'" % (noise_diode,))
-
+        else:
+            logger.warning("Cannot find %s noise diode V polarisation model for antenna %s - using default." % (noise_diode, antA.name,))
+            nd_v_model = NoiseDiodeModel()
     # Load correlator configuration group
     num_chans = len(d.channel_freqs)
     corrconf = CorrelatorConfig(d.channel_freqs * 1e-6, np.tile(d.channel_width * 1e-6, num_chans),
@@ -241,10 +248,10 @@ def load_dataset(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
             except ValueError:
                 pol_to_corr_id[pol] = 0
     # Pointing sensors
-    az_sensor = 'Antennas/%s/%sazim' % (antA.name, (selected_pointing + '_') if d.version < '2.0' else
-                                                   (sensor_name_v2[selected_pointing] + '-'))
-    el_sensor = 'Antennas/%s/%selev' % (antA.name, (selected_pointing + '_') if d.version < '2.0' else
-                                                   (sensor_name_v2[selected_pointing] + '-'))
+    az_sensor = 'Antennas/%s/%sazim' % (antA.name, (sensor_name_v2[selected_pointing] + '-') if d.version.startswith('2.') else \
+                                                   (selected_pointing + '_'))
+    el_sensor = 'Antennas/%s/%selev' % (antA.name, (sensor_name_v2[selected_pointing] + '-') if d.version.startswith('2.') else \
+                                                   (selected_pointing + '_'))
 
     # Load each compound scan group
     compscanlist = []

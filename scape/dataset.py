@@ -114,7 +114,7 @@ class DataSet(object):
                 ext = os.path.splitext(filename)[1]
             else:
                 ext = '.h5'
-                kwargs['katfile'] = True
+                kwargs['katdal'] = True
             if ext == '.fits':
                 if not xdmfits_found:
                     raise ImportError('XDM FITS support could not be loaded - please check xdmfits module')
@@ -123,7 +123,7 @@ class DataSet(object):
             elif (ext == '.h5') or (ext == '.hdf5'):
                 if not hdf5_found:
                     raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
-                if kwargs.get('katfile', False):
+                if kwargs.get('katdal', True):
                     compscanlist, experiment_id, observer, description, data_unit, \
                     corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = hdf5_load(filename, **kwargs)
                 else:

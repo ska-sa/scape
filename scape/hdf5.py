@@ -117,8 +117,13 @@ def load_dataset(filename, *args, **kwargs):
     f = h5py.File(filename, 'r')
     version = f.attrs.get('version', '1.x')
     f.close()
-    return load_dataset_v2(filename, *args, **kwargs) if version.startswith('2.') else \
-           load_dataset_v1(filename, *args, **kwargs)
+    # Trap version 3.x files and tell the user to use katdal
+    if version.startswith('3.'):
+        raise ValueError('The scape hdf5 loader does not support version %s files. Try reloading with katfile=True to enable the katdal loader.'
+                            % (version,))
+    else:
+        return load_dataset_v2(filename, *args, **kwargs) if version.startswith('2.') else \
+                load_dataset_v1(filename, *args, **kwargs)
 
 #--------------------------------------------------------------------------------------------------
 #--- FUNCTION :  load_dataset_v1
