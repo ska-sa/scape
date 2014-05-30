@@ -65,7 +65,7 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
         Selected baseline as *<ant1>,<ant2>*, where *<ant1>* is the number of
         the first antenna and *<ant2>* is the number of the second antenna.
         For single-dish data the antenna number is repeated, e.g. 'ant1,ant1'
-        or just a singl antenna name can be given.
+        or just a single antenna name can be given.
         Alternatively, the baseline may be 'sd' for the first single-dish
         baseline or 'if' for the first interferometric baseline in the file.
     selected_pointing : string, optional
