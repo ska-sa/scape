@@ -7,7 +7,8 @@ import numpy as np
 try:
     import matplotlib as mpl
     import matplotlib.pyplot as plt
-except ImportError:
+# The Gtk backend wants to start plotting right away, hence the RuntimeError
+except (ImportError, RuntimeError):
     pass
 
 try:
