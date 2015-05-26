@@ -77,7 +77,9 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
     nd_models : None or string, optional
         Override the noise diode models in the HDF5 file using the ones in this
         directory. This assumes that the model files have the format
-        '%(antenna).%(diode).%(pol).csv' (e.g. 'ant1.coupler.h.csv').
+        'rx.%(band).%(serialno).%(pol).csv' (e.g. 'rx.l.4.h.csv') if the file
+        contains receiver serial number information, else the old format of
+        '%(antenna).%(diode).%(pol).csv' (e.g. 'ant1.coupler.h.csv') is used.
     time_offset : float, optional
         Offset to add to correlator timestamps, in seconds
     kwargs : dict, optional
@@ -172,9 +174,9 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
     # Load weather sensor data
     enviro = {}
     for quantity in ['temperature', 'pressure', 'humidity', 'wind_speed', 'wind_direction']:
-        sensor_name =   ('TelescopeModel/anc_asc/%s' % (sensor_name_v3[quantity],)) if d.version.startswith('3.') else \
-                        ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],)) if d.version.startswith('2.') else \
-                        ('Antennas/Antenna%s/%s' % (antA.name[3:], sensor_name_v1[quantity]))
+        sensor_name = ('TelescopeModel/anc_asc/%s' % (sensor_name_v3[quantity],)) if d.version.startswith('3.') else \
+                      ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],)) if d.version.startswith('2.') else \
+                      ('Antennas/Antenna%s/%s' % (antA.name[3:], sensor_name_v1[quantity]))
 
         if sensor_name in d.file:
             enviro[quantity] = remove_duplicates(d.file[sensor_name])
@@ -203,10 +205,14 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
             raise ValueError('Unable to pick right noise diode model file, as noise diode could not be identified')
         if not antA.name:
             raise ValueError('Unable to pick right noise diode model file, as antenna could not be identified')
-        nd_h_file = os.path.join(nd_models, '%s.%s.h.csv' % (antA.name, noise_diode))
+        # Attempt to get active band and its receiver serial number
+        rx = d.receivers.get(antA.name, '')
+        # Use this for base filename, else fall back to old format
+        basename = 'rx.' + rx if rx else '%s.%s' % (antA.name, noise_diode)
+        nd_h_file = os.path.join(nd_models, basename + '.h.csv')
         nd_h_model = NoiseDiodeModel(nd_h_file)
         logger.info("Loaded H noise diode model from '%s'" % (nd_h_file,))
-        nd_v_file = os.path.join(nd_models, '%s.%s.v.csv' % (antA.name, noise_diode))
+        nd_v_file = os.path.join(nd_models, basename + '.v.csv')
         nd_v_model = NoiseDiodeModel(nd_v_file)
         logger.info("Loaded V noise diode model from '%s'" % (nd_v_file,))
     else:
