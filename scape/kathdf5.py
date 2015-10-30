@@ -41,7 +41,7 @@ sensor_name_v2 = {'temperature' : 'asc.air.temperature',
 # Mapping of desired fields to KAT sensor names (format version 3)
 sensor_name_v3 = {'temperature' : 'air_temperature',
                   'pressure' : 'air_pressure',
-                  'humidity' : 'air_relative_humiduty',
+                  'humidity' : 'air_relative_humidity',
                   'wind_speed' : 'wind_speed',
                   'wind_direction' : 'wind_direction'}
 
