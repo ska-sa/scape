@@ -37,17 +37,16 @@ if _module_found('matplotlib', 'Matplotlib was not found - plotting will be disa
 if _module_found('pyfits', 'PyFITS was not found - FITS creation will be disabled'):
     from .plots_basic import save_fits_image
 
-def _extract_version():
-    """Extract module version from pkg_resources structure."""
-    try:
-        import pkg_resources
-        dist = pkg_resources.get_distribution("scape")
-        # ver needs to be a list since tuples in Python <= 2.5 don't have a .index method
-        ver = list(dist.parsed_version)
-        return "r%d" % int(ver[ver.index("*r") + 1])
-    except (ImportError, pkg_resources.DistributionNotFound, ValueError, IndexError, TypeError):
-        return "unknown"
-__version__ = _extract_version()
+# BEGIN VERSION CHECK
+# Get package version when locally imported from repo or via -e develop install
+try:
+    import katversion as _katversion
+except ImportError:
+    import time as _time
+    __version__ = "0.0+unknown.{}".format(_time.strftime('%Y%m%d%H%M'))
+else:
+    __version__ = _katversion.get_version(__path__[0])
+# END VERSION CHECK
 
 # Clean up module namespace to make it easier to spot the useful parts
-del logging, sys, _NullHandler, _module_found, _extract_version
+del logging, sys, _NullHandler, _module_found
