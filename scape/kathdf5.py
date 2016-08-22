@@ -19,19 +19,10 @@ logger = logging.getLogger("scape.kathdf5")
 #--------------------------------------------------------------------------------------------------
 
 # Mapping of desired fields to KAT sensor names (format version 1)
-sensor_name_v1 = {'temperature' : 'enviro_air_temperature',
-                  'pressure' : 'enviro_air_pressure',
-                  'humidity' : 'enviro_air_relative_humidity',
-                  'wind_speed' : 'enviro_wind_speed',
-                  'wind_direction' : 'enviro_wind_direction'}
+sensor_name_v1 = {}
 
 # Mapping of desired fields to KAT sensor names (format version 2)
-sensor_name_v2 = {'temperature' : 'asc.air.temperature',
-                  'pressure' : 'asc.air.pressure',
-                  'humidity' : 'asc.air.relative-humidity',
-                  'wind_speed' : 'asc.wind.speed',
-                  'wind_direction' : 'asc.wind.direction',
-                  'pos_actual_scan' : 'pos.actual-scan',
+sensor_name_v2 = {'pos_actual_scan' : 'pos.actual-scan',
                   'pos_actual_refrac' : 'pos.actual-refrac',
                   'pos_actual_pointm' : 'pos.actual-pointm',
                   'pos_request_scan' : 'pos.request-scan',
@@ -39,11 +30,7 @@ sensor_name_v2 = {'temperature' : 'asc.air.temperature',
                   'pos_request_pointm' : 'pos.request-pointm'}
 
 # Mapping of desired fields to KAT sensor names (format version 3)
-sensor_name_v3 = {'temperature' : 'air_temperature',
-                  'pressure' : 'air_pressure',
-                  'humidity' : 'air_relative_humidity',
-                  'wind_speed' : 'wind_speed',
-                  'wind_direction' : 'wind_direction'}
+sensor_name_v3 = {}
 
 # pylint: disable-msg=W0613
 def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
@@ -174,12 +161,12 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
     # Load weather sensor data
     enviro = {}
     for quantity in ['temperature', 'pressure', 'humidity', 'wind_speed', 'wind_direction']:
-        sensor_name = ('TelescopeModel/anc_asc/%s' % (sensor_name_v3[quantity],)) if d.version.startswith('3.') else \
-                      ('MetaData/Sensors/Enviro/%s' % (sensor_name_v2[quantity],)) if d.version.startswith('2.') else \
-                      ('Antennas/Antenna%s/%s' % (antA.name[3:], sensor_name_v1[quantity]))
-
-        if sensor_name in d.file:
-            enviro[quantity] = remove_duplicates(d.file[sensor_name])
+        sensor_values = getattr(d, quantity, None)
+        if sensor_values is not None:
+            status = np.array(['nominal'] * len(sensor_values))
+            tvs = [d.timestamps[:], sensor_values, status]
+            names = 'timestamp,value,status'
+            enviro[quantity] = np.rec.fromarrays(tvs, names=names)
 
     # Autodetect the noise diode to use, based on which sensor shows any activity
     if not noise_diode:
