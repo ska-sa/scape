@@ -388,7 +388,7 @@ class DataSet(object):
                 if ((timekeep is None) or np.any(timekeep)) and ((labelkeep is None) or (scan.label in labelkeep)):
                     scanlist.append(scan.select(timekeep, freqkeep, copy))
             if scanlist:
-                compscanlist.append(CompoundScan(scanlist, compscan.target))
+                compscanlist.append(CompoundScan(scanlist, compscan.target, compscan.label))
         return DataSet(None, compscanlist, self.experiment_id, self.observer,
                        self.description, self.data_unit, self.corrconf.select(freqkeep, copy),
                        self.antenna, self.antenna2, self.nd_h_model, self.nd_v_model, self.enviro)
