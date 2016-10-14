@@ -260,15 +260,15 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
             if antenna2 is None:
                 # Single-dish uses HH, VV, Re{HV}, Im{HV}
                 corr_id = [pol_to_corr_id[pol] for pol in ['HH', 'VV', 'HV', 'HV']]
-                scan_data = [d.vis[:, :, cid - 1][:, :, 0] if cid > 0 else
-                             d.vis[:, :, -cid - 1][:, :, 0].conj() if cid < 0 else
+                scan_data = [d.vis[:, :, cid - 1] if cid > 0 else
+                             d.vis[:, :, -cid - 1].conj() if cid < 0 else
                              np.zeros((num_times, num_chans), np.float32) for cid in corr_id]
                 scan_data = np.dstack([scan_data[0].real, scan_data[1].real,
                                        scan_data[2].real, scan_data[3].imag]).astype(np.float32)
             else:
                 corr_id = [pol_to_corr_id[pol] for pol in scape_pol_if]
-                scan_data = [d.vis[:, :, cid - 1][:, :, 0] if cid > 0 else
-                             d.vis[:, :, -cid - 1][:, :, 0].conj() if cid < 0 else
+                scan_data = [d.vis[:, :, cid - 1] if cid > 0 else
+                             d.vis[:, :, -cid - 1].conj() if cid < 0 else
                              np.zeros((num_times, num_chans), np.complex64) for cid in corr_id]
                 scan_data = np.dstack(scan_data).astype(np.complex64)
             scan_pointing = np.rec.fromarrays([d.sensor[az_sensor].astype(np.float32) * np.float32(np.pi / 180.0),
