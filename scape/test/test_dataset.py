@@ -55,7 +55,7 @@ class SaveLoadTestCases(unittest.TestCase):
         # Skip test if HDF5 support is not available
         try:
             self.d.save(self.filename)
-            d2 = dataset.DataSet(self.filename)
+            d2 = dataset.DataSet(self.filename, katdal=False)
             self.assertEqual(self.d, d2, "Dataset loaded from HDF5 file is not the same as the one saved to file.")
         except ImportError:
             pass
