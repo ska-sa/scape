@@ -4,7 +4,7 @@ import re
 
 import numpy as np
 import scikits.fitting
-from scikits.fitting import Spline1DFit, Polynomial1DFit, Spline2DGridFit
+from scikits.fitting import Spline1DFit, Polynomial1DFit, Spline2DGridFit  # noqa: F401
 from scikits.fitting import randomise as fitting_randomise
 
 from .stats import robust_mu_sigma

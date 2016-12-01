@@ -20,7 +20,7 @@ logger = logging.getLogger("scape.plots_basic")
 
 
 def ordinal_suffix(n):
-    """Returns the ordinal suffix of integer *n* as a string."""
+    """The ordinal suffix of integer *n* as a string."""
     if n % 100 in [11, 12, 13]:
         return 'th'
     else:

@@ -23,12 +23,12 @@ acsm_logger = logging.getLogger('acsm')
 acsm_logger.setLevel(logging.ERROR)
 # Needed for pickled target and mount objects
 # pylint: disable-msg=W0611
-import acsm
+import acsm  # noqa: E402
 
-from .scan import Scan
-from .compoundscan import CompoundScan, CorrelatorConfig
-from .gaincal import NoiseDiodeModel, NoiseDiodeNotFound
-from .stats import angle_wrap
+from .scan import Scan  # noqa: E402
+from .compoundscan import CompoundScan, CorrelatorConfig  # noqa: E402
+from .gaincal import NoiseDiodeModel, NoiseDiodeNotFound  # noqa: E402
+from .stats import angle_wrap  # noqa: E402
 
 logger = logging.getLogger("scape.xdmfits")
 
