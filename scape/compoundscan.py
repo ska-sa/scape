@@ -19,10 +19,10 @@ import numpy as np
 import logging
 
 import katpoint
+from scikits.fitting import scalar
 
 from .beam_baseline import fit_beam_and_baselines
 from .stats import remove_spikes
-from .fitting import scalar
 
 logger = logging.getLogger("scape.compoundscan")
 

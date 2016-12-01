@@ -5,8 +5,8 @@ import logging
 import numpy as np
 import scipy.special as special
 from katpoint import rad2deg
+from scikits.fitting import ScatterFit, Polynomial1DFit, Polynomial2DFit, GaussianFit, Delaunay2DScatterFit
 
-from .fitting import ScatterFit, Polynomial1DFit, Polynomial2DFit, GaussianFit, Delaunay2DScatterFit
 from .stats import remove_spikes, chi2_conf_interval
 
 logger = logging.getLogger("scape.beam_baseline")

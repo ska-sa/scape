@@ -9,11 +9,11 @@ import os.path
 import h5py
 import numpy as np
 import katpoint
+from scikits.fitting import PiecewisePolynomial1DFit
 
 from .gaincal import NoiseDiodeModel
 from .scan import Scan, scape_pol_if
 from .compoundscan import CorrelatorConfig, CompoundScan
-from .fitting import PiecewisePolynomial1DFit
 
 logger = logging.getLogger("scape.hdf5")
 

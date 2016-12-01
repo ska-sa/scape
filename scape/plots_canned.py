@@ -13,7 +13,8 @@ except (ImportError, RuntimeError):
     pass
 
 from katpoint import rad2deg, Timestamp, construct_azel_target
-from .fitting import PiecewisePolynomial1DFit
+from scikits.fitting import PiecewisePolynomial1DFit
+
 from .stats import robust_mu_sigma, remove_spikes, minimise_angle_wrap, identify_rfi_channels
 from .beam_baseline import fwhm_to_sigma, extract_measured_beam, interpolate_measured_beam
 from .plots_basic import (plot_segments, plot_line_segments, plot_compacted_images, plot_marker_3d,

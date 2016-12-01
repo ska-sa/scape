@@ -1,11 +1,12 @@
 """Gain calibration via noise injection."""
 
-import numpy as np
 import re
 
-import fitting
-from .fitting import Spline1DFit, Polynomial1DFit, Spline2DGridFit
-from .fitting import randomise as fitting_randomise
+import numpy as np
+import scikits.fitting
+from scikits.fitting import Spline1DFit, Polynomial1DFit, Spline2DGridFit
+from scikits.fitting import randomise as fitting_randomise
+
 from .stats import robust_mu_sigma
 from .scan import scape_pol_sd
 
@@ -167,7 +168,7 @@ class NoiseDiodeModel(object):
 
         """
         # Instantiate interpolator object and fit to measurements
-        interp = eval(self.interp, vars(fitting))
+        interp = eval(self.interp, vars(scikits.fitting))
         interp.fit(self.freq, self.temp)
         # Optionally perturb the fit
         if randomise:
