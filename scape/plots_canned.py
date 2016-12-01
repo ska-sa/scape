@@ -16,10 +16,11 @@ from katpoint import rad2deg, Timestamp, construct_azel_target
 from .fitting import PiecewisePolynomial1DFit
 from .stats import robust_mu_sigma, remove_spikes, minimise_angle_wrap, identify_rfi_channels
 from .beam_baseline import fwhm_to_sigma, extract_measured_beam, interpolate_measured_beam
-from .plots_basic import plot_segments, plot_line_segments, plot_compacted_images, plot_marker_3d, \
-                         gaussian_ellipses, plot_db_contours, ordinal_suffix
+from .plots_basic import (plot_segments, plot_line_segments, plot_compacted_images, plot_marker_3d,
+                          gaussian_ellipses, plot_db_contours, ordinal_suffix)
 
 logger = logging.getLogger("scape.plots_canned")
+
 
 def create_enviro_extractor(dataset, quantity):
     """Create function to extract and interpolate environmental sensor data.
@@ -41,6 +42,7 @@ def create_enviro_extractor(dataset, quantity):
     interp = PiecewisePolynomial1DFit(max_degree=0)
     interp.fit(sensor['timestamp'], sensor['value'])
     return lambda scan: interp(scan.timestamps)
+
 
 class SingleAxisData(object):
     """Struct that contains data for one axis in a plot, with its label and type.
@@ -65,9 +67,10 @@ class SingleAxisData(object):
         """Short human-friendly string representation of data struct."""
         return "<scape.plots_canned.SingleAxisData '%s' at 0x%x>" % (self.label, id(self))
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  extract_scan_data
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  extract_scan_data
+# -------------------------------------------------------------------------------------------------
+
 
 def extract_scan_data(scans, quantity, pol='absI'):
     """Extract data from list of Scan objects for plotting purposes.
@@ -100,41 +103,44 @@ def extract_scan_data(scans, quantity, pol='absI'):
     start = np.min([s.timestamps[0] for s in scans])
     # Create dict of standard quantities and the corresponding functions that will extract them from a Scan object,
     # plus their axis labels
-    lf = {# Time-like quantities
-          'abs_time' : ('Time (seconds since Unix epoch)', lambda scan: scan.timestamps),
-          'time'     : ('Time (s), since %s' % (Timestamp(start).local(),), lambda scan: scan.timestamps - start),
-          'az'       : ('Azimuth angle (deg)', lambda scan: rad2deg(scan.pointing['az'])),
-          'el'       : ('Elevation angle (deg)', lambda scan: rad2deg(scan.pointing['el'])),
-          'ra'       : ('Right ascension (J2000 deg)',
-                        lambda scan: rad2deg(np.array([construct_azel_target(az, el).radec(t, dataset.antenna)[0]
-                                                       for az, el, t in zip(scan.pointing['az'], scan.pointing['el'],
-                                                                            scan.timestamps)]))),
-          'dec'      : ('Declination (J2000 deg)',
-                        lambda scan: rad2deg(np.array([construct_azel_target(az, el).radec(t, dataset.antenna)[1]
-                                                       for az, el, t in zip(scan.pointing['az'], scan.pointing['el'],
-                                                                            scan.timestamps)]))),
-          'target_x' : ('Target coordinate x (deg)', lambda scan: rad2deg(scan.target_coords[0])),
-          'target_y' : ('Target coordinate y (deg)', lambda scan: rad2deg(scan.target_coords[1])),
-          # Instantaneous mount coordinates are back on the sphere, but at a single central time instant for all points in compound scan
-          'instant_az' : ('Instant azimuth angle (deg)',
-                          lambda scan: rad2deg(scan.compscan.target.plane_to_sphere(scan.target_coords[0], scan.target_coords[1],
-                                               np.median(np.hstack([s.timestamps for s in scan.compscan.scans])), dataset.antenna)[0])),
-          'instant_el' : ('Instant elevation angle (deg)',
-                          lambda scan: rad2deg(scan.compscan.target.plane_to_sphere(scan.target_coords[0], scan.target_coords[1],
-                                               np.median(np.hstack([s.timestamps for s in scan.compscan.scans])), dataset.antenna)[1])),
-          'parangle'   : ('Parallactic angle (deg)', lambda scan: rad2deg(scan.parangle)),
-          # Frequency-like quantities
-          'freq'     : ('Frequency (MHz)', lambda scan: dataset.freqs),
-          'chan'     : ('Channel index', lambda scan: np.arange(len(dataset.freqs))),
-          # Time-frequency-like quantities
-          'amp'           : ('%s amplitude (%s)' % (pol, dataset.data_unit), lambda scan: np.abs(scan.pol(pol))),
-          'phase'         : ('%s phase (deg)' % (pol,), lambda scan: rad2deg(np.angle(scan.pol(pol)))),
-          'real'          : ('Real part of %s (%s)' % (pol, dataset.data_unit), lambda scan: scan.pol(pol).real),
-          'imag'          : ('Imaginary part of %s (%s)' % (pol, dataset.data_unit), lambda scan: scan.pol(pol).imag),
-          'unspiked_amp'  : ('%s amplitude (%s)' % (pol, dataset.data_unit),
-                             lambda scan: remove_spikes(np.abs(scan.pol(pol)))),
-          'unspiked_real' : ('Real part of %s (%s)' % (pol, dataset.data_unit),
-                             lambda scan: remove_spikes(scan.pol(pol).real))}
+    lf = {  # Time-like quantities
+        'abs_time': ('Time (seconds since Unix epoch)', lambda scan: scan.timestamps),
+        'time': ('Time (s), since %s' % (Timestamp(start).local(),), lambda scan: scan.timestamps - start),
+        'az': ('Azimuth angle (deg)', lambda scan: rad2deg(scan.pointing['az'])),
+        'el': ('Elevation angle (deg)', lambda scan: rad2deg(scan.pointing['el'])),
+        'ra': ('Right ascension (J2000 deg)',
+               lambda scan: rad2deg(np.array([construct_azel_target(az, el).radec(t, dataset.antenna)[0]
+                                              for az, el, t in zip(scan.pointing['az'], scan.pointing['el'],
+                                                                   scan.timestamps)]))),
+        'dec': ('Declination (J2000 deg)',
+                lambda scan: rad2deg(np.array([construct_azel_target(az, el).radec(t, dataset.antenna)[1]
+                                               for az, el, t in zip(scan.pointing['az'], scan.pointing['el'],
+                                                                    scan.timestamps)]))),
+        'target_x': ('Target coordinate x (deg)', lambda scan: rad2deg(scan.target_coords[0])),
+        'target_y': ('Target coordinate y (deg)', lambda scan: rad2deg(scan.target_coords[1])),
+        # Instantaneous mount coordinates are back on the sphere,
+        # but at a single central time instant for all points in compound scan
+        'instant_az': ('Instant azimuth angle (deg)',
+                       lambda scan: rad2deg(scan.compscan.target.plane_to_sphere(
+                           scan.target_coords[0], scan.target_coords[1],
+                           np.median(np.hstack([s.timestamps for s in scan.compscan.scans])), dataset.antenna)[0])),
+        'instant_el': ('Instant elevation angle (deg)',
+                       lambda scan: rad2deg(scan.compscan.target.plane_to_sphere(
+                           scan.target_coords[0], scan.target_coords[1],
+                           np.median(np.hstack([s.timestamps for s in scan.compscan.scans])), dataset.antenna)[1])),
+        'parangle': ('Parallactic angle (deg)', lambda scan: rad2deg(scan.parangle)),
+        # Frequency-like quantities
+        'freq': ('Frequency (MHz)', lambda scan: dataset.freqs),
+        'chan': ('Channel index', lambda scan: np.arange(len(dataset.freqs))),
+        # Time-frequency-like quantities
+        'amp': ('%s amplitude (%s)' % (pol, dataset.data_unit), lambda scan: np.abs(scan.pol(pol))),
+        'phase': ('%s phase (deg)' % (pol,), lambda scan: rad2deg(np.angle(scan.pol(pol)))),
+        'real': ('Real part of %s (%s)' % (pol, dataset.data_unit), lambda scan: scan.pol(pol).real),
+        'imag': ('Imaginary part of %s (%s)' % (pol, dataset.data_unit), lambda scan: scan.pol(pol).imag),
+        'unspiked_amp': ('%s amplitude (%s)' % (pol, dataset.data_unit),
+                         lambda scan: remove_spikes(np.abs(scan.pol(pol)))),
+        'unspiked_real': ('Real part of %s (%s)' % (pol, dataset.data_unit),
+                          lambda scan: remove_spikes(scan.pol(pol).real))}
     # Add enviro sensors as plottable time-like quantities, if they are available
     if 'temperature' in dataset.enviro:
         lf['temperature'] = ('Temperature (deg C)', create_enviro_extractor(dataset, 'temperature'))
@@ -155,16 +161,18 @@ def extract_scan_data(scans, quantity, pol='absI'):
     # Extract data from scans
     data = [func(s) for s in scans]
     # Infer data type by comparing shape of data to that of timestamps, frequency channels and visibility data
-    dt = {tuple([s.data.shape[:2] for s in scans]) : 'tf',
-          tuple([dataset.freqs.shape for s in scans]) : 'f',
-          tuple([s.timestamps.shape for s in scans]) : 't'}
+    dt = {tuple([s.data.shape[:2] for s in scans]): 'tf',
+          tuple([dataset.freqs.shape for s in scans]): 'f',
+          tuple([s.timestamps.shape for s in scans]): 't'}
     return SingleAxisData(data, dt.get(tuple([np.shape(segm) for segm in data])), label)
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  extract_xyz_data
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  extract_xyz_data
+# -------------------------------------------------------------------------------------------------
 
-def extract_xyz_data(data, x, y, z=None, pol='absI', band='all', monotonic_axis='auto', scan_labels=None, full_output=False):
+
+def extract_xyz_data(data, x, y, z=None, pol='absI', band='all',
+                     monotonic_axis='auto', scan_labels=None, full_output=False):
     """Extract data from scans for plotting purposes.
 
     This extracts quantities from a sequence of scans for plotting purposes. The
@@ -310,9 +318,10 @@ def extract_xyz_data(data, x, y, z=None, pol='absI', band='all', monotonic_axis=
     else:
         return xdata, ydata, zdata
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_xyz
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_xyz
+# -------------------------------------------------------------------------------------------------
+
 
 def plot_xyz(data, x='time', y='amp', z=None, pol='absI', labels=None, sigma=1.0, band='all',
              power_in_dB=False, compact=True, monotonic_axis='auto', ax=None, **kwargs):
@@ -414,11 +423,11 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='absI', labels=None, sigma=1.0
     """
     # Extract (x, y, z) data from scans - obtain full output
     xdata, ydata, zdata, tf_stats, monotonic_axis, scan_labels, dataset = \
-           extract_xyz_data(data, x, y, z, pol, band, monotonic_axis, labels, full_output=True)
+        extract_xyz_data(data, x, y, z, pol, band, monotonic_axis, labels, full_output=True)
 
     # The segment widths are set for standard quantities
     width = 1.0 / dataset.dump_rate if 'time' in (x, y) else \
-            dataset.bandwidths if 'freq' in (x, y) else 1.0 if 'chan' in (x, y) else 0.0
+        dataset.bandwidths if 'freq' in (x, y) else 1.0 if 'chan' in (x, y) else 0.0
 
     # Only now get ready to plot...
     if ax is None:
@@ -489,9 +498,10 @@ def plot_xyz(data, x='time', y='amp', z=None, pol='absI', labels=None, sigma=1.0
         ax.set_title(zdata.label)
     return ax
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_spectrum
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_spectrum
+# -------------------------------------------------------------------------------------------------
+
 
 def plot_spectrum(dataset, pol='absI', scan=-1, sigma=1.0, vertical=True, dB=True, ax=None):
     """Spectrum plot of power data as a function of frequency.
@@ -532,7 +542,7 @@ def plot_spectrum(dataset, pol='absI', scan=-1, sigma=1.0, vertical=True, dB=Tru
         If *pol* is not one of the allowed names
 
     """
-    if not pol in ('absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
+    if pol not in ('absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
         raise ValueError("Polarisation key should be one of 'absI', 'absHH', 'absVV', "
                          "'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX' or 'YY' (i.e. real)")
     if ax is None:
@@ -565,7 +575,7 @@ def plot_spectrum(dataset, pol='absI', scan=-1, sigma=1.0, vertical=True, dB=Tru
         ax.fill_between(freqs, power_lower, power_upper, where=~mask, facecolors='0.6', edgecolors='0.6')
         ax.plot(freqs, np.ma.masked_array(power_mean, mask), color='b', lw=2)
         ax.plot(dataset.freqs, power_mean[::3], 'ob')
-        ax.set_xlim(dataset.freqs[0]  - dataset.bandwidths[0] / 2.0,
+        ax.set_xlim(dataset.freqs[0] - dataset.bandwidths[0] / 2.0,
                     dataset.freqs[-1] + dataset.bandwidths[-1] / 2.0)
         freq_label, power_label = ax.set_xlabel, ax.set_ylabel
     else:
@@ -574,7 +584,7 @@ def plot_spectrum(dataset, pol='absI', scan=-1, sigma=1.0, vertical=True, dB=Tru
 #        ax.plot(np.ma.masked_array(power_mean, mask), freqs, color='b', lw=2)
         ax.plot(power_mean, np.ma.masked_array(freqs, mask), color='b', lw=2)
         ax.plot(power_mean[::3], dataset.freqs, 'ob')
-        ax.set_ylim(dataset.freqs[0]  - dataset.bandwidths[0] / 2.0,
+        ax.set_ylim(dataset.freqs[0] - dataset.bandwidths[0] / 2.0,
                     dataset.freqs[-1] + dataset.bandwidths[-1] / 2.0)
         freq_label, power_label = ax.set_ylabel, ax.set_xlabel
     freq_label('Frequency (MHz)')
@@ -587,9 +597,10 @@ def plot_spectrum(dataset, pol='absI', scan=-1, sigma=1.0, vertical=True, dB=Tru
         power_label('Raw power (%scounts)' % db_str)
     return ax, [power_min.min(), power_max.max()]
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_waterfall
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_waterfall
+# -------------------------------------------------------------------------------------------------
+
 
 def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
     """Waterfall plot of power data as a function of time and frequency.
@@ -620,7 +631,7 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
     axes_list = []
     axes_list.append(fig.add_axes([0.125, 6 / 11., 0.6, 4 / 11.]))
     axes_list.append(fig.add_axes([0.125, 0.1, 0.6, 4 / 11.],
-                                               sharex=axes_list[0], sharey=axes_list[0]))
+                                  sharex=axes_list[0], sharey=axes_list[0]))
     axes_list.append(fig.add_axes([0.74, 6 / 11., 0.16, 4 / 11.], sharey=axes_list[0]))
     axes_list.append(fig.add_axes([0.74, 0.1, 0.16, 4 / 11.],
                                   sharex=axes_list[2], sharey=axes_list[0]))
@@ -671,8 +682,8 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
                 time_line = scan.timestamps - time_origin
                 # Normalise the data in each channel to lie between 0 and (channel bandwidth * scale)
                 norm_power = scale * channel_bandwidths_MHz[np.newaxis, :] * \
-                            (np.abs(scan.pol(pol)) - data_min[pol][np.newaxis, :]) / \
-                            (data_max[pol][np.newaxis, :] - data_min[pol][np.newaxis, :])
+                    (np.abs(scan.pol(pol)) - data_min[pol][np.newaxis, :]) / \
+                    (data_max[pol][np.newaxis, :] - data_min[pol][np.newaxis, :])
                 segments = [np.vstack((time_line, norm_power[:, chan])).transpose() for chan in channel_list]
                 if len(segments) > 1:
                     lines = mpl.collections.LineCollection(segments, colors=colors, offsets=offsets)
@@ -751,9 +762,10 @@ def plot_waterfall(dataset, title='', channel_skip=None, fig=None):
 
     return axes_list
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_spectrogram
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_spectrogram
+# -------------------------------------------------------------------------------------------------
+
 
 def plot_spectrogram(dataset, pol='absI', add_scan_ids=True, dB=True, ax=None):
     """Plot spectrogram of all scans in data set in compacted form.
@@ -796,7 +808,7 @@ def plot_spectrogram(dataset, pol='absI', add_scan_ids=True, dB=True, ax=None):
         ax = plt.gca()
     db_func = (lambda x: 10.0 * np.log10(x)) if dB else (lambda x: x)
     if dataset.scans[0].has_autocorr:
-        if not pol in ('absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
+        if pol not in ('absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX', 'YY'):
             raise ValueError("Polarisation key should be one of 'absI', 'absHH', 'absVV', "
                              "'I', 'Q', 'U', 'V', 'HH', 'VV', 'XX' or 'YY' (i.e. real) for single-dish data")
         imdata = [db_func(scan.pol(pol)).transpose() for scan in dataset.scans]
@@ -819,9 +831,10 @@ def plot_spectrogram(dataset, pol='absI', add_scan_ids=True, dB=True, ax=None):
     ax.set_ylabel('Channel frequency (MHz)')
     return images, border_lines, text_labels
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_fringes
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_fringes
+# -------------------------------------------------------------------------------------------------
+
 
 def plot_fringes(dataset, pol='I', add_scan_ids=True, ax=None):
     """Plot fringe phase of all scans in data set in compacted form.
@@ -873,9 +886,10 @@ def plot_fringes(dataset, pol='I', add_scan_ids=True, ax=None):
     ax.set_ylabel('Channel frequency (MHz)')
     return images, border_lines, text_labels
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_rfi_segmentation
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_rfi_segmentation
+# -------------------------------------------------------------------------------------------------
+
 
 def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=None, add_scan_ids=True, fig=None):
     """Plot separate time series of data classified as RFI and non-RFI."""
@@ -929,9 +943,10 @@ def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=N
     ax.set_ylabel('Normalised power')
     return axes_list
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_compound_scan_in_time
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_compound_scan_in_time
+# -------------------------------------------------------------------------------------------------
+
 
 def plot_compound_scan_in_time(compscan, pol='absI', add_scan_ids=True, spike_width=0, band=0, ax=None):
     """Plot compound scan data in time with superimposed beam/baseline fit.
@@ -969,7 +984,7 @@ def plot_compound_scan_in_time(compscan, pol='absI', add_scan_ids=True, spike_wi
         If *pol* is not one of the allowed names
 
     """
-    if not pol in ('absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX', 'YY'):
+    if pol not in ('absI', 'absHH', 'absVV', 'I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX', 'YY'):
         raise ValueError("Polarisation key should be one of 'absI', 'absHH', 'absVV', "
                          "'I', 'Q', 'U', 'V', 'HH', 'VV', 'ReHV', 'ImHV', 'XX' or 'YY' (i.e. real)")
     if ax is None:
@@ -1025,9 +1040,10 @@ def plot_compound_scan_in_time(compscan, pol='absI', add_scan_ids=True, spike_wi
     ax.set_ylabel('Pol %s' % pol)
     return ax
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_compound_scan_on_target
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_compound_scan_on_target
+# -------------------------------------------------------------------------------------------------
+
 
 def plot_compound_scan_on_target(compscan, pol='absI', subtract_baseline=True, levels=None,
                                  add_scan_ids=True, spike_width=0, band=0, ax=None):
@@ -1070,7 +1086,7 @@ def plot_compound_scan_on_target(compscan, pol='absI', subtract_baseline=True, l
         If *pol* is not one of the allowed names
 
     """
-    if not pol in ('absI', 'absHH', 'absVV', 'I', 'HH', 'VV', 'XX', 'YY'):
+    if pol not in ('absI', 'absHH', 'absVV', 'I', 'HH', 'VV', 'XX', 'YY'):
         raise ValueError("Polarisation key should be one of 'absI', 'absHH', 'absVV', "
                          "'I', 'HH', 'VV', 'XX' or 'YY' (i.e. positive)")
     if ax is None:
@@ -1083,8 +1099,8 @@ def plot_compound_scan_on_target(compscan, pol='absI', subtract_baseline=True, l
         logger.warning('No scans were found with baselines - setting subtract_baseline to False')
     # Extract total power and target coordinates (in degrees) of all scans (or those with baselines)
     if subtract_baseline:
-        compscan_power = np.hstack([remove_spikes(np.abs(scan.pol(pol)[:, band]), spike_width=spike_width)
-                                    - scan.baseline(scan.timestamps) for scan in compscan.scans if scan.baseline])
+        compscan_power = np.hstack([remove_spikes(np.abs(scan.pol(pol)[:, band]), spike_width=spike_width) -
+                                    scan.baseline(scan.timestamps) for scan in compscan.scans if scan.baseline])
         target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans if scan.baseline]))
     else:
         compscan_power = np.hstack([remove_spikes(np.abs(scan.pol(pol)[:, band]), spike_width=spike_width)
@@ -1133,9 +1149,10 @@ def plot_compound_scan_on_target(compscan, pol='absI', subtract_baseline=True, l
     ax.set_ylabel('y (deg)')
     return ax
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_data_set_in_mount_space
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_data_set_in_mount_space
+# -------------------------------------------------------------------------------------------------
+
 
 def plot_data_set_in_mount_space(dataset, levels=None, spike_width=0, band=0, ax=None):
     """Plot total power scans of all compound scans in mount space with beam fits.
@@ -1221,9 +1238,10 @@ def plot_data_set_in_mount_space(dataset, levels=None, spike_width=0, band=0, ax
     ax.set_ylabel('el (deg)')
     return ax
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_measured_beam_pattern
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_measured_beam_pattern
+# -------------------------------------------------------------------------------------------------
+
 
 def plot_measured_beam_pattern(compscan, pol='absI', band=0, subtract_baseline=True,
                                add_samples=True, add_colorbar=True, ax=None, **kwargs):

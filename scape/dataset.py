@@ -25,9 +25,10 @@ except ImportError:
 
 logger = logging.getLogger("scape.dataset")
 
-#--------------------------------------------------------------------------------------------------
-#--- CLASS :  DataSet
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- CLASS :  DataSet
+# -------------------------------------------------------------------------------------------------
+
 
 class DataSet(object):
     """Container for the data of an experiment (single-dish or a single baseline).
@@ -119,16 +120,16 @@ class DataSet(object):
                 if not xdmfits_found:
                     raise ImportError('XDM FITS support could not be loaded - please check xdmfits module')
                 compscanlist, data_unit, corrconf, \
-                antenna, nd_h_model, nd_v_model, enviro = xdmfits_load(filename, **kwargs)
+                    antenna, nd_h_model, nd_v_model, enviro = xdmfits_load(filename, **kwargs)
             elif (ext == '.h5') or (ext == '.hdf5'):
                 if not hdf5_found:
                     raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
                 if kwargs.get('katdal', True):
                     compscanlist, experiment_id, observer, description, data_unit, \
-                    corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = hdf5_load(filename, **kwargs)
+                        corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = hdf5_load(filename, **kwargs)
                 else:
                     compscanlist, experiment_id, observer, description, data_unit, \
-                    corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = old_hdf5_load(filename, **kwargs)
+                        corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = old_hdf5_load(filename, **kwargs)
             else:
                 raise ValueError("File extension '%s' not understood" % ext)
 
@@ -181,12 +182,12 @@ class DataSet(object):
         return (self.experiment_id == other.experiment_id) and (self.observer == other.observer) and \
                (self.description == other.description) and (self.data_unit == other.data_unit) and \
                (self.corrconf == other.corrconf) and (self.antenna.description == other.antenna.description) and \
-               ((self.antenna2 == other.antenna2 == None) or \
-                ((self.antenna2 is not None) and (other.antenna2 is not None) and \
+               ((self.antenna2 is None and other.antenna2 is None) or
+                ((self.antenna2 is not None) and (other.antenna2 is not None) and
                  self.antenna2.description == other.antenna2.description)) and \
                (self.nd_h_model == other.nd_h_model) and (self.nd_v_model == other.nd_v_model) and \
-               np.all([key == key2 for key, key2 in zip(self.enviro.iterkeys(), other.enviro.iterkeys())]) and \
-               np.all([np.all(val == val2) for val, val2 in zip(self.enviro.itervalues(), other.enviro.itervalues())])
+            np.all([key == key2 for key, key2 in zip(self.enviro.iterkeys(), other.enviro.iterkeys())]) and \
+            np.all([np.all(val == val2) for val, val2 in zip(self.enviro.itervalues(), other.enviro.itervalues())])
 
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -199,8 +200,10 @@ class DataSet(object):
     def freqs():
         """Class method which creates freqs property."""
         doc = 'Centre frequency of each channel/band, in MHz.'
+
         def fget(self):
             return self.corrconf.freqs
+
         def fset(self, value):
             self.corrconf.freqs = value
         return locals()
@@ -210,8 +213,10 @@ class DataSet(object):
     def bandwidths():
         """Class method which creates bandwidths property."""
         doc = 'Bandwidth of each channel/band, in MHz.'
+
         def fget(self):
             return self.corrconf.bandwidths
+
         def fset(self, value):
             self.corrconf.bandwidths = value
         return locals()
@@ -221,8 +226,10 @@ class DataSet(object):
     def channel_select():
         """Class method which creates channel_select property."""
         doc = 'List of selected channels.'
+
         def fget(self):
             return self.corrconf.channel_select
+
         def fset(self, value):
             self.corrconf.channel_select = value
         return locals()
@@ -232,8 +239,10 @@ class DataSet(object):
     def dump_rate():
         """Class method which creates dump_rate property."""
         doc = 'Correlator dump rate, in Hz.'
+
         def fget(self):
             return self.corrconf.dump_rate
+
         def fset(self, value):
             self.corrconf.dump_rate = value
         return locals()
@@ -245,7 +254,7 @@ class DataSet(object):
                               self.observer if self.observer is not None else 'No observer'),
                  "'%s'" % (self.description if self.description is not None else 'No description',),
                  "%s, data_unit=%s, bands=%d, freqs=%f - %f MHz, total bw=%f MHz, dumprate=%f Hz" %
-                 ("antenna='%s'" % self.antenna.name if self.antenna2 is None else \
+                 ("antenna='%s'" % self.antenna.name if self.antenna2 is None else
                   "baseline='%s - %s'" % (self.antenna.name, self.antenna2.name),
                   self.data_unit, len(self.freqs), self.freqs[0], self.freqs[-1],
                   self.bandwidths.sum(), self.dump_rate)]
@@ -263,10 +272,11 @@ class DataSet(object):
 
     def __repr__(self):
         """Short human-friendly string representation of data set object."""
-        return "<scape.DataSet '%s' %s compscans=%d at 0x%x>" % (self.experiment_id,
-               "antenna='%s'" % self.antenna.name if self.antenna2 is None else
-               "baseline='%s - %s'" % (self.antenna.name, self.antenna2.name),
-               len(self.compscans), id(self))
+        return "<scape.DataSet '%s' %s compscans=%d at 0x%x>" % \
+               (self.experiment_id,
+                "antenna='%s'" % self.antenna.name if self.antenna2 is None else
+                "baseline='%s - %s'" % (self.antenna.name, self.antenna2.name),
+                len(self.compscans), id(self))
 
     @property
     def scans(self):
@@ -505,7 +515,7 @@ class DataSet(object):
                 view = scan.flags.view(dtype=np.bool).reshape((num_samples, num_fields))
                 view = (view[:cutoff, :].reshape((new_len, window, num_fields)).sum(axis=1) > 0)
                 scan.flags = view.view(scan.flags.dtype).squeeze()
-                if not scan.target_coords is None:
+                if scan.target_coords is not None:
                     scan.target_coords = scan.target_coords[:, :cutoff].reshape((2, new_len, window)).mean(axis=2)
         if time_window > 1:
             self.corrconf.dump_rate /= time_window
@@ -565,7 +575,7 @@ class DataSet(object):
             # These formulas are based on the moments of real and complex Wishart distributions
             # It replaces the true covariance elements with their sample estimates (assuming the estimates are good)
             std = np.dstack([hh, vv, np.sqrt((hh * vv + rehv ** 2 - imhv ** 2) / 2),
-                                     np.sqrt((hh * vv - rehv ** 2 + imhv ** 2) / 2)])
+                             np.sqrt((hh * vv - rehv ** 2 + imhv ** 2) / 2)])
             std /= snr[np.newaxis, :, np.newaxis]
             scan.data += std * np.random.standard_normal(scan.data.shape)
         return self

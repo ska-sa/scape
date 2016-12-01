@@ -7,6 +7,7 @@ import StringIO
 
 from scape import gaincal
 
+
 class NoiseDiodeModelTestCases(unittest.TestCase):
     """Load a noise diode model from and compare."""
 

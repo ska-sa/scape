@@ -8,6 +8,7 @@ import numpy as np
 
 from scape import dataset, compoundscan, scan, gaincal
 
+
 class SaveLoadTestCases(unittest.TestCase):
     """Save and reload data set to verify that file was written successfully."""
 
@@ -19,16 +20,16 @@ class SaveLoadTestCases(unittest.TestCase):
         pointing = np.rec.fromarrays(0.01 * np.random.randn(3, num_samples).astype(np.float32),
                                      names='az,el,rot')
         flags = np.rec.fromarrays((np.random.randn(2, num_samples) > 0.0), names='valid,nd_on')
-        enviro = {'temperature' : np.rec.array([timestamps[0], np.float32(35.1), 'nominal'],
-                                               names=('timestamp', 'value', 'status')),
-                  'pressure' : np.rec.array([timestamps[0], np.float32(1020.2), 'nominal'],
-                                            names=('timestamp', 'value', 'status')),
-                  'humidity' : np.rec.array([timestamps[0], np.float32(21.5), 'nominal'],
-                                            names=('timestamp', 'value', 'status')),
-                  'wind_speed' : np.rec.array([timestamps[0], np.float32(2.0), 'nominal'],
-                                               names=('timestamp', 'value', 'status')),
-                  'wind_direction' : np.rec.array([timestamps[0], np.float32(45.3), 'nominal'],
-                                                  names=('timestamp', 'value', 'status'))}
+        enviro = {'temperature': np.rec.array([timestamps[0], np.float32(35.1), 'nominal'],
+                                              names=('timestamp', 'value', 'status')),
+                  'pressure': np.rec.array([timestamps[0], np.float32(1020.2), 'nominal'],
+                                           names=('timestamp', 'value', 'status')),
+                  'humidity': np.rec.array([timestamps[0], np.float32(21.5), 'nominal'],
+                                           names=('timestamp', 'value', 'status')),
+                  'wind_speed': np.rec.array([timestamps[0], np.float32(2.0), 'nominal'],
+                                             names=('timestamp', 'value', 'status')),
+                  'wind_direction': np.rec.array([timestamps[0], np.float32(45.3), 'nominal'],
+                                                 names=('timestamp', 'value', 'status'))}
         s1 = scan.Scan(data, timestamps, pointing, flags, 'test', 'generated')
         s2 = s1.select(timekeep=s1.flags['valid'], copy=True)
         s3 = s1.select(copy=True)

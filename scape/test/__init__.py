@@ -9,6 +9,7 @@ import test_scan
 import test_scape
 import test_xdmfits
 
+
 def suite():
     loader = unittest.TestLoader()
     testsuite = unittest.TestSuite()

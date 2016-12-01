@@ -4,9 +4,10 @@ import numpy as np
 import scipy.signal as signal
 import scipy.stats as stats
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  angle_wrap
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  angle_wrap
+# -------------------------------------------------------------------------------------------------
+
 
 def angle_wrap(angle, period=2.0 * np.pi):
     """Wrap angle into interval centred on zero.
@@ -16,9 +17,10 @@ def angle_wrap(angle, period=2.0 * np.pi):
     """
     return (angle + 0.5 * period) % period - 0.5 * period
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  minimise_angle_wrap
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  minimise_angle_wrap
+# -------------------------------------------------------------------------------------------------
+
 
 def minimise_angle_wrap(angles, axis=0):
     """Minimise wrapping of angles to improve interpretation.
@@ -47,9 +49,10 @@ def minimise_angle_wrap(angles, axis=0):
     delta_ang = angle_wrap(angles - np.expand_dims(mu, axis))
     return delta_ang + np.expand_dims(mu, axis)
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  mu_sigma
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  mu_sigma
+# -------------------------------------------------------------------------------------------------
+
 
 def mu_sigma(data, axis=0):
     """Determine second-order statistics from data.
@@ -74,9 +77,10 @@ def mu_sigma(data, axis=0):
     """
     return np.mean(data, axis=axis), np.std(data, axis=axis)
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  robust_mu_sigma
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  robust_mu_sigma
+# -------------------------------------------------------------------------------------------------
+
 
 def robust_mu_sigma(data, axis=0):
     """Determine second-order statistics from data, using robust statistics.
@@ -114,9 +118,10 @@ def robust_mu_sigma(data, axis=0):
     iqr_to_std = 0.741301109253
     return perc50, iqr_to_std * (perc75 - perc25)
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  periodic_mu_sigma
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  periodic_mu_sigma
+# -------------------------------------------------------------------------------------------------
+
 
 def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
     """Determine second-order statistics of periodic (angular, directional) data.
@@ -172,9 +177,10 @@ def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
     # Scale answers back to original data range
     return mu / scale, np.sqrt(sigma2) / scale
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  remove_spikes
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  remove_spikes
+# -------------------------------------------------------------------------------------------------
+
 
 def remove_spikes(data, axis=0, spike_width=3, outlier_sigma=5.0):
     """Remove outliers from data, replacing them with a local median value.
@@ -233,12 +239,13 @@ def remove_spikes(data, axis=0, spike_width=3, outlier_sigma=5.0):
     cleaned_data[outliers] = filtered_data[outliers]
     return cleaned_data
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  chi2_conf_interval
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  chi2_conf_interval
+# -------------------------------------------------------------------------------------------------
+
 
 def chi2_conf_interval(dof, mean=1.0, sigma=3.0):
-    """Confidence interval for chi-square distribution.
+    r"""Confidence interval for chi-square distribution.
 
     Return lower and upper limit of confidence interval of chi-square
     distribution, defined in terms of a normal confidence interval. That is,
@@ -298,9 +305,10 @@ def chi2_conf_interval(dof, mean=1.0, sigma=3.0):
     upper = chi2_rv.ppf(normal_rv.cdf(sigma)) * mean / dof
     return lower, upper
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  ratio_stats
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  ratio_stats
+# -------------------------------------------------------------------------------------------------
+
 
 def ratio_stats(mean_num, std_num, mean_den, std_den, corrcoef=0, method='F'):
     """Approximate 2nd-order statistics of ratio of correlated normal variables.
@@ -367,9 +375,10 @@ def ratio_stats(mean_num, std_num, mean_den, std_den, corrcoef=0, method='F'):
     # Translate by s and scale by r
     return s + mean_axby / r, std_axby / np.abs(r)
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  identify_rfi_channels
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  identify_rfi_channels
+# -------------------------------------------------------------------------------------------------
+
 
 def identify_rfi_channels(data, sigma=8.0, min_bad_scans=0.25, extra_outputs=False):
     """Identify potential RFI-corrupted channels.
@@ -432,7 +441,7 @@ def identify_rfi_channels(data, sigma=8.0, min_bad_scans=0.25, extra_outputs=Fal
         # Also divide by an extra sqrt(template) factor, which allows more leeway where template is small
         # This is useful for absorbing small discrepancies in baseline when scanning across a source
         expected_std = np.sqrt(2.0 / dof[np.newaxis, :]) * mean_signal_power / scale[np.newaxis, :] / \
-                       np.sqrt(template[:, np.newaxis])
+            np.sqrt(template[:, np.newaxis])
         channel_sumsq = (((norm_power - template[:, np.newaxis]) / expected_std) ** 2).sum(axis=0)
         # The sum of squares over time is again a chi-square distribution, with different dof
         lower, upper = chi2_conf_interval(power.shape[0], power.shape[0], sigma)

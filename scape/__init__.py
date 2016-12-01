@@ -3,6 +3,7 @@
 import logging
 import sys
 
+
 # Setup library logger, and suppress spurious logger messages via a null handler
 class _NullHandler(logging.Handler):
     def emit(self, record):
@@ -16,6 +17,7 @@ logging.basicConfig(level=logging.DEBUG, stream=sys.stdout, format="%(levelname)
 from .dataset import DataSet
 from .compoundscan import CorrelatorConfig, CompoundScan
 from .scan import Scan
+
 
 def _module_found(name, message):
     """Check whether module *name* imports, otherwise log a warning *message*."""

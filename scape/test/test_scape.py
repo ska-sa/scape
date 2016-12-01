@@ -9,14 +9,15 @@ import numpy as np
 import scape
 import katpoint
 
+
 class PointSourceScanTestCases(unittest.TestCase):
     """Create point source scan and process it."""
 
     def setUp(self):
         """Create point source scan."""
-        #--------------------------------------------------------------------------------------------------
-        #--- User-defined parameters for experiment
-        #--------------------------------------------------------------------------------------------------
+        # -------------------------------------------------------------------------------------------------
+        # --- User-defined parameters for experiment
+        # -------------------------------------------------------------------------------------------------
 
         # Antenna, target, timestamp
         ant = katpoint.Antenna('Test, -33, 18, 30, 15, , , 1.15')
@@ -41,7 +42,9 @@ class PointSourceScanTestCases(unittest.TestCase):
         self.peak_flux = target.flux_density(center_freq_MHz)
         self.expected_width = ant.beamwidth * katpoint.lightspeed / (center_freq_MHz * 1e6) / ant.diameter
         sigma = scape.beam_baseline.fwhm_to_sigma(self.expected_width)
-        flux = lambda x, y: self.peak_flux * np.exp(-0.5 * (x ** 2 + y ** 2) / (sigma ** 2))
+
+        def flux(x, y):
+            return self.peak_flux * np.exp(-0.5 * (x ** 2 + y ** 2) / (sigma ** 2))
 
         # Scan setup
         scans = ['H'] * 5 + ['V'] * 5
@@ -49,9 +52,9 @@ class PointSourceScanTestCases(unittest.TestCase):
         along_scan_offset = 2.0 * self.expected_width
         samples_per_scan = 101
 
-        #--------------------------------------------------------------------------------------------------
-        #--- Construct data set
-        #--------------------------------------------------------------------------------------------------
+        # -------------------------------------------------------------------------------------------------
+        # --- Construct data set
+        # -------------------------------------------------------------------------------------------------
 
         # Create scans
         scanlist = []
@@ -76,16 +79,16 @@ class PointSourceScanTestCases(unittest.TestCase):
             scanlist.append(scape.Scan(data, timestamps, pointing, flags, 'scan', ('scan_%d' % (n,))))
 
         # Construct data set
-        enviro = {'temperature' : np.rec.array([timestamps[0], np.float32(35.4), 'nominal'],
-                                               names=('timestamp', 'value', 'status')),
-                  'pressure' : np.rec.array([timestamps[0], np.float32(1020.6), 'nominal'],
-                                            names=('timestamp', 'value', 'status')),
-                  'humidity' : np.rec.array([timestamps[0], np.float32(21.1), 'nominal'],
-                                            names=('timestamp', 'value', 'status')),
-                  'wind_speed' : np.rec.array([timestamps[0], np.float32(2.6), 'nominal'],
-                                               names=('timestamp', 'value', 'status')),
-                  'wind_direction' : np.rec.array([timestamps[0], np.float32(45.2), 'nominal'],
-                                                  names=('timestamp', 'value', 'status'))}
+        enviro = {'temperature': np.rec.array([timestamps[0], np.float32(35.4), 'nominal'],
+                                              names=('timestamp', 'value', 'status')),
+                  'pressure': np.rec.array([timestamps[0], np.float32(1020.6), 'nominal'],
+                                           names=('timestamp', 'value', 'status')),
+                  'humidity': np.rec.array([timestamps[0], np.float32(21.1), 'nominal'],
+                                           names=('timestamp', 'value', 'status')),
+                  'wind_speed': np.rec.array([timestamps[0], np.float32(2.6), 'nominal'],
+                                             names=('timestamp', 'value', 'status')),
+                  'wind_direction': np.rec.array([timestamps[0], np.float32(45.2), 'nominal'],
+                                                 names=('timestamp', 'value', 'status'))}
         nd_h_model = scape.gaincal.NoiseDiodeModel([center_freq_MHz], [10.], interp='Polynomial1DFit(max_degree=1)')
         nd_v_model = scape.gaincal.NoiseDiodeModel([center_freq_MHz], [10.], interp='Polynomial1DFit(max_degree=1)')
         self.dataset = scape.DataSet('', [scape.CompoundScan(scanlist, target, 'compscan')],

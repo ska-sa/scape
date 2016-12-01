@@ -32,9 +32,10 @@ from .stats import angle_wrap
 
 logger = logging.getLogger("scape.xdmfits")
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTIONS
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTIONS
+# -------------------------------------------------------------------------------------------------
+
 
 def move_start_to_center(start_times, pointing_at_start, sample_period):
     """Move timestamps and pointing from start to center of each sample.
@@ -87,6 +88,7 @@ def move_start_to_center(start_times, pointing_at_start, sample_period):
         pointing_at_center[name] = x_at_center
     return center_times, pointing_at_center
 
+
 def acsm_target_description(target):
     """Create katpoint target description from ACSM target object."""
     # pylint: disable-msg=W0212
@@ -113,6 +115,7 @@ def acsm_target_description(target):
     # This is typically a futile thing to return, but will help debug why the above two matches failed
     return descr
 
+
 def acsm_antenna_description(mount):
     """Create katpoint antenna description from ACSM mount object."""
     descr = mount.get_decorated_coordinate_system().get_attribute('position').get_description()
@@ -129,6 +132,7 @@ def acsm_antenna_description(mount):
         return descr
     # This is typically a futile thing to return, but will help debug why the above match failed
     return descr
+
 
 def load_xdm_noise_models(filename, feed_id=None):
     """Load noise diode calibration data (XDM FITS version).
@@ -199,6 +203,7 @@ def load_xdm_noise_models(filename, feed_id=None):
                                  date='2009-03-27', feed=('main' if feed_id == 0 else 'offset'))
     hdu.close()
     return nd_h_model, nd_v_model
+
 
 def load_scan(filename):
     """Load scan from single XDM FITS file.
@@ -275,18 +280,18 @@ def load_scan(filename):
                               names=['valid', 'nd_on', 'rx_on'])
     # The environmental variables are sampled when the FITS file is written to disk,
     # so it is more appropriate to associate the last timestamp with them
-    enviro = {'temperature' : np.rec.array([timestamps[-1], np.float32(header['Temp']), 'nominal'],
-                                           names=('timestamp', 'value', 'status')),
-              'pressure' : np.rec.array([timestamps[-1], np.float32(header['Pressure']), 'nominal'],
-                                        names=('timestamp', 'value', 'status')),
-              'humidity' : np.rec.array([timestamps[-1], np.float32(header['Humidity']), 'nominal'],
-                                        names=('timestamp', 'value', 'status')),
-              'wind_speed' : np.rec.array([timestamps[-1], np.float32(header['WindSpd']), 'nominal'],
-                                           names=('timestamp', 'value', 'status')),
-              'wind_direction' : np.rec.array([timestamps[-1], np.float32(header['WindDir']), 'nominal'],
-                                              names=('timestamp', 'value', 'status'))}
+    enviro = {'temperature': np.rec.array([timestamps[-1], np.float32(header['Temp']), 'nominal'],
+                                          names=('timestamp', 'value', 'status')),
+              'pressure': np.rec.array([timestamps[-1], np.float32(header['Pressure']), 'nominal'],
+                                       names=('timestamp', 'value', 'status')),
+              'humidity': np.rec.array([timestamps[-1], np.float32(header['Humidity']), 'nominal'],
+                                       names=('timestamp', 'value', 'status')),
+              'wind_speed': np.rec.array([timestamps[-1], np.float32(header['WindSpd']), 'nominal'],
+                                         names=('timestamp', 'value', 'status')),
+              'wind_direction': np.rec.array([timestamps[-1], np.float32(header['WindDir']), 'nominal'],
+                                             names=('timestamp', 'value', 'status'))}
     data_header = hdu['MSDATA'].header
-    label = str(data_header['ID'+str(data_header['DATAID'])])
+    label = str(data_header['ID' + str(data_header['DATAID'])])
     path = filename
 
     data_unit = 'counts'
@@ -303,7 +308,8 @@ def load_scan(filename):
     antenna = acsm_antenna_description(cPickle.loads(hdu['OBJECTS'].data.field('Mount')[0]))
 
     return Scan(data, timestamps, pointing, flags, label, path), \
-           data_unit, corrconf, target, antenna, exp_seq_num, feed_id, enviro
+        data_unit, corrconf, target, antenna, exp_seq_num, feed_id, enviro
+
 
 # pylint: disable-msg=W0613
 def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False, **kwargs):
@@ -386,12 +392,12 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
         enviro_list.append(scan_enviro)
         if swap_hv:
             scan.swap_h_and_v()
-        if scanlists.has_key(exp_seq_num):
+        if exp_seq_num in scanlists:
             scanlists[exp_seq_num].append(scan)
         else:
             scanlists[exp_seq_num] = [scan]
-        assert not targets.has_key(exp_seq_num) or targets[exp_seq_num] == target, \
-               "Each scan in a compound scan is required to have the same target"
+        assert exp_seq_num not in targets or targets[exp_seq_num] == target, \
+            "Each scan in a compound scan is required to have the same target"
         targets[exp_seq_num] = target
         # Load noise diode characteristics if available
         if nd_h_model is None and nd_v_model is None:

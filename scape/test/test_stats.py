@@ -5,12 +5,13 @@ import unittest
 import numpy as np
 from scape import stats
 
+
 class RemoveSpikesTestCases(unittest.TestCase):
 
     def test_remove_spikes(self):
         """remove_spikes: Test the removal of known spikes."""
         N = 128
-        x = np.arange(N)/float(N)
+        x = np.arange(N) / float(N)
         b = 3.0 * x + 4.0
         xstd = 0.05
         g = np.exp(-0.5 * ((x - 0.5) ** 2) / (xstd ** 2))
@@ -29,6 +30,7 @@ class RemoveSpikesTestCases(unittest.TestCase):
 #        self.assertEqual(len(spikes), 2)
         self.assertTrue((np.abs(y_clean - y)[spikes] < 10000.0 * nstd).all())
 
+
 class RatioStatsTestCases(unittest.TestCase):
 
     def test_ratio_stats(self):
@@ -41,7 +43,7 @@ class RatioStatsTestCases(unittest.TestCase):
         # Check against simulated data
         x = np.random.randn(100000)
         y = np.random.randn(100000)
-        wgt = (p**2 - p*np.sqrt(1 - p**2)) / (2*p**2 - 1)
+        wgt = (p**2 - p * np.sqrt(1 - p**2)) / (2 * p**2 - 1)
         xx = (wgt * x + (1 - wgt) * y) / np.sqrt(wgt**2 + (1 - wgt)**2)
         r = (mu_z + std_z * xx) / (mu_w + std_w * x)
         mu_r, std_r = stats.ratio_stats(mu_z, std_z, mu_w, std_w, p, method='F')
