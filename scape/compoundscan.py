@@ -15,9 +15,9 @@ Functionality: beam/baseline fitting, instant mount coords, ...
 
 """
 
-import numpy as np
 import logging
 
+import numpy as np
 import katpoint
 from scikits.fitting import scalar
 

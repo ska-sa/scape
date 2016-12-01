@@ -10,12 +10,13 @@ Only reading is supported, to encourage a move to later file formats.
 """
 
 import logging
-import cPickle
+import cPickle as pickle
 import re
 import os.path
 
 import pyfits
 import numpy as np
+from katpoint import deg2rad, rad2deg, Target, Antenna, Catalogue
 
 # First create logger to switch off ACSM messages
 acsm_logger = logging.getLogger('acsm')
@@ -24,7 +25,6 @@ acsm_logger.setLevel(logging.ERROR)
 # pylint: disable-msg=W0611
 import acsm
 
-from katpoint import deg2rad, rad2deg, Target, Antenna, Catalogue
 from .scan import Scan
 from .compoundscan import CompoundScan, CorrelatorConfig
 from .gaincal import NoiseDiodeModel, NoiseDiodeNotFound
@@ -304,8 +304,8 @@ def load_scan(filename):
     channel_select = list(set(range(len(freqs))) - set(rfi_channels))
     corrconf = CorrelatorConfig(freqs, bandwidths, channel_select, dump_rate)
 
-    target = acsm_target_description(cPickle.loads(hdu['OBJECTS'].data.field('Target')[0]))
-    antenna = acsm_antenna_description(cPickle.loads(hdu['OBJECTS'].data.field('Mount')[0]))
+    target = acsm_target_description(pickle.loads(hdu['OBJECTS'].data.field('Target')[0]))
+    antenna = acsm_antenna_description(pickle.loads(hdu['OBJECTS'].data.field('Mount')[0]))
 
     return Scan(data, timestamps, pointing, flags, label, path), \
         data_unit, corrconf, target, antenna, exp_seq_num, feed_id, enviro

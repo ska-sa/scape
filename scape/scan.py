@@ -14,9 +14,9 @@ grouped together in :class:`compoundscan.CompoundScan` instead.
 
 """
 
-import numpy as np
 import time
 
+import numpy as np
 from katpoint import rad2deg
 
 # Order of polarisation terms on last dimension of correlation data array:

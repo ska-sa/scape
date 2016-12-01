@@ -4,8 +4,8 @@ import os.path
 import logging
 
 import numpy as np
-
 import katpoint
+
 from .compoundscan import CompoundScan
 from .gaincal import calibrate_gain, NoSuitableNoiseDiodeDataFound
 
