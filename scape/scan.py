@@ -14,9 +14,9 @@ grouped together in :class:`compoundscan.CompoundScan` instead.
 
 """
 
-import numpy as np
 import time
 
+import numpy as np
 from katpoint import rad2deg
 
 # Order of polarisation terms on last dimension of correlation data array:
@@ -33,9 +33,10 @@ stokes = ['I', 'Q', 'U', 'V']
 # Absolute powers - safe versions of (I, HH, VV) guaranteed to be real and positive
 abs_powers = ['absI', 'absHH', 'absVV']
 
-#--------------------------------------------------------------------------------------------------
-#--- CLASS :  Scan
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- CLASS :  Scan
+# -------------------------------------------------------------------------------------------------
+
 
 class Scan(object):
     """Container for the data of a single scan.
@@ -128,11 +129,11 @@ class Scan(object):
         # which causes extra approximateness... (pointing should be OK down to 5 arcsecond level,
         # and time should be OK down to microseconds)
         return (self.has_autocorr == other.has_autocorr) and np.all(self.data == other.data) and \
-               np.all(self.flags == other.flags) and (self.label == other.label) and \
-               np.allclose(self.timestamps, other.timestamps, rtol=0, atol=1e-6) and \
-               np.allclose(self.pointing.view(np.float32), other.pointing.view(np.float32), rtol=1e-6, atol=0) and \
-               np.allclose(self.target_coords, other.target_coords, rtol=1e-7, atol=0) and \
-               np.allclose(self.parangle, other.parangle, rtol=1e-7, atol=0)
+            np.all(self.flags == other.flags) and (self.label == other.label) and \
+            np.allclose(self.timestamps, other.timestamps, rtol=0, atol=1e-6) and \
+            np.allclose(self.pointing.view(np.float32), other.pointing.view(np.float32), rtol=1e-6, atol=0) and \
+            np.allclose(self.target_coords, other.target_coords, rtol=1e-7, atol=0) and \
+            np.allclose(self.parangle, other.parangle, rtol=1e-7, atol=0)
 
     def __ne__(self, other):
         """Inequality comparison operator."""

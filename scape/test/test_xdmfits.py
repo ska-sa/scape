@@ -10,6 +10,7 @@ import numpy as np
 import scape
 import katpoint
 
+
 class XDMFitsTestCases(unittest.TestCase):
     """Load existing XDM FITS data set and process it."""
 
@@ -18,7 +19,8 @@ class XDMFitsTestCases(unittest.TestCase):
         fitsfile = os.path.join('J1959+4044_2009-07-18-21h40', 'scheduled_obs_2009-07-18-21h40_0000.fits')
         self.dataset = pkg_resources.resource_filename('scape.test', fitsfile)
         self.catalogue = katpoint.Catalogue()
-        self.catalogue.add('J1959+4044 | *Cygnus A | CygA | 3C405, radec J2000, 19:59:28.36, 40:44:2.1, (20.0 2000.0 4.695 0.085 -0.178)')
+        self.catalogue.add('J1959+4044 | *Cygnus A | CygA | 3C405, radec J2000, '
+                           '19:59:28.36, 40:44:2.1, (20.0 2000.0 4.695 0.085 -0.178)')
         self.average_flux = 1513.4451
         self.temperature = 2.00
         self.pressure = 875.00

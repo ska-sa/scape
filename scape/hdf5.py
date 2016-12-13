@@ -9,11 +9,11 @@ import os.path
 import h5py
 import numpy as np
 import katpoint
+from scikits.fitting import PiecewisePolynomial1DFit
 
 from .gaincal import NoiseDiodeModel
 from .scan import Scan, scape_pol_if
 from .compoundscan import CorrelatorConfig, CompoundScan
-from .fitting import PiecewisePolynomial1DFit
 
 logger = logging.getLogger("scape.hdf5")
 
@@ -21,6 +21,7 @@ logger = logging.getLogger("scape.hdf5")
 baseline_pattern = re.compile('A(\w+)A(\w+)')
 # Parse antenna name to extract identifier
 antenna_name_pattern = re.compile('ant(\w+)')
+
 
 def has_data(group, dataset_name):
     """Check whether HDF5 group contains a non-empty dataset with given name.
@@ -39,6 +40,7 @@ def has_data(group, dataset_name):
 
     """
     return dataset_name in group and group[dataset_name].shape != ()
+
 
 def remove_duplicates(sensor):
     """Remove duplicate timestamp values from sensor data.
@@ -84,6 +86,7 @@ def remove_duplicates(sensor):
                          (katpoint.Timestamp(x[ind]).local(), sensor.name, z[ind], z[replacement][ind]))
     return np.rec.fromarrays([x[unique_ind], y[unique_ind], z[unique_ind]], dtype=sensor.dtype)
 
+
 def get_single_value(group, name):
     """Return single value from attribute or dataset with given name in group.
 
@@ -108,9 +111,10 @@ def get_single_value(group, name):
     """
     return group.attrs[name] if name in group.attrs else group[name].value[-1]
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  load_dataset
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  load_dataset
+# -------------------------------------------------------------------------------------------------
+
 
 def load_dataset(filename, *args, **kwargs):
     """Load data set from HDF5 file (auto-detecting format)."""
@@ -119,24 +123,25 @@ def load_dataset(filename, *args, **kwargs):
     f.close()
     # Trap version 3.x files and tell the user to use katdal
     if version.startswith('3.'):
-        raise ValueError('The scape hdf5 loader does not support version %s files. Try reloading with katfile=True to enable the katdal loader.'
-                            % (version,))
+        raise ValueError('The scape hdf5 loader does not support version %s files. '
+                         'Try reloading with katfile=True to enable the katdal loader.' % (version,))
     else:
         return load_dataset_v2(filename, *args, **kwargs) if version.startswith('2.') else \
-                load_dataset_v1(filename, *args, **kwargs)
+            load_dataset_v1(filename, *args, **kwargs)
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  load_dataset_v1
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  load_dataset_v1
+# -------------------------------------------------------------------------------------------------
 
 # Mapping of desired fields to KAT sensor names (format version 1)
-sensor_name_v1 = {'temperature' : 'enviro_air_temperature',
-                  'pressure' : 'enviro_air_pressure',
-                  'humidity' : 'enviro_air_relative_humidity',
-                  'wind_speed' : 'enviro_wind_speed',
-                  'wind_direction' : 'enviro_wind_direction',
-                  'coupler_nd_on' : 'rfe3_rfe15_noise_coupler_on',
-                  'pin_nd_on' : 'rfe3_rfe15_noise_pin_on'}
+sensor_name_v1 = {'temperature': 'enviro_air_temperature',
+                  'pressure': 'enviro_air_pressure',
+                  'humidity': 'enviro_air_relative_humidity',
+                  'wind_speed': 'enviro_wind_speed',
+                  'wind_direction': 'enviro_wind_direction',
+                  'coupler_nd_on': 'rfe3_rfe15_noise_coupler_on',
+                  'pin_nd_on': 'rfe3_rfe15_noise_pin_on'}
+
 
 # pylint: disable-msg=W0613
 def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_scan',
@@ -217,7 +222,7 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
     # pylint: disable-msg=R0914
     with h5py.File(filename, 'r') as f:
         # Only continue if file has been properly augmented
-        if not 'augment' in f.attrs:
+        if 'augment' not in f.attrs:
             raise ValueError('HDF5 file not augmented - please run augment4.py (provided by k7augment package)')
 
         # Get attributes at the data set level, with defaults
@@ -263,7 +268,7 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
         # Use first scan group to check for 'flags' and 'pointing' datasets (associated with processed / saved files)
         try:
             first_scan_group = f['Scans'].values()[0].values()[0]
-        except IndexError, AttributeError:
+        except (IndexError, AttributeError):
             first_scan_group = {}
 
         # Use antenna A for sensor data (weather, pointing, noise diode)
@@ -303,7 +308,7 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
                 for nd in ('coupler', 'pin'):
                     sensor = sensor_name_v1[nd + '_nd_on']
                     nd_fired[nd] = np.any(sensors_group[sensor]['value'] == '1') \
-                                   if has_data(sensors_group, sensor) else False
+                        if has_data(sensors_group, sensor) else False
                 if np.sum(nd_fired.values()) == 1:
                     noise_diode = nd_fired.keys()[nd_fired.values().index(True)]
                     logger.info("Using '%s' noise diode as it is the only one firing in data set" % noise_diode)
@@ -406,8 +411,8 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
             antB_H = antB_group['H'].attrs['dbe_input'] if 'H' in antB_group else 'UNAVAILABLE'
             antB_V = antB_group['V'].attrs['dbe_input'] if 'V' in antB_group else 'UNAVAILABLE'
             # Mapping of polarisation product to DBE input string identifying the pair of inputs multiplied together
-            pol_to_dbestr = {'HH' : antA_H + antB_H, 'VV' : antA_V + antB_V,
-                             'HV' : antA_H + antB_V, 'VH' : antA_V + antB_H}
+            pol_to_dbestr = {'HH': antA_H + antB_H, 'VV': antA_V + antB_V,
+                             'HV': antA_H + antB_V, 'VH': antA_V + antB_H}
             # Correlator mapping of DBE input string to correlation product index (Miriad-style numbering)
             input_map = corrconf_group['input_map'].value
             dbestr_to_corr_id = dict(zip(input_map['dbe_inputs'], input_map['correlator_product_id']))
@@ -459,9 +464,9 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
 
                 # Use per-scan pointing if it is available, otherwise interpolate original data
                 scan_pointing = scan_group['pointing'].value if 'pointing' in scan_group else \
-                                np.rec.fromarrays([pointing_interp['azim'](data_timestamps).astype(np.float32),
-                                                   pointing_interp['elev'](data_timestamps).astype(np.float32)],
-                                                  names=('az', 'el'))
+                    np.rec.fromarrays([pointing_interp['azim'](data_timestamps).astype(np.float32),
+                                       pointing_interp['elev'](data_timestamps).astype(np.float32)],
+                                      names=('az', 'el'))
                 # Convert contents of pointing from degrees to radians
                 # pylint: disable-msg=W0612
                 pointing_view = scan_pointing.view(np.float32)
@@ -469,9 +474,9 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
 
                 # Use per-scan flags if it is available, otherwise interpolate original data
                 scan_flags = scan_group['flags'].value if 'flags' in scan_group else \
-                             np.rec.fromarrays([nd_interp(data_timestamps).astype(bool)],
-                                               names=('nd_on',)) if nd_interp else \
-                             np.rec.fromarrays([np.tile(False, data_timestamps.shape)], names=('nd_on',))
+                    np.rec.fromarrays([nd_interp(data_timestamps).astype(bool)],
+                                      names=('nd_on',)) if nd_interp else \
+                    np.rec.fromarrays([np.tile(False, data_timestamps.shape)], names=('nd_on',))
                 scan_label = scan_group.attrs.get('label', '')
 
                 scanlist.append(Scan(scan_data, data_timestamps, scan_pointing, scan_flags, scan_label,
@@ -486,26 +491,27 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
             # Sort compound scans chronologically too
             compscanlist.sort(key=lambda compscan: compscan.scans[0].timestamps[0])
         return compscanlist, experiment_id, observer, description, data_unit, \
-               corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro
+            corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  load_dataset_v2
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  load_dataset_v2
+# -------------------------------------------------------------------------------------------------
 
 # Mapping of desired fields to KAT sensor names (format version 2)
-sensor_name_v2 = {'temperature' : 'asc.air.temperature',
-                  'pressure' : 'asc.air.pressure',
-                  'humidity' : 'asc.air.relative-humidity',
-                  'wind_speed' : 'asc.wind.speed',
-                  'wind_direction' : 'asc.wind.direction',
-                  'coupler_nd_on' : 'rfe3.rfe15.noise.coupler.on',
-                  'pin_nd_on' : 'rfe3.rfe15.noise.pin.on',
-                  'pos_actual_scan' : 'pos.actual-scan',
-                  'pos_actual_refrac' : 'pos.actual-refrac',
-                  'pos_actual_pointm' : 'pos.actual-pointm',
-                  'pos_request_scan' : 'pos.request-scan',
-                  'pos_request_refrac' : 'pos.request-refrac',
-                  'pos_request_pointm' : 'pos.request-pointm'}
+sensor_name_v2 = {'temperature': 'asc.air.temperature',
+                  'pressure': 'asc.air.pressure',
+                  'humidity': 'asc.air.relative-humidity',
+                  'wind_speed': 'asc.wind.speed',
+                  'wind_direction': 'asc.wind.direction',
+                  'coupler_nd_on': 'rfe3.rfe15.noise.coupler.on',
+                  'pin_nd_on': 'rfe3.rfe15.noise.pin.on',
+                  'pos_actual_scan': 'pos.actual-scan',
+                  'pos_actual_refrac': 'pos.actual-refrac',
+                  'pos_actual_pointm': 'pos.actual-pointm',
+                  'pos_request_scan': 'pos.request-scan',
+                  'pos_request_refrac': 'pos.request-refrac',
+                  'pos_request_pointm': 'pos.request-pointm'}
+
 
 # pylint: disable-msg=W0613
 def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan',
@@ -590,7 +596,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         version = f.attrs.get('version', '1.x')
         if not version.startswith('2.'):
             raise ValueError("Attempting to load version '%s' file with version 2 loader" % (version,))
-        if not 'augment_ts' in f.attrs:
+        if 'augment_ts' not in f.attrs:
             raise ValueError('HDF5 file not augmented - please run k7_augment.py (provided by katsdisp package)')
 
         # Get observation script attributes, with defaults
@@ -707,8 +713,8 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
 
         # Figure out mapping of antennas and feeds to the correlation products involved
         # Mapping of polarisation product to pair of input labels indicating inputs that are multiplied together
-        pol_to_inputpair = {'HH' : (antA + 'h', antB + 'h'), 'VV' : (antA + 'v', antB + 'v'),
-                            'HV' : (antA + 'h', antB + 'v'), 'VH' : (antA + 'v', antB + 'h')}
+        pol_to_inputpair = {'HH': (antA + 'h', antB + 'h'), 'VV': (antA + 'v', antB + 'v'),
+                            'HV': (antA + 'h', antB + 'v'), 'VH': (antA + 'v', antB + 'h')}
         # Map from input label pair to correlation product index (which typically follows Miriad-style numbering)
         # Ensure all input labels are lower-case to avoid mixed-case issues
         corrprod_map = dict([((input_pair[0].lower(), input_pair[1].lower()), corr_id) for corr_id, input_pair in
@@ -818,7 +824,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         # Create each compound scan, as indicated by range of dump indices
         compscanlist = []
         for compscan_target, compscan_start, compscan_end, compscan_label in \
-            zip(compscan_targets, compscan_starts, compscan_ends, compscan_labels):
+                zip(compscan_targets, compscan_starts, compscan_ends, compscan_labels):
             # Identify range of scans that fall within compound scan
             first_scan = max(scan_starts.searchsorted(compscan_start, side='right') - 1, 0)
             last_scan = max(scan_starts.searchsorted(compscan_end, side='right') - 1, 0)
@@ -852,11 +858,12 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
                 compscanlist.append(CompoundScan(scanlist, compscan_target, compscan_label))
 
         return compscanlist, experiment_id, observer, description, 'counts', \
-               corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro
+            corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  save_dataset
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  save_dataset
+# -------------------------------------------------------------------------------------------------
+
 
 def save_dataset(dataset, filename):
     """Save data set to HDF5 file (in format version 1).

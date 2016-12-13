@@ -16,7 +16,6 @@ import optparse
 
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib as mpl
 
 import scape
 import katpoint
@@ -37,6 +36,8 @@ logger.setLevel(logging.DEBUG)
 
 # Find all data sets (HDF5 or FITS) mentioned, and add them to datasets list
 datasets = []
+
+
 def walk_callback(arg, directory, files):
     datasets.extend([os.path.join(directory, f) for f in files if f.endswith('.h5') or f.endswith('_0000.fits')])
 for arg in args:
@@ -126,8 +127,8 @@ hours_since_start = (timestamps - timestamps.min()) / 3600.
 time_grid = np.linspace(timestamps.min(), timestamps.max(), 400)
 sun = katpoint.Target('Sun, special', antenna=d.antenna)
 sun_el = katpoint.rad2deg(sun.azel(time_grid)[1])
-dist_to_sun = np.array([sun.separation(katpoint.construct_azel_target(az, el), t)
-                        for az, el, t in zip(azim, elev, timestamps)])
+dist_to_sun = np.array([sun.separation(katpoint.construct_azel_target(azz, ell), tt)
+                        for azz, ell, tt in zip(azim, elev, timestamps)])
 
 # Gains and phase as a function of frequency
 plt.figure(1)

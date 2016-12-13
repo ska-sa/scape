@@ -21,4 +21,15 @@ setup(name="scape",
       setup_requires=['katversion'],
       use_katversion=True,
       test_suite="nose.collector",
-      install_requires=['nose'])
+      install_requires=[
+          "numpy",
+          "scipy",
+          "katpoint",
+          "scikits.fitting"
+      ],
+      tests_require=[
+          "nose",
+          "coverage",
+          "nosexcover",
+          "unittest2"
+      ])

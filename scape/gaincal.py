@@ -1,13 +1,15 @@
 """Gain calibration via noise injection."""
 
-import numpy as np
 import re
 
-import fitting
-from .fitting import Spline1DFit, Polynomial1DFit, Spline2DGridFit
-from .fitting import randomise as fitting_randomise
+import numpy as np
+import scikits.fitting
+from scikits.fitting import Spline1DFit, Polynomial1DFit, Spline2DGridFit  # noqa: F401
+from scikits.fitting import randomise as fitting_randomise
+
 from .stats import robust_mu_sigma
 from .scan import scape_pol_sd
+
 
 def load_csv_with_header(csv_file):
     """Load CSV file containing commented-out header with key-value pairs.
@@ -34,13 +36,15 @@ def load_csv_with_header(csv_file):
     attrs = dict([keyvalue.match(line).groups() for line in header if keyvalue.match(line)])
     return csv, attrs
 
-#--------------------------------------------------------------------------------------------------
-#--- CLASS :  NoiseDiodeModel
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- CLASS :  NoiseDiodeModel
+# -------------------------------------------------------------------------------------------------
+
 
 class NoiseDiodeNotFound(Exception):
     """No noise diode characteristics were found in data file."""
     pass
+
 
 class NoiseDiodeModel(object):
     """Container for the measured spectrum of a single noise diode.
@@ -108,7 +112,7 @@ class NoiseDiodeModel(object):
             interp = kwargs.get('interp', None) if interp is None else interp
             freq, temp = csv[:, 0] / 1e6, csv[:, 1]
         assert len(freq) == len(temp), \
-               'Frequency and temperature arrays should have the same length (%d vs %d)' % (len(freq), len(temp))
+            'Frequency and temperature arrays should have the same length (%d vs %d)' % (len(freq), len(temp))
         self.freq = freq
         self.temp = temp
         self.interp = 'PiecewisePolynomial1DFit(max_degree=1)' if interp is None else interp
@@ -118,7 +122,7 @@ class NoiseDiodeModel(object):
     def __eq__(self, other):
         """Equality comparison operator."""
         return (vars(self).keys() == vars(other).keys()) and \
-               np.all([np.all(getattr(self, attr) == getattr(other, attr)) for attr in vars(self)])
+            np.all([np.all(getattr(self, attr) == getattr(other, attr)) for attr in vars(self)])
 
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -164,7 +168,7 @@ class NoiseDiodeModel(object):
 
         """
         # Instantiate interpolator object and fit to measurements
-        interp = eval(self.interp, vars(fitting))
+        interp = eval(self.interp, vars(scikits.fitting))
         interp.fit(self.freq, self.temp)
         # Optionally perturb the fit
         if randomise:
@@ -172,16 +176,18 @@ class NoiseDiodeModel(object):
         # Evaluate the smoothed spectrum at the desired frequencies
         return interp(freqs)
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTIONS
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTIONS
+# -------------------------------------------------------------------------------------------------
+
 
 class NoSuitableNoiseDiodeDataFound(Exception):
     """No suitable noise diode on/off blocks were found in data set."""
     pass
 
-def estimate_nd_jumps(dataset, min_samples=3, min_duration=None, max_samples=9, max_duration=None,
-                      jump_significance=10.0):
+
+def estimate_nd_jumps(dataset, min_samples=3, min_duration=None, max_samples=9,
+                      max_duration=None, jump_significance=10.0):
     """Estimate jumps in power when noise diode toggles state in data set.
 
     This examines all time instants where the noise diode flag changes state
@@ -277,6 +283,7 @@ def estimate_nd_jumps(dataset, min_samples=3, min_duration=None, max_samples=9, 
                 nd_jump_info.append((scan_ind, mid, off_segment, on_segment))
     return nd_jump_times, nd_jump_power_mu, nd_jump_power_sigma, nd_jump_info
 
+
 def _partition_into_bins(x, width):
     """Partition values into bins of given width.
 
@@ -316,7 +323,9 @@ def _partition_into_bins(x, width):
         bin_start += len(bin_inds)
     return bins, np.hstack([x[bin].mean() for bin in bins])
 
-def estimate_gain(dataset, interp_degree=1, time_width=0.0, freq_width=None, save=True, randomise=False, **kwargs):
+
+def estimate_gain(dataset, interp_degree=1, time_width=0.0, freq_width=None,
+                  save=True, randomise=False, **kwargs):
     """Estimate gain and relative phase of both polarisations via injected noise.
 
     Each successful noise diode transition in the data set is used to estimate
@@ -384,7 +393,7 @@ def estimate_gain(dataset, interp_degree=1, time_width=0.0, freq_width=None, sav
     deltas = np.concatenate([p[np.newaxis] for p in nd_jump_power_mu])
     if randomise:
         deltas += np.concatenate([p[np.newaxis] for p in nd_jump_power_sigma]) * \
-                  np.random.standard_normal(deltas.shape)
+            np.random.standard_normal(deltas.shape)
     # Interpolate noise diode models to channel frequencies
     temp_nd_h = dataset.nd_h_model.temperature(dataset.freqs, randomise)
     temp_nd_v = dataset.nd_v_model.temperature(dataset.freqs, randomise)
@@ -427,9 +436,10 @@ def estimate_gain(dataset, interp_degree=1, time_width=0.0, freq_width=None, sav
     gain_hh, gain_vv = lambda t, f: gain_hh_interp([t, f]), lambda t, f: gain_vv_interp([t, f])
     delta_re_hv, delta_im_hv = lambda t, f: delta_re_hv_interp([t, f]), lambda t, f: delta_im_hv_interp([t, f])
     if save:
-        dataset.nd_gain = {'gain_hh' : gain_hh, 'gain_vv' : gain_vv,
-                           'delta_re_hv' : delta_re_hv, 'delta_im_hv' : delta_im_hv}
+        dataset.nd_gain = {'gain_hh': gain_hh, 'gain_vv': gain_vv,
+                           'delta_re_hv': delta_re_hv, 'delta_im_hv': delta_im_hv}
     return gain_hh, gain_vv, delta_re_hv, delta_im_hv
+
 
 def calibrate_gain(dataset, **kwargs):
     """Calibrate H and V gains and relative phase, based on noise injection.
@@ -471,7 +481,7 @@ def calibrate_gain(dataset, **kwargs):
         scan.data[:, :, vv] /= smooth_gain_vv
         u, v = scan.data[:, :, re_hv].copy(), scan.data[:, :, im_hv].copy()
         # Rotate U and V through angle -phi, using K cos(phi) and K sin(phi) terms
-        scan.data[:, :, re_hv] =  smooth_delta_re_hv * u + smooth_delta_im_hv * v
+        scan.data[:, :, re_hv] = smooth_delta_re_hv * u + smooth_delta_im_hv * v
         scan.data[:, :, im_hv] = -smooth_delta_im_hv * u + smooth_delta_re_hv * v
         # Divide U and V by g_h g_v, as well as length of sin + cos terms above
         gain_hv = np.sqrt(smooth_gain_hh * smooth_gain_vv * (smooth_delta_re_hv ** 2 + smooth_delta_im_hv ** 2))

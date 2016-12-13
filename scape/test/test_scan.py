@@ -10,15 +10,16 @@ import scape
 import katpoint
 
 # Mueller matrix that performs coherency -> Stokes transform
-stokes_from_coh = np.array([[1,   0,  0,  1],
-                            [1,   0,  0, -1],
-                            [0,   1,  1,  0],
-                            [0, -1j, 1j,  0]])
+stokes_from_coh = np.array([[1, 0, 0, 1],
+                            [1, 0, 0, -1],
+                            [0, 1, 1, 0],
+                            [0, -1j, 1j, 0]])
 # Mueller matrix that performs Stokes -> coherency transform (inverse of above)
-coh_from_stokes = 0.5 * np.array([[1,  1, 0,   0],
-                                  [0,  0, 1,  1j],
-                                  [0,  0, 1, -1j],
-                                  [1, -1, 0,   0]])
+coh_from_stokes = 0.5 * np.array([[1, 1, 0, 0],
+                                  [0, 0, 1, 1j],
+                                  [0, 0, 1, -1j],
+                                  [1, -1, 0, 0]])
+
 
 def transform_pol(scan, *args):
     """Return data transformed by series of Jones / generalised Mueller matrices.
@@ -93,6 +94,7 @@ def transform_pol(scan, *args):
         data = (matrix * data).sum(axis=-1)
     return data
 
+
 def generic_pol(scan, key):
     """Extract a specific polarisation term from correlation data, the slow way.
 
@@ -125,18 +127,18 @@ def generic_pol(scan, key):
     # Mount coherencies are the easiest to extract - simply pick correct subarray (mostly)
     if key in scape_pol_sd:
         # Re{HV} and Im{HV} are not explicitly stored in interferometer data - extract them from HV instead
-        if not self.has_autocorr and key in ('ReHV', 'ImHV'):
-            HV = self.data[:, :, scape_pol_if.index('HV')]
+        if not scan.has_autocorr and key in ('ReHV', 'ImHV'):
+            HV = scan.data[:, :, scape_pol_if.index('HV')]
             return HV.real if key == 'ReHV' else HV.imag
         else:
-            return self.data[:, :, scape_pol_sd.index(key)]
+            return scan.data[:, :, scape_pol_sd.index(key)]
     elif key in scape_pol_if:
         # HV and VH are not explicitly stored in single-dish data - calculate them instead
-        if self.has_autocorr and key in ('HV', 'VH'):
-            ReHV, ImHV = self.data[:, :, scape_pol_sd.index('ReHV')], self.data[:, :, scape_pol_sd.index('ImHV')]
+        if scan.has_autocorr and key in ('HV', 'VH'):
+            ReHV, ImHV = scan.data[:, :, scape_pol_sd.index('ReHV')], scan.data[:, :, scape_pol_sd.index('ImHV')]
             return ReHV + 1j * ImHV if key == 'HV' else ReHV - 1j * ImHV
         else:
-            return self.data[:, :, scape_pol_if.index(key)]
+            return scan.data[:, :, scape_pol_if.index(key)]
 
     # The rest of the polarisation terms are sky-based, and need parallactic angle correction.
     # The mount rotation on the sky is equivalent to a *negative* parallactic angle rotation, and
@@ -161,7 +163,9 @@ def generic_pol(scan, key):
         data = transform_pol(scan, rot_mueller, stokes_from_coh)[:, :, stokes.index(key)]
         return data.real if scan.has_autocorr else data
     else:
-        raise KeyError("Polarisation key should be one of %s" % list(set(scape_pol_sd + scape_pol_if + sky_coh + stokes)),)
+        raise KeyError("Polarisation key should be one of %s" %
+                       list(set(scape_pol_sd + scape_pol_if + sky_coh + stokes)),)
+
 
 def assert_almost_equal(actual, desired, decimal=15):
     """Assert actual is close to desired, within relative tolerance.
@@ -178,12 +182,12 @@ def assert_almost_equal(actual, desired, decimal=15):
         np.testing.assert_almost_equal(actual.real / desired.real, 1.0, decimal)
         np.testing.assert_almost_equal(actual.imag / desired.imag, 1.0, decimal)
 
+
 class ScanTestCases(unittest.TestCase):
     """Create scan and check it."""
 
     def setUp(self):
         """Create scan."""
-
         time_start = '2009/06/26 20:00:00 SAST'
         num_channels = 16
         dump_rate = 10.
@@ -195,8 +199,8 @@ class ScanTestCases(unittest.TestCase):
         # This is single-dish [HH, VV, Re{HV}, Im{HV}] format
         self.data_sd = np.dstack((data_tf, 2.0 * data_tf, 0.3 * (data_tf - 10.), 0.1 * (data_tf - 10.)))
         # This is interferometer [HH, VV, HV, VH] format
-        self.data_if = np.dstack((1.0 * data_tf           + 0.6j * np.flipud(data_tf),
-                                  2.0 * data_tf           + 1.5j * np.fliplr(data_tf),
+        self.data_if = np.dstack((1.0 * data_tf + 0.6j * np.flipud(data_tf),
+                                  2.0 * data_tf + 1.5j * np.fliplr(data_tf),
                                   0.3 * (data_tf - 10.) + 0.003j * np.fliplr(data_tf),
                                   0.1 * (data_tf - 10.) + 0.002j * np.flipud(data_tf)))
         time_start = time.mktime(time.strptime(time_start, '%Y/%m/%d %H:%M:%S %Z'))
@@ -253,7 +257,8 @@ class ScanTestCases(unittest.TestCase):
         assert_almost_equal(1j * (self.scan_if.pol('YX') - self.scan_if.pol('XY')), self.scan_if.pol('V'), decimal=13)
         # Check absolute powers
         np.testing.assert_equal(self.scan_sd.pol('absI'), self.scan_sd.pol('I'))
-        np.testing.assert_equal(self.scan_if.pol('absI'), np.abs(self.scan_if.pol('HH')) + np.abs(self.scan_if.pol('VV')))
+        np.testing.assert_equal(self.scan_if.pol('absI'),
+                                np.abs(self.scan_if.pol('HH')) + np.abs(self.scan_if.pol('VV')))
         np.testing.assert_equal(self.scan_sd.pol('absHH'), self.scan_sd.pol('HH'))
         np.testing.assert_equal(self.scan_if.pol('absHH'), np.abs(self.scan_if.pol('HH')))
         np.testing.assert_equal(self.scan_sd.pol('absVV'), self.scan_sd.pol('VV'))

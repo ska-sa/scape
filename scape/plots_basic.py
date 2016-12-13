@@ -18,19 +18,21 @@ except ImportError:
 
 logger = logging.getLogger("scape.plots_basic")
 
+
 def ordinal_suffix(n):
-    """Returns the ordinal suffix of integer *n* as a string."""
+    """The ordinal suffix of integer *n* as a string."""
     if n % 100 in [11, 12, 13]:
         return 'th'
     else:
-        return {1 : 'st', 2 : 'nd', 3 : 'rd'}.get(n % 10, 'th')
+        return {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_line_segments
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_line_segments
+# -------------------------------------------------------------------------------------------------
 
-def plot_line_segments(segments, labels=None, width=0.0, compact=True, add_breaks=True,
-                       monotonic_axis='x', ax=None, **kwargs):
+
+def plot_line_segments(segments, labels=None, width=0.0, compact=True,
+                       add_breaks=True, monotonic_axis='x', ax=None, **kwargs):
     """Plot sequence of line segments.
 
     This plots a sequence of line segments (of possibly varying length) on a
@@ -110,11 +112,13 @@ def plot_line_segments(segments, labels=None, width=0.0, compact=True, add_break
         compacted_start = np.array([0.0] + compacted_end[:-1].tolist())
         offset = start - compacted_start
         start, end = compacted_start, compacted_end
+
         # Redefine monotonic axis label formatter to add appropriate offset to label value, depending on segment
         class SegmentedScalarFormatter(mpl.ticker.ScalarFormatter):
             """Expand x axis value to correct segment before labelling."""
             def __init__(self, useOffset=True, useMathText=False):
                 mpl.ticker.ScalarFormatter.__init__(self, useOffset, useMathText)
+
             def __call__(self, x, pos=None):
                 segment = max(start.searchsorted(x, side='right') - 1, 0)
                 return mpl.ticker.ScalarFormatter.__call__(self, x + offset[segment], pos)
@@ -164,9 +168,10 @@ def plot_line_segments(segments, labels=None, width=0.0, compact=True, add_break
 
     return segment_lines, break_lines, text_labels
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_segments
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_segments
+# -------------------------------------------------------------------------------------------------
+
 
 def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks=True,
                   monotonic_axis='auto', color=None, clim=None, ax=None, **kwargs):
@@ -251,8 +256,9 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
         labels = []
     # Attempt to detect monotonic axis if requested - look for axis with 1-dimensional data that is sorted
     if monotonic_axis == 'auto':
-        monotonic = lambda x: np.all(np.array([np.ndim(s) for s in x]) == 1) and \
-                              np.abs(np.sign(np.diff(np.hstack(x))).sum()) == np.sum([len(s) for s in x]) - 1
+        def monotonic(x):
+            return np.all(np.array([np.ndim(s) for s in x]) == 1) and \
+                np.abs(np.sign(np.diff(np.hstack(x))).sum()) == np.sum([len(s) for s in x]) - 1
         monotonic_axis = 'x' if monotonic(x) else 'y' if monotonic(y) else None
     # Disable features that depend on a monotonic axis and multiple segments
     if monotonic_axis is None or ((len(x) == 1) and (len(y) == 1)):
@@ -270,7 +276,7 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
             raise ValueError('Shape mismatch between z and (y, x) (segment shapes are %s vs %s)' %
                              ([np.shape(s) for s in z], yx_shape))
         plot_type = 'image'
-    elif np.shape(x[0][0]) == () and np.shape(y[0][0]) == ():# handle the case where y[0][0] is masked
+    elif np.shape(x[0][0]) == () and np.shape(y[0][0]) == ():  # handle the case where y[0][0] is masked
         plot_type = 'line'
     elif np.shape(x[0][0]) == () and np.shape(y[0][0]) == (2,) and monotonic_axis != 'y':
         plot_type = 'barv'
@@ -302,11 +308,13 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
         compacted_start = np.array([0.0] + compacted_end[:-1].tolist())
         offset = start - compacted_start
         start, end = compacted_start, compacted_end
+
         # Redefine monotonic axis label formatter to add appropriate offset to label value, depending on segment
         class SegmentedScalarFormatter(mpl.ticker.ScalarFormatter):
             """Expand x axis value to correct segment before labelling."""
             def __init__(self, useOffset=True, useMathText=False):
                 mpl.ticker.ScalarFormatter.__init__(self, useOffset, useMathText)
+
             def __call__(self, x, pos=None):
                 segment = max(start.searchsorted(x, side='right') - 1, 0)
                 return mpl.ticker.ScalarFormatter.__call__(self, x + offset[segment], pos)
@@ -371,15 +379,15 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
             im.set_norm(colornorm)
             segments.append(im)
 
-    ## MPL WORKAROUND ##
+    # XXX: MPL WORKAROUND
     # In matplotlib 1.0.0 and earlier (at least), adding break lines (axvline collection) messes up axes data limits
     # The y bottom limit is erroneously reset to 0 - as a workaround, do an initial autoscale_view
     ax.autoscale_view()
     # Add text labels and break lines, and set axes limits
     text_labels, break_lines = [], None
     # Break line styles differ for image and non-image plots
-    break_kwargs = {'colors' : 'k', 'linewidths' : 2.0, 'linestyles' : 'solid'} if plot_type == 'image' else \
-                   {'colors' : 'k', 'linewidths' : 0.5, 'linestyles' : 'dotted'}
+    break_kwargs = {'colors': 'k', 'linewidths': 2.0, 'linestyles': 'solid'} if plot_type == 'image' else \
+                   {'colors': 'k', 'linewidths': 0.5, 'linestyles': 'dotted'}
     if monotonic_axis == 'x':
         # Break lines and labels have x coordinates fixed to data and y coordinates fixed to axes (like axvline)
         transFixedY = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
@@ -416,9 +424,10 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
 
     return segments, text_labels, break_lines
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_compacted_images
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_compacted_images
+# -------------------------------------------------------------------------------------------------
+
 
 def plot_compacted_images(imdata, xticks, labels=None, ylim=None, clim=None, grey_rows=None, ax=None):
     """Plot sequence of images in compacted form.
@@ -501,13 +510,15 @@ def plot_compacted_images(imdata, xticks, labels=None, ylim=None, clim=None, gre
     ax.axis([compacted_start[0], compacted_start[-1], ylim[0], ylim[1]])
     text_labels = []
     for k, label in enumerate(labels):
-        text_labels.append(ax.text(np.mean(compacted_start[k:k+2]), 0.02, label, transform=transFixedY,
+        text_labels.append(ax.text(np.mean(compacted_start[k:k + 2]), 0.02, label, transform=transFixedY,
                                    ha='center', va='bottom', clip_on=True, color='w'))
+
     # Redefine x-axis label formatter to display the correct time for each segment
     class SegmentedScalarFormatter(mpl.ticker.ScalarFormatter):
         """Expand x axis value to correct segment before labelling."""
         def __init__(self, useOffset=True, useMathText=False):
             mpl.ticker.ScalarFormatter.__init__(self, useOffset, useMathText)
+
         def __call__(self, x, pos=None):
             if x > compacted_start[0]:
                 segment = (compacted_start[:-1] < x).nonzero()[0][-1]
@@ -516,9 +527,10 @@ def plot_compacted_images(imdata, xticks, labels=None, ylim=None, clim=None, gre
     ax.xaxis.set_major_formatter(SegmentedScalarFormatter())
     return images, border_lines, text_labels
 
-#---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_marker_3d
-#---------------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_marker_3d
+# --------------------------------------------------------------------------------------------------------
+
 
 def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter', num_lines=8, ax=None, **kwargs):
     """Pseudo-3D scatter plot using marker size to indicate height.
@@ -572,7 +584,7 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
     z_min, z_max = z.min(), z.max()
     z = (z - z_min) / (z_max - z_min) if z_max > z_min else np.zeros(z.shape)
     # Threshold z, so that the minimum size will have the desired ratio to the maximum size
-    z[z < min_size/max_size] = min_size/max_size
+    z[z < min_size / max_size] = min_size / max_size
     # Determine median spacing between vectors
     min_dist = np.zeros(len(x))
     for ind in xrange(len(x)):
@@ -614,9 +626,10 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
     else:
         raise ValueError("Unknown marker type '" + marker_type + "'")
 
-#---------------------------------------------------------------------------------------------------------
-#--- FUNCTION :  gaussian_ellipses
-#---------------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------------
+# --- FUNCTION :  gaussian_ellipses
+# --------------------------------------------------------------------------------------------------------
+
 
 def gaussian_ellipses(mean, cov, contour=0.5, num_points=200):
     """Contour ellipses of two-dimensional Gaussian function.
@@ -648,8 +661,8 @@ def gaussian_ellipses(mean, cov, contour=0.5, num_points=200):
     cov = np.asarray(cov)
     contour = np.atleast_1d(np.asarray(contour))
     if (mean.shape != (2,)) or (cov.shape != (2, 2)):
-        raise ValueError('Mean and covariance should be 2-dimensional, with shapes (2,) and (2, 2) instead of'
-                         + str(mean.shape) + ' and ' + str(cov.shape))
+        raise ValueError('Mean and covariance should be 2-dimensional, with shapes '
+                         '(2,) and (2, 2) instead of %s and %s' % (mean.shape, cov.shape))
     # Create parametric circle
     t = np.linspace(0.0, 2.0 * np.pi, num_points)
     circle = np.vstack((np.cos(t), np.sin(t)))
@@ -663,9 +676,10 @@ def gaussian_ellipses(mean, cov, contour=0.5, num_points=200):
         ellipses.append(ellipse.transpose())
     return np.array(ellipses)
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  plot_db_contours
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  plot_db_contours
+# -------------------------------------------------------------------------------------------------
+
 
 def plot_db_contours(x, y, Z, levels=None, sin_coords=False, add_lines=True, ax=None):
     """Filled contour plot of 2-D spherical function in decibels.
@@ -742,15 +756,16 @@ def plot_db_contours(x, y, Z, levels=None, sin_coords=False, add_lines=True, ax=
         ax.set_xlabel('x (deg)')
         ax.set_ylabel('y (deg)')
     ax.axis('image')
-    ax.fill( corner_x,  corner_y, facecolor='w')
-    ax.fill(-corner_x,  corner_y, facecolor='w')
+    ax.fill(corner_x, corner_y, facecolor='w')
+    ax.fill(-corner_x, corner_y, facecolor='w')
     ax.fill(-corner_x, -corner_y, facecolor='w')
-    ax.fill( corner_x, -corner_y, facecolor='w')
+    ax.fill(corner_x, -corner_y, facecolor='w')
     return cset
 
-#--------------------------------------------------------------------------------------------------
-#--- FUNCTION :  save_fits_image
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- FUNCTION :  save_fits_image
+# -------------------------------------------------------------------------------------------------
+
 
 def save_fits_image(filename, x, y, Z, target_name='', coord_system='radec',
                     projection_type='ARC', data_unit='', freq_Hz=0.,
@@ -828,10 +843,10 @@ def save_fits_image(filename, x, y, Z, target_name='', coord_system='radec',
         Z = Z[np.newaxis]
     # If polarisation is specified, add a Stokes axis
     if pol is not None:
-        stokes_code = {'I' : 1, 'Q' : 2, 'U' : 3, 'V' : 4,
-                       'XX' : -5, 'YY' : -6, 'XY' : -7, 'YX' : -8,
-                       'HH' : -5, 'VV' : -6, 'HV' : -7, 'VH' : -8,
-                       'absI' : 1, 'absHH' : -5, 'absVV' : -6}
+        stokes_code = {'I': 1, 'Q': 2, 'U': 3, 'V': 4,
+                       'XX': -5, 'YY': -6, 'XY': -7, 'YX': -8,
+                       'HH': -5, 'VV': -6, 'HV': -7, 'VH': -8,
+                       'absI': 1, 'absHH': -5, 'absVV': -6}
         axes.append('STOKES')
         ref_pixel.append(1)
         ref_world.append(stokes_code[pol])
@@ -850,11 +865,11 @@ def save_fits_image(filename, x, y, Z, target_name='', coord_system='radec',
     phdu.header.update('EQUINOX', 2000.0, comment='equinox of ra dec')
     phdu.header.update('BUNIT', data_unit, comment='units of flux')
     for n, (ax_type, ref_pix, ref_val, ref_delt) in enumerate(zip(axes, ref_pixel, ref_world, world_per_pixel)):
-        phdu.header.update('CTYPE%d' % (n+1), ax_type)
-        phdu.header.update('CRPIX%d' % (n+1), ref_pix)
-        phdu.header.update('CRVAL%d' % (n+1), ref_val)
-        phdu.header.update('CDELT%d' % (n+1), ref_delt)
-        phdu.header.update('CROTA%d' % (n+1), 0)
+        phdu.header.update('CTYPE%d' % (n + 1), ax_type)
+        phdu.header.update('CRPIX%d' % (n + 1), ref_pix)
+        phdu.header.update('CRVAL%d' % (n + 1), ref_val)
+        phdu.header.update('CDELT%d' % (n + 1), ref_delt)
+        phdu.header.update('CROTA%d' % (n + 1), 0)
     phdu.header.update('DATAMAX', Z.max(), comment='max pixel value')
     phdu.header.update('DATAMIN', Z.min(), comment='min pixel value')
     pyfits.writeto(filename, phdu.data, phdu.header, clobber=clobber)

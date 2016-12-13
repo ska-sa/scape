@@ -15,20 +15,21 @@ Functionality: beam/baseline fitting, instant mount coords, ...
 
 """
 
-import numpy as np
 import logging
 
+import numpy as np
 import katpoint
+from scikits.fitting import scalar
 
 from .beam_baseline import fit_beam_and_baselines
 from .stats import remove_spikes
-from .fitting import scalar
 
 logger = logging.getLogger("scape.compoundscan")
 
-#--------------------------------------------------------------------------------------------------
-#--- CLASS :  CorrelatorConfig
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- CLASS :  CorrelatorConfig
+# -------------------------------------------------------------------------------------------------
+
 
 class CorrelatorConfig(object):
     """Container for spectral configuration of correlator.
@@ -70,7 +71,7 @@ class CorrelatorConfig(object):
     def __eq__(self, other):
         """Equality comparison operator."""
         return np.all(self.freqs == other.freqs) and np.all(self.bandwidths == other.bandwidths) and \
-               np.all(self.channel_select == other.channel_select) and (self.dump_rate == other.dump_rate)
+            np.all(self.channel_select == other.channel_select) and (self.dump_rate == other.dump_rate)
 
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -135,9 +136,10 @@ class CorrelatorConfig(object):
                                         for chans in channels_per_band], dtype='bool').nonzero()[0].tolist()
         return self
 
-#--------------------------------------------------------------------------------------------------
-#--- CLASS :  CompoundScan
-#--------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+# --- CLASS :  CompoundScan
+# -------------------------------------------------------------------------------------------------
+
 
 class CompoundScan(object):
     """Container for the data of a compound scan.
@@ -252,7 +254,7 @@ class CompoundScan(object):
         # FWHM beamwidth for Gaussian-tapered circular dish is 1.22 lambda / D
         # The antenna beamwidth factor is somewhere between 1.03 and 1.22
         ant = self.dataset.antenna
-        expected_width = ant.beamwidth * katpoint.lightspeed / (self.dataset.freqs[band]*1e6) / ant.diameter
+        expected_width = ant.beamwidth * katpoint.lightspeed / (self.dataset.freqs[band] * 1e6) / ant.diameter
         # An interferometer measures the beam voltage pattern while a single dish measures the beam power pattern
         # Since power = voltage ^ 2, a Gaussian voltage pattern ends up being sqrt(2) wider than the power pattern
         if self.dataset.antenna2:
@@ -268,7 +270,7 @@ class CompoundScan(object):
         # Fit beam and baselines directly to positive coherencies / Stokes params only, otherwise use I as proxy
         positive_pol = pol in ('absI', 'absHH', 'absVV', 'I', 'HH', 'VV', 'XX', 'YY')
         scan_total_power = [remove_spikes(scan.pol('absI')[:, band], spike_width=spike_width) for scan in self.scans] \
-                           if not positive_pol else None
+            if not positive_pol else None
         logger.debug("Fitting beam and initial baseline of degree (%d, %d) to pol '%s' of target '%s':" %
                      (bl_degrees[0], bl_degrees[1], pol if positive_pol else 'absI', self.target.name))
         self.beam, baselines, self.baseline = fit_beam_and_baselines(scan_coords, scan_data, expected_width, dof,
