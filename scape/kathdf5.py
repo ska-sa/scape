@@ -210,15 +210,15 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
                 ('Antennas/Antenna%s/%s/%s_nd_model' % (ant[3:], pol.upper(), nd))
         nd_h_name = nd_dataset_name(antA.name, 'H', noise_diode)
         nd_v_name = nd_dataset_name(antA.name, 'V', noise_diode)
-        if nd_h_name in d.file:
-            nd_dataset = d.file[nd_h_name]
+        if nd_h_name in d.sensor.iteritems():
+            nd_dataset = d.sensor[nd_h_name]
             nd_h_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
         else:
             logger.warning("Cannot find %s noise diode H polarisation model for antenna %s - using default.",
                            noise_diode, antA.name)
             nd_h_model = NoiseDiodeModel()
-        if nd_v_name in d.file:
-            nd_dataset = d.file[nd_v_name]
+        if nd_v_name in d.sensor.iteritems():
+            nd_dataset = d.sensor[nd_v_name]
             nd_v_model = NoiseDiodeModel(nd_dataset[:, 0] / 1e6, nd_dataset[:, 1], **dict(nd_dataset.attrs))
         else:
             logger.warning("Cannot find %s noise diode V polarisation model for antenna %s - using default.",
