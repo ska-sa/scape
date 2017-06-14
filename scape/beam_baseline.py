@@ -372,7 +372,7 @@ def fit_beam_and_baselines(scan_coords, scan_data, expected_width, dof,
             radius = np.sqrt(((scan_coords[n] - beam.center[:, np.newaxis]) ** 2).sum(axis=0))
             around_null = np.abs(radius - beam.radius_first_null) < annulus_halfwidth
             padded_selection = np.array([False] + around_null.tolist() + [False])
-            borders = np.diff(padded_selection).nonzero()[0] + 1
+            borders = np.diff(padded_selection.astype(int)).nonzero()[0] + 1
             # Discard scan if it doesn't contain two separate null regions (with sufficient beam area in between)
             # XXX: POTENTIAL TWEAK
             if (padded_selection[borders].tolist() != [True, False, True, False]) or \
