@@ -235,7 +235,7 @@ def estimate_nd_jumps(dataset, min_samples=3, min_duration=None, max_samples=9,
         max_samples = int(np.ceil(dataset.dump_rate * max_duration))
     for scan_ind, scan in enumerate(dataset.scans):
         # Find indices where noise diode flag changes value, or continue on to the next scan
-        jumps = (np.diff(scan.flags['nd_on']).nonzero()[0] + 1).tolist()
+        jumps = (np.diff((scan.flags['nd_on']).astype(np.int)).nonzero()[0] + 1).tolist()
         if len(jumps) == 0:
             continue
         num_times = len(scan.timestamps)
