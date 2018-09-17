@@ -11,7 +11,7 @@ from .gaincal import NoiseDiodeModel
 from .scan import Scan, scape_pol_if
 from .compoundscan import CorrelatorConfig, CompoundScan
 
-logger = logging.getLogger("scape.kathdf5")
+logger = logging.getLogger("scape.katdal_dataset")
 
 # -------------------------------------------------------------------------------------------------
 # --- FUNCTION :  load_dataset
