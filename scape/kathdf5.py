@@ -257,12 +257,14 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
             except ValueError:
                 pol_to_corr_id[pol] = 0
     # Pointing sensors
-    az_sensor = 'Antennas/%s/%sazim' % \
-        (antA.name, (sensor_name_v2[selected_pointing] + '-') if d.version.startswith('2.') else
-                    (selected_pointing + '_'))
-    el_sensor = 'Antennas/%s/%selev' % \
-        (antA.name, (sensor_name_v2[selected_pointing] + '-') if d.version.startswith('2.') else
-                    (selected_pointing + '_'))
+    if d.version.startswith('4.'):
+        azel_sensor_prefix = '%s_%s_' % (antA.name, selected_pointing)
+    elif d.version.startswith('2.'):
+        azel_sensor_prefix = 'Antennas/%s/%s-' % (antA.name, sensor_name_v2[selected_pointing])
+    else:
+        azel_sensor_prefix = 'Antennas/%s/%s_' % (antA.name, selected_pointing)
+    az_sensor = azel_sensor_prefix + 'azim'
+    el_sensor = azel_sensor_prefix + 'elev'
 
     # Load each compound scan group
     compscanlist = []
