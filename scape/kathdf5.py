@@ -2,6 +2,7 @@
 
 import logging
 import os.path
+import urlparse
 
 import numpy as np
 import katdal
@@ -108,6 +109,7 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
         are missing
 
     """
+    antA_name = antB_name = ''
     # Parse antennas involved in explicitly specified baseline
     if baseline not in ('sd', 'if'):
         # Baseline separator is a comma so find the comma (or assume single dish if no comma found)
@@ -117,8 +119,19 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
                              "where <ant1> is the name of first antenna and <ant2> is the name of second antenna")
         antA_name, antB_name = parsed_antenna_ids[0], parsed_antenna_ids[-1]
 
-    # Get antennas in file
-    file_ants = filename.ants if isinstance(filename, katdal.DataSet) else katdal.get_ants(filename)
+    # Get antennas in file (or open v4 directly since it has no get_ants)
+    if isinstance(filename, katdal.DataSet):
+        file_ants = filename.ants
+    # V4 RDB file with optional URL-style query string
+    # XXX Remove get_ants (and allow data set reparsing) to clear this up fully
+    elif urlparse.urlsplit(filename).path.endswith('.rdb'):
+        d = katdal.open(filename, ref_ant=antA_name, time_offset=time_offset, **kwargs)
+        # Turn off exceptions for unknown kwargs
+        d.select(strict=False, **kwargs)
+        filename = d
+        file_ants = d.ants
+    else:
+        file_ants = katdal.get_ants(filename)
 
     if baseline is 'sd':
         # First single-dish baseline found

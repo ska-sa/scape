@@ -2,6 +2,7 @@
 
 import os.path
 import logging
+import urlparse
 
 import numpy as np
 import katpoint
@@ -112,7 +113,9 @@ class DataSet(object):
         if filename:
             # If not a string, assume it is a katdal dataset object
             if isinstance(filename, basestring):
-                ext = os.path.splitext(filename)[1]
+                # In case this is a v4 URL, remove query strings etc to get ext
+                filepath = urlparse.urlsplit(filename).path
+                ext = os.path.splitext(filepath)[1]
             else:
                 ext = '.h5'
                 kwargs['katdal'] = True
@@ -130,6 +133,9 @@ class DataSet(object):
                 else:
                     compscanlist, experiment_id, observer, description, data_unit, \
                         corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = old_hdf5_load(filename, **kwargs)
+            elif ext == '.rdb':
+                compscanlist, experiment_id, observer, description, data_unit, \
+                    corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = hdf5_load(filename, **kwargs)
             else:
                 raise ValueError("File extension '%s' not understood" % ext)
 
