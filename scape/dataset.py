@@ -2,6 +2,7 @@
 
 import os.path
 import logging
+import urlparse
 
 import numpy as np
 import katpoint
@@ -16,8 +17,8 @@ try:
 except ImportError:
     xdmfits_found = False
 try:
-    from .kathdf5 import load_dataset as hdf5_load
-    from .hdf5 import load_dataset as old_hdf5_load
+    from .katdal_dataset import load_dataset as katdal_load
+    from .hdf5 import load_dataset as hdf5_load
     from .hdf5 import save_dataset as hdf5_save
     hdf5_found = True
 except ImportError:
@@ -112,7 +113,9 @@ class DataSet(object):
         if filename:
             # If not a string, assume it is a katdal dataset object
             if isinstance(filename, basestring):
-                ext = os.path.splitext(filename)[1]
+                # In case this is a v4 URL, remove query strings etc to get ext
+                filepath = urlparse.urlsplit(filename).path
+                ext = os.path.splitext(filepath)[1]
             else:
                 ext = '.h5'
                 kwargs['katdal'] = True
@@ -126,10 +129,13 @@ class DataSet(object):
                     raise ImportError('HDF5 support could not be loaded - please check hdf5 module')
                 if kwargs.get('katdal', True):
                     compscanlist, experiment_id, observer, description, data_unit, \
-                        corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = hdf5_load(filename, **kwargs)
+                        corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = katdal_load(filename, **kwargs)
                 else:
                     compscanlist, experiment_id, observer, description, data_unit, \
-                        corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = old_hdf5_load(filename, **kwargs)
+                        corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = hdf5_load(filename, **kwargs)
+            elif ext == '.rdb':
+                compscanlist, experiment_id, observer, description, data_unit, \
+                    corrconf, antenna, antenna2, nd_h_model, nd_v_model, enviro = katdal_load(filename, **kwargs)
             else:
                 raise ValueError("File extension '%s' not understood" % ext)
 
