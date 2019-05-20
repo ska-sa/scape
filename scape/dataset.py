@@ -2,8 +2,8 @@
 
 import os.path
 import logging
-import urlparse
 
+import six.moves.urllib.parse as urlparse
 import numpy as np
 import katpoint
 
