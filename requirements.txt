@@ -2,3 +2,4 @@ katpoint
 numpy
 scipy
 scikits.fitting
+six

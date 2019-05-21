@@ -2,8 +2,8 @@
 
 import logging
 import os.path
-import urlparse
 
+import six.moves.urllib.parse as urlparse
 import numpy as np
 import katdal
 

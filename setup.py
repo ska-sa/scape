@@ -25,7 +25,8 @@ setup(name="scape",
           "numpy",
           "scipy",
           "katpoint",
-          "scikits.fitting"
+          "scikits.fitting",
+          "six"
       ],
       tests_require=[
           "nose",
