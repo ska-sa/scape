@@ -110,6 +110,10 @@ class DataSet(object):
                  description=None, data_unit=None, corrconf=None, antenna=None, antenna2=None,
                  nd_h_model=None, nd_v_model=None, enviro=None, **kwargs):
         # Load dataset from file
+        try:
+          basestring
+        except NameError:
+          basestring = str
         if filename:
             # If not a string, assume it is a katdal dataset object
             if isinstance(filename, basestring):
@@ -371,6 +375,10 @@ class DataSet(object):
 
         """
         # Handle the cases of a single input string (not in a list)
+        try:
+          basestring
+        except NameError:
+          basestring = str
         if isinstance(labelkeep, basestring):
             labelkeep = [labelkeep]
         if isinstance(flagkeep, basestring):
