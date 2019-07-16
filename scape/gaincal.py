@@ -27,7 +27,11 @@ def load_csv_with_header(csv_file):
         Key-value pairs extracted from header
 
     """
-    csv_file = file(csv_file) if isinstance(csv_file, basestring) else csv_file
+    try:
+      basestring
+    except NameError:
+      basestring = str
+    csv_file = open(csv_file) if isinstance(csv_file, basestring) else csv_file
     start = csv_file.tell()
     csv = np.loadtxt(csv_file, comments='#', delimiter=',')
     csv_file.seek(start)
@@ -99,6 +103,10 @@ class NoiseDiodeModel(object):
 
     """
     def __init__(self, freq=None, temp=None, interp=None, **kwargs):
+        try:
+          basestring
+        except NameError:
+          basestring = str
         # The default noise diode model has temperature of 1 K at all frequencies
         if freq is None and temp is None and interp is None:
             freq, temp = np.array([1.]), np.array([1.])
@@ -116,7 +124,7 @@ class NoiseDiodeModel(object):
         self.freq = freq
         self.temp = temp
         self.interp = 'PiecewisePolynomial1DFit(max_degree=1)' if interp is None else interp
-        for key, val in kwargs.iteritems():
+        for key, val in kwargs.items():
             setattr(self, key, val)
 
     def __eq__(self, other):
@@ -131,7 +139,7 @@ class NoiseDiodeModel(object):
     def __str__(self):
         """Verbose human-friendly string representation of noise diode model object."""
         label = ''
-        for k, v in vars(self).iteritems():
+        for k, v in vars(self).items():
             if k in ('freq', 'temp'):
                 continue
             label += '%s = %s\n' % (k, v)
