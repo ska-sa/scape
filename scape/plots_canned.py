@@ -98,6 +98,10 @@ def extract_scan_data(scans, quantity, pol='absI'):
         If quantity name is unknown
 
     """
+    try:
+      basestring
+    except NameError:
+      basestring = str
     # Assume all scans come from the same dataset
     dataset = scans[0].compscan.dataset
     # Extract earliest timestamp, used if quantity is 'time' (assumes timestamps are ordered within a scan)
