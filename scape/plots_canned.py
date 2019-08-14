@@ -4,7 +4,7 @@ import time
 import logging
 
 import numpy as np
-
+from six import string_types
 try:
     import matplotlib as mpl
     import matplotlib.pyplot as plt
@@ -156,7 +156,7 @@ def extract_scan_data(scans, quantity, pol='absI'):
 
     # Obtain axis label and extraction function
     try:
-        label, func = lf[quantity] if isinstance(quantity, basestring) else quantity
+        label, func = lf[quantity] if isinstance(quantity, string_types) else quantity
     except KeyError:
         raise ValueError("Unknown quantity '%s' - choose one of %s (or define your own...)" % (quantity, lf.keys(),))
     # Extract data from scans

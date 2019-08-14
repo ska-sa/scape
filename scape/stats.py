@@ -105,7 +105,7 @@ def robust_mu_sigma(data, axis=0):
     """
     data = np.asarray(data)
     # Create sequence of axis indices with specified axis at the front, and the rest following it
-    move_axis_to_front = range(len(data.shape))
+    move_axis_to_front = list(range(len(data.shape)))
     move_axis_to_front.remove(axis)
     move_axis_to_front = [axis] + move_axis_to_front
     # Create copy of data sorted along specified axis, and reshape so that the specified axis becomes the first one
@@ -160,7 +160,7 @@ def periodic_mu_sigma(data, axis=0, period=2.0 * np.pi):
     """
     data = np.asarray(data, dtype='double')
     # Create sequence of axis indices with specified axis at the front, and the rest following it
-    move_axis_to_front = range(len(data.shape))
+    move_axis_to_front = list(range(len(data.shape)))
     move_axis_to_front.remove(axis)
     move_axis_to_front = [axis] + move_axis_to_front
     # Create copy of data, and reshape so that the specified axis becomes the first one

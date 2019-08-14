@@ -4,6 +4,7 @@ import os.path
 import logging
 
 import six.moves.urllib.parse as urlparse
+from six import string_types
 import numpy as np
 import katpoint
 
@@ -112,7 +113,7 @@ class DataSet(object):
         # Load dataset from file
         if filename:
             # If not a string, assume it is a katdal dataset object
-            if isinstance(filename, basestring):
+            if isinstance(filename, string_types):
                 # In case this is a v4 URL, remove query strings etc to get ext
                 filepath = urlparse.urlsplit(filename).path
                 ext = os.path.splitext(filepath)[1]
@@ -371,9 +372,9 @@ class DataSet(object):
 
         """
         # Handle the cases of a single input string (not in a list)
-        if isinstance(labelkeep, basestring):
+        if isinstance(labelkeep, string_types):
             labelkeep = [labelkeep]
-        if isinstance(flagkeep, basestring):
+        if isinstance(flagkeep, string_types):
             flagkeep = [flagkeep]
         compscanlist = []
         for compscan in self.compscans:

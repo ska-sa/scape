@@ -916,7 +916,7 @@ def save_dataset(dataset, filename):
             if nd_model is not None:
                 nd_data = np.column_stack((nd_model.freq * 1e6, nd_model.temp))
                 nd_dataset = pol_group.create_dataset('nd_model', data=nd_data, compression='gzip')
-                for key, val in vars(nd_model).iteritems():
+                for key, val in vars(nd_model).items():
                     if key not in ('freq', 'temp'):
                         nd_dataset.attrs[key] = val
 

@@ -4,6 +4,7 @@ import re
 
 import numpy as np
 import scikits.fitting
+from six import string_types
 from scikits.fitting import Spline1DFit, Polynomial1DFit, Spline2DGridFit  # noqa: F401
 from scikits.fitting import randomise as fitting_randomise
 
@@ -27,7 +28,7 @@ def load_csv_with_header(csv_file):
         Key-value pairs extracted from header
 
     """
-    csv_file = file(csv_file) if isinstance(csv_file, basestring) else csv_file
+    csv_file = open(csv_file) if isinstance(csv_file, string_types) else csv_file
     start = csv_file.tell()
     csv = np.loadtxt(csv_file, comments='#', delimiter=',')
     csv_file.seek(start)
@@ -104,7 +105,7 @@ class NoiseDiodeModel(object):
             freq, temp = np.array([1.]), np.array([1.])
             interp = 'Polynomial1DFit(max_degree=0)'
         # If filename or file-like object is given, load data from file instead
-        elif isinstance(freq, basestring) or hasattr(freq, 'readlines'):
+        elif isinstance(freq, string_types) or hasattr(freq, 'readlines'):
             csv, attrs = load_csv_with_header(freq)
             # Keyword arguments override parameters in file
             attrs.update(kwargs)
@@ -116,7 +117,7 @@ class NoiseDiodeModel(object):
         self.freq = freq
         self.temp = temp
         self.interp = 'PiecewisePolynomial1DFit(max_degree=1)' if interp is None else interp
-        for key, val in kwargs.iteritems():
+        for key, val in kwargs.items():
             setattr(self, key, val)
 
     def __eq__(self, other):
@@ -131,7 +132,7 @@ class NoiseDiodeModel(object):
     def __str__(self):
         """Verbose human-friendly string representation of noise diode model object."""
         label = ''
-        for k, v in vars(self).iteritems():
+        for k, v in vars(self).items():
             if k in ('freq', 'temp'):
                 continue
             label += '%s = %s\n' % (k, v)
