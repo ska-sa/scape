@@ -111,7 +111,7 @@ class DataSet(object):
                  description=None, data_unit=None, corrconf=None, antenna=None, antenna2=None,
                  nd_h_model=None, nd_v_model=None, enviro=None, **kwargs):
         # Load dataset from file
-        if filename: #
+        if filename:
             # If not a string, assume it is a katdal dataset object
             if isinstance(filename, string_types):
                 # In case this is a v4 URL, remove query strings etc to get ext
