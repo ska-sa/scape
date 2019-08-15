@@ -193,8 +193,8 @@ class DataSet(object):
                 ((self.antenna2 is not None) and (other.antenna2 is not None) and
                  self.antenna2.description == other.antenna2.description)) and \
                (self.nd_h_model == other.nd_h_model) and (self.nd_v_model == other.nd_v_model) and \
-            np.all([key == key2 for key, key2 in zip(self.enviro.iterkeys(), other.enviro.iterkeys())]) and \
-            np.all([np.all(val == val2) for val, val2 in zip(self.enviro.itervalues(), other.enviro.itervalues())])
+            np.all([key == key2 for key, key2 in zip(iter(self.enviro.keys()), iter(other.enviro.keys()))]) and \
+            np.all([np.all(val == val2) for val, val2 in zip(iter(self.enviro.values()), iter(other.enviro.values()))])
 
     def __ne__(self, other):
         """Inequality comparison operator."""
@@ -486,10 +486,10 @@ class DataSet(object):
         """
         # The string 'all' means average all channels together
         if channels_per_band == 'all':
-            channels_per_band = [range(len(self.freqs))]
+            channels_per_band = list(range(len(self.freqs)))
         # None means no frequency averaging (band == channel)
         if channels_per_band is None:
-            channels_per_band = np.expand_dims(range(len(self.freqs)), axis=1).tolist()
+            channels_per_band = np.expand_dims(list(range(len(self.freqs))), axis=1).tolist()
         # None means no time averaging too
         if (time_window is None) or (time_window < 1):
             time_window = 1

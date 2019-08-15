@@ -98,7 +98,7 @@ class CorrelatorConfig(object):
         """
         if freqkeep is None:
             if copy:
-                freqkeep = range(len(self.freqs))
+                freqkeep = list(range(len(self.freqs)))
             else:
                 # Only make a view if all channels are selected and a view is requested
                 return self

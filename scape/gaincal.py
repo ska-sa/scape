@@ -117,12 +117,12 @@ class NoiseDiodeModel(object):
         self.freq = freq
         self.temp = temp
         self.interp = 'PiecewisePolynomial1DFit(max_degree=1)' if interp is None else interp
-        for key, val in kwargs.items():
+        for key, val in list(kwargs.items()):
             setattr(self, key, val)
 
     def __eq__(self, other):
         """Equality comparison operator."""
-        return (vars(self).keys() == vars(other).keys()) and \
+        return (list(vars(self).keys()) == list(vars(other).keys())) and \
             np.all([np.all(getattr(self, attr) == getattr(other, attr)) for attr in vars(self)])
 
     def __ne__(self, other):
@@ -132,7 +132,7 @@ class NoiseDiodeModel(object):
     def __str__(self):
         """Verbose human-friendly string representation of noise diode model object."""
         label = ''
-        for k, v in vars(self).items():
+        for k, v in list(vars(self).items()):
             if k in ('freq', 'temp'):
                 continue
             label += '%s = %s\n' % (k, v)

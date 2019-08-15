@@ -155,7 +155,7 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
         except KeyError:
             # Check that requested antennas are in data set
             raise ValueError('Requested antenna pair not found in HDF5 file (wanted %s but file only contains %s)'
-                             % ([antA_name, antB_name], ant_lookup.keys()))
+                             % ([antA_name, antB_name], list(ant_lookup.keys())))
         logger.info("Loading baseline '%s,%s'" % (antA.name, antB.name))
 
     antenna, antenna2 = antA.description, antB.description
@@ -186,8 +186,8 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
         for nd in ('coupler', 'pin'):
             sensor_name = 'Antennas/%s/nd_%s' % (antA.name, nd)
             nd_fired[nd] = np.any(d.sensor.get(sensor_name).unique_values) if sensor_name in d.sensor else False
-        if np.sum(nd_fired.values()) == 1:
-            noise_diode = nd_fired.keys()[nd_fired.values().index(True)]
+        if np.sum(list(nd_fired.values())) == 1:
+            noise_diode = list(nd_fired.keys())[list(nd_fired.values()).index(True)]
             logger.info("Using '%s' noise diode as it is the only one firing in data set" % noise_diode)
         else:
             noise_diode = 'coupler'
@@ -240,7 +240,7 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
     # Load correlator configuration group
     num_chans = len(d.channel_freqs)
     corrconf = CorrelatorConfig(d.channel_freqs * 1e-6, np.tile(d.channel_width * 1e-6, num_chans),
-                                range(num_chans), 1.0 / d.dump_period)
+                                list(range(num_chans)), 1.0 / d.dump_period)
 
     # Mapping of polarisation product to corrprod index identifying the pair of inputs multiplied together
     # Each polarisation product has 3 options: normal (corr_id positive), conjugate (corr_id negative), absent (zero)

@@ -158,7 +158,7 @@ def extract_scan_data(scans, quantity, pol='absI'):
     try:
         label, func = lf[quantity] if isinstance(quantity, string_types) else quantity
     except KeyError:
-        raise ValueError("Unknown quantity '%s' - choose one of %s (or define your own...)" % (quantity, lf.keys(),))
+        raise ValueError("Unknown quantity '%s' - choose one of %s (or define your own...)" % (quantity, list(lf.keys()),))
     # Extract data from scans
     data = [func(s) for s in scans]
     # Infer data type by comparing shape of data to that of timestamps, frequency channels and visibility data
@@ -817,7 +817,7 @@ def plot_spectrogram(dataset, pol='absI', add_scan_ids=True, dB=True, ax=None):
         imdata = [db_func(np.abs(scan.pol(pol))).transpose() for scan in dataset.scans]
     xticks = [scan.timestamps for scan in dataset.scans]
     time_origin = np.min([x.min() for x in xticks])
-    labels = [str(n) for n in xrange(len(dataset.scans))] if add_scan_ids else []
+    labels = [str(n) for n in range(len(dataset.scans))] if add_scan_ids else []
     ylim = (dataset.freqs[0], dataset.freqs[-1])
     clim = [np.double(np.inf), np.double(-np.inf)]
     for scan in dataset.scans:
@@ -878,7 +878,7 @@ def plot_fringes(dataset, pol='I', add_scan_ids=True, ax=None):
     imdata = [np.angle(scan.pol(pol)).transpose() for scan in dataset.scans]
     xticks = [scan.timestamps for scan in dataset.scans]
     time_origin = np.min([x.min() for x in xticks])
-    labels = [str(n) for n in xrange(len(dataset.scans))] if add_scan_ids else []
+    labels = [str(n) for n in range(len(dataset.scans))] if add_scan_ids else []
     ylim = (dataset.freqs[0], dataset.freqs[-1])
     clim = [-np.pi, np.pi]
     grey_rows = list(set(range(len(dataset.freqs))) - set(dataset.channel_select))
@@ -904,7 +904,7 @@ def plot_rfi_segmentation(dataset, sigma=8.0, min_bad_scans=0.25, channel_skip=N
     axes_list.append(fig.add_axes([0.125, 6 / 11., 0.8, 4 / 11.]))
     axes_list.append(fig.add_axes([0.125, 0.1, 0.8, 4 / 11.], sharex=axes_list[0], sharey=axes_list[0]))
 
-    labels = [str(n) for n in xrange(len(dataset.scans))] if add_scan_ids else []
+    labels = [str(n) for n in range(len(dataset.scans))] if add_scan_ids else []
     start = np.array([scan.timestamps.min() for scan in dataset.scans])
     end = np.array([scan.timestamps.max() for scan in dataset.scans])
     compacted_start = [0.0] + np.cumsum(end - start).tolist()
@@ -1025,7 +1025,7 @@ def plot_compound_scan_in_time(compscan, pol='absI', add_scan_ids=True, spike_wi
     if power_range == 0.0:
         power_range = 1.0
     # Plot segments from back to front
-    labels = [str(n) for n in xrange(len(compscan.scans))] if add_scan_ids else []
+    labels = [str(n) for n in range(len(compscan.scans))] if add_scan_ids else []
     plot_line_segments(data_segments, labels, ax=ax, color='b', lw=1)
     beam_color = ('r' if compscan.beam.refined else 'g') if compscan.beam and compscan.beam.is_valid else 'y'
     baseline_colors = [('r' if scan.baseline else 'g') for scan in compscan.scans]

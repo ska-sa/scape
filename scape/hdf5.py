@@ -1,6 +1,6 @@
 """Read and write HDF5 files."""
 
-from __future__ import with_statement
+
 
 import logging
 import re
@@ -237,14 +237,14 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
         if baseline in ('AxAx', 'sd'):
             # First single-dish baseline found
             try:
-                antA = antB = ants_group.keys()[0]
+                antA = antB = list(ants_group.keys())[0]
             except IndexError:
                 raise ValueError('Could not load first single-dish baseline - no antennas found in file')
             logger.info("Loading single-dish baseline 'A%sA%s'" % (antA[7:], antB[7:]))
         elif baseline in ('AxAy', 'if'):
             # First interferometric baseline found
             try:
-                antA, antB = ants_group.keys()[:2]
+                antA, antB = list(ants_group.keys())[:2]
             except IndexError:
                 raise ValueError('Could not load first interferometric baseline - less than 2 antennas found in file')
             logger.info("Loading interferometric baseline 'A%sA%s'" % (antA[7:], antB[7:]))
@@ -258,7 +258,7 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
         # Check that requested antennas are in data set
         if antA not in ants_group or antB not in ants_group:
             raise ValueError('Requested antenna pair not found in HDF5 file (wanted %s but file only contains %s)'
-                             % ([antA, antB], ants_group.keys()))
+                             % ([antA, antB], list(ants_group.keys())))
         antA_group, antB_group = ants_group[antA], ants_group[antB]
         # Get antenna description strings (antenna2 is None for single-dish data)
         antenna, antenna2 = antA_group.attrs['description'], antB_group.attrs['description']
@@ -267,7 +267,7 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
 
         # Use first scan group to check for 'flags' and 'pointing' datasets (associated with processed / saved files)
         try:
-            first_scan_group = f['Scans'].values()[0].values()[0]
+            first_scan_group = list(f['Scans'].values())[0].values()[0]
         except (IndexError, AttributeError):
             first_scan_group = {}
 
@@ -309,8 +309,8 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
                     sensor = sensor_name_v1[nd + '_nd_on']
                     nd_fired[nd] = np.any(sensors_group[sensor]['value'] == '1') \
                         if has_data(sensors_group, sensor) else False
-                if np.sum(nd_fired.values()) == 1:
-                    noise_diode = nd_fired.keys()[nd_fired.values().index(True)]
+                if np.sum(list(nd_fired.values())) == 1:
+                    noise_diode = list(nd_fired.keys())[list(nd_fired.values()).index(True)]
                     logger.info("Using '%s' noise diode as it is the only one firing in data set" % noise_diode)
                 else:
                     noise_diode = 'coupler'
@@ -612,14 +612,14 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         if baseline == 'sd':
             # First single-dish baseline found
             try:
-                antA = antB = ants_used[0] if len(ants_used) > 0 else ant_config.keys()[0]
+                antA = antB = ants_used[0] if len(ants_used) > 0 else list(ant_config.keys())[0]
             except IndexError:
                 raise ValueError('Could not load first single-dish baseline - no antennas found in file')
             logger.info("Loading single-dish baseline 'A%sA%s'" % (antA[3:], antB[3:]))
         elif baseline == 'if':
             # First interferometric baseline found
             try:
-                antA, antB = ants_used[:2] if len(ants_used) > 1 else ant_config.keys()[:2]
+                antA, antB = ants_used[:2] if len(ants_used) > 1 else list(ant_config.keys())[:2]
             except IndexError:
                 raise ValueError('Could not load first interferometric baseline - less than 2 antennas found in file')
             logger.info("Loading interferometric baseline 'A%sA%s'" % (antA[3:], antB[3:]))
@@ -633,7 +633,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         # Check that requested antennas are in data set
         if antA not in ant_config or antB not in ant_config:
             raise ValueError('Requested antenna pair not found in HDF5 file (wanted %s but file only contains %s)'
-                             % ([antA, antB], ant_config.keys()))
+                             % ([antA, antB], list(ant_config.keys())))
         antA_config, antB_config = ant_config[antA], ant_config[antB]
         # Get antenna description strings (antenna2 is None for single-dish data)
         antenna, antenna2 = antA_config.attrs['description'], antB_config.attrs['description']
@@ -652,8 +652,8 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
             for nd in ('coupler', 'pin'):
                 sensor = sensor_name_v2[nd + '_nd_on']
                 nd_fired[nd] = np.any(nd_sensors[sensor]['value'] == '1') if has_data(nd_sensors, sensor) else False
-            if np.sum(nd_fired.values()) == 1:
-                noise_diode = nd_fired.keys()[nd_fired.values().index(True)]
+            if np.sum(list(nd_fired.values())) == 1:
+                noise_diode = list(nd_fired.keys())[list(nd_fired.values()).index(True)]
                 logger.info("Using '%s' noise diode as it is the only one firing in data set" % noise_diode)
             else:
                 noise_diode = 'coupler'
@@ -706,7 +706,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         # Don't subtract half a channel width as channel 0 is centred on 0 Hz in baseband
         center_freqs = band_center - channel_bw * (np.arange(num_chans) - num_chans / 2)
         bandwidths = np.tile(np.float64(channel_bw), num_chans)
-        channel_select = range(num_chans)
+        channel_select = list(range(num_chans))
         sample_period = get_single_value(corr_config, 'int_time')
         dump_rate = 1.0 / sample_period
         corrconf = CorrelatorConfig(center_freqs, bandwidths, channel_select, dump_rate)
@@ -777,7 +777,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         non_spurious = state_durations > 0.5 * sample_period
         state, activity_timestamps = state[non_spurious], activity_timestamps[non_spurious]
         # Identify times where the state changes - these become scan boundaries
-        state_changes = [n for n in xrange(len(state)) if (n == 0) or (state[n] != state[n - 1])]
+        state_changes = [n for n in range(len(state)) if (n == 0) or (state[n] != state[n - 1])]
         scan_labels, scan_timestamps = state[state_changes], activity_timestamps[state_changes]
         # Convert scan boundary times to sample indices (pick the first dump that is fully within scan boundaries)
         scan_boundaries = np.r_[data_timestamps.searchsorted(scan_timestamps + 0.5 * sample_period),
@@ -797,7 +797,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         target_sensor = remove_duplicates(ant_sensors['target'])
         target, target_timestamps = target_sensor['value'], target_sensor['timestamp']
         # Ignore empty and repeating targets (but keep any target following an empty one, as well as first target)
-        target_changes = [n for n in xrange(len(target)) if target[n] and ((n == 0) or (target[n] != target[n - 1]))]
+        target_changes = [n for n in range(len(target)) if target[n] and ((n == 0) or (target[n] != target[n - 1]))]
         compscan_targets, target_timestamps = target[target_changes], target_timestamps[target_changes]
         # Convert compscan boundary times to sample indices (pick the dump containing target change)
         compscan_boundaries = np.r_[data_timestamps.searchsorted(target_timestamps - 0.5 * sample_period),
@@ -828,7 +828,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
             # Identify range of scans that fall within compound scan
             first_scan = max(scan_starts.searchsorted(compscan_start, side='right') - 1, 0)
             last_scan = max(scan_starts.searchsorted(compscan_end, side='right') - 1, 0)
-            compscan = range(first_scan, last_scan + 1)
+            compscan = list(range(first_scan, last_scan + 1))
 
             # Create each scan within compound scan, as indicated by range of dump indices
             scanlist = []
@@ -916,7 +916,7 @@ def save_dataset(dataset, filename):
             if nd_model is not None:
                 nd_data = np.column_stack((nd_model.freq * 1e6, nd_model.temp))
                 nd_dataset = pol_group.create_dataset('nd_model', data=nd_data, compression='gzip')
-                for key, val in vars(nd_model).items():
+                for key, val in list(vars(nd_model).items()):
                     if key not in ('freq', 'temp'):
                         nd_dataset.attrs[key] = val
 

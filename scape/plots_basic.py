@@ -271,7 +271,7 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
         raise ValueError('Shape mismatch between x and y (segment lengths are %s vs %s)' %
                          ([np.shape(s)[0] for s in x], [np.shape(s)[0] for s in y]))
     if z is not None:
-        yx_shape = zip([np.shape(s)[0] for s in y], [np.shape(s)[0] for s in x])
+        yx_shape = list(zip([np.shape(s)[0] for s in y], [np.shape(s)[0] for s in x]))
         if [np.shape(s) for s in z] != yx_shape:
             raise ValueError('Shape mismatch between z and (y, x) (segment shapes are %s vs %s)' %
                              ([np.shape(s) for s in z], yx_shape))
@@ -330,7 +330,7 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
     if plot_type == 'line':
         if color is not None:
             kwargs['color'] = color
-        segments = mpl.collections.LineCollection([zip(xsegm, ysegm) for xsegm, ysegm in zip(x, y)], **kwargs)
+        segments = mpl.collections.LineCollection([list(zip(xsegm, ysegm)) for xsegm, ysegm in zip(x, y)], **kwargs)
         ax.add_collection(segments)
     elif plot_type == 'barv':
         x = np.hstack(x)
@@ -587,7 +587,7 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
     z[z < min_size / max_size] = min_size / max_size
     # Determine median spacing between vectors
     min_dist = np.zeros(len(x))
-    for ind in xrange(len(x)):
+    for ind in range(len(x)):
         dist_sq = (x - x[ind]) ** 2 + (y - y[ind]) ** 2
         min_dist[ind] = np.sqrt(dist_sq[dist_sq > 0].min())
     # Scale z so that maximum value is desired factor of median spacing
@@ -609,7 +609,7 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
 
     elif marker_type == 'circle':
         # Add a circle patch for each marker
-        for ind in xrange(len(x)):
+        for ind in range(len(x)):
             ax.add_patch(mpl.patches.Circle((x[ind], y[ind]), z[ind], **kwargs))
         return ax.patches
 
