@@ -486,7 +486,7 @@ class DataSet(object):
         """
         # The string 'all' means average all channels together
         if channels_per_band == 'all':
-            channels_per_band = list(range(len(self.freqs)))
+            channels_per_band = [list(range(len(self.freqs))),]
         # None means no frequency averaging (band == channel)
         if channels_per_band is None:
             channels_per_band = np.expand_dims(list(range(len(self.freqs))), axis=1).tolist()
