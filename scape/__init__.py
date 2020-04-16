@@ -8,6 +8,8 @@ import sys
 class _NullHandler(logging.Handler):
     def emit(self, record):
         pass
+
+
 _logger = logging.getLogger("scape")
 _logger.addHandler(_NullHandler())
 # Set up basic logging if it hasn't been done yet, in order to display error messages and such
@@ -28,12 +30,17 @@ def _module_found(name, message):
         _logger.warn(message)
         return False
 
+
 # Check if matplotlib is present, otherwise skip plotting routines
 if _module_found('matplotlib', 'Matplotlib was not found - plotting will be disabled'):
-    from .plots_canned import (plot_xyz, extract_xyz_data, extract_scan_data,  # noqa: F401
-                               plot_spectrum, plot_waterfall, plot_spectrogram, plot_fringes,  # noqa: F401
-                               plot_compound_scan_in_time, plot_compound_scan_on_target,  # noqa: F401
-                               plot_data_set_in_mount_space, plot_measured_beam_pattern)  # noqa: F401
+    from .plots_canned import (plot_xyz, extract_xyz_data,  # noqa: F401
+                               extract_scan_data,  # noqa: F401
+                               plot_spectrum, plot_waterfall,  # noqa: F401
+                               plot_spectrogram, plot_fringes,  # noqa: F401
+                               plot_compound_scan_in_time,  # noqa: F401
+                               plot_compound_scan_on_target,  # noqa: F401
+                               plot_data_set_in_mount_space,  # noqa: F401
+                               plot_measured_beam_pattern)  # noqa: F401
 
 # Check if pyfits is present, otherwise skip FITS creation routines
 if _module_found('pyfits', 'PyFITS was not found - FITS creation will be disabled'):

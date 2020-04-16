@@ -19,5 +19,6 @@ def suite():
     testsuite.addTests(loader.loadTestsFromModule(test_xdmfits))
     return testsuite
 
+
 if __name__ == '__main__':
     unittest.main(defaultTest='suite')

@@ -587,7 +587,7 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
     z[z < min_size / max_size] = min_size / max_size
     # Determine median spacing between vectors
     min_dist = np.zeros(len(x))
-    for ind in xrange(len(x)):
+    for ind in range(len(x)):
         dist_sq = (x - x[ind]) ** 2 + (y - y[ind]) ** 2
         min_dist[ind] = np.sqrt(dist_sq[dist_sq > 0].min())
     # Scale z so that maximum value is desired factor of median spacing
@@ -609,7 +609,7 @@ def plot_marker_3d(x, y, z, max_size=0.75, min_size=0.05, marker_type='scatter',
 
     elif marker_type == 'circle':
         # Add a circle patch for each marker
-        for ind in xrange(len(x)):
+        for ind in range(len(x)):
             ax.add_patch(mpl.patches.Circle((x[ind], y[ind]), z[ind], **kwargs))
         return ax.patches
 

@@ -8,6 +8,8 @@ the first FITS file in the sequence.
 Only reading is supported, to encourage a move to later file formats.
 
 """
+# Python 3 support (might not work anyway but shuts up pyflakes...)
+import six
 
 import logging
 import cPickle as pickle
@@ -431,8 +433,8 @@ def load_dataset(data_filename, nd_filename=None, catalogue=None, swap_hv=False,
         # Refine radec target to replace its apparent ra/dec coords with astrometric ones
         if catalogue and (target.body_type == 'radec'):
             # A string argument for catalogue is assumed to be a file name - try to open it blindly
-            if isinstance(catalogue, basestring):
-                catalogue = Catalogue(file(catalogue), add_specials=False)
+            if isinstance(catalogue, six.string_types):
+                catalogue = Catalogue(open(catalogue), add_specials=False)
             # First attempt named lookup, then try distance-based lookup
             new_target = catalogue[target.name.strip()]
             if new_target:
