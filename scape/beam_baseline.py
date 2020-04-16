@@ -280,7 +280,7 @@ def fit_beam_and_baselines(scan_coords, scan_data, expected_width, dof,
     # Initially, all data is considered to be in the "outer" region and therefore forms part of the baseline
     outer = np.tile(True, len(all_power))
     # Alternate between baseline and beam fitting for a few iterations
-    for n in xrange(10):
+    for n in range(10):
         # Fit baseline to "outer" regions, away from where beam was found
         initial_baseline.fit(all_coords[:, outer], all_power[outer])  # , std_all_power[outer])
         bl, std_bl = initial_baseline(all_coords, full_output=True)

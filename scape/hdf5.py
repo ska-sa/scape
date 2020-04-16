@@ -777,7 +777,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         non_spurious = state_durations > 0.5 * sample_period
         state, activity_timestamps = state[non_spurious], activity_timestamps[non_spurious]
         # Identify times where the state changes - these become scan boundaries
-        state_changes = [n for n in xrange(len(state)) if (n == 0) or (state[n] != state[n - 1])]
+        state_changes = [n for n in range(len(state)) if (n == 0) or (state[n] != state[n - 1])]
         scan_labels, scan_timestamps = state[state_changes], activity_timestamps[state_changes]
         # Convert scan boundary times to sample indices (pick the first dump that is fully within scan boundaries)
         scan_boundaries = np.r_[data_timestamps.searchsorted(scan_timestamps + 0.5 * sample_period),
@@ -797,7 +797,7 @@ def load_dataset_v2(filename, baseline='sd', selected_pointing='pos_actual_scan'
         target_sensor = remove_duplicates(ant_sensors['target'])
         target, target_timestamps = target_sensor['value'], target_sensor['timestamp']
         # Ignore empty and repeating targets (but keep any target following an empty one, as well as first target)
-        target_changes = [n for n in xrange(len(target)) if target[n] and ((n == 0) or (target[n] != target[n - 1]))]
+        target_changes = [n for n in range(len(target)) if target[n] and ((n == 0) or (target[n] != target[n - 1]))]
         compscan_targets, target_timestamps = target[target_changes], target_timestamps[target_changes]
         # Convert compscan boundary times to sample indices (pick the dump containing target change)
         compscan_boundaries = np.r_[data_timestamps.searchsorted(target_timestamps - 0.5 * sample_period),
