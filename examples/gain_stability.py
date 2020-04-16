@@ -39,7 +39,10 @@ datasets = []
 
 
 def walk_callback(arg, directory, files):
-    datasets.extend([os.path.join(directory, f) for f in files if f.endswith('.h5') or f.endswith('_0000.fits')])
+    datasets.extend([os.path.join(directory, f) for f in files
+                     if f.endswith('.h5') or f.endswith('_0000.fits')])
+
+
 for arg in args:
     if os.path.isdir(arg):
         os.path.walk(arg, walk_callback, None)

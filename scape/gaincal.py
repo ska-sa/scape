@@ -34,7 +34,7 @@ def load_csv_with_header(csv_file):
     csv = np.loadtxt(csv_file, comments='#', delimiter=',')
     csv_file.seek(start)
     header = [line[1:].strip() for line in csv_file.readlines() if line[0] == '#']
-    keyvalue = re.compile('\A([a-z]\w*)\s*[:=]\s*(.+)')
+    keyvalue = re.compile(r'\A([a-z]\w*)\s*[:=]\s*(.+)')
     attrs = dict([keyvalue.match(line).groups() for line in header if keyvalue.match(line)])
     return csv, attrs
 

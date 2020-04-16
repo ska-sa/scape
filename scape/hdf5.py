@@ -18,9 +18,9 @@ from .compoundscan import CorrelatorConfig, CompoundScan
 logger = logging.getLogger("scape.hdf5")
 
 # Parse baseline string into antenna identifiers
-baseline_pattern = re.compile('A(\w+)A(\w+)')
+baseline_pattern = re.compile(r'A(\w+)A(\w+)')
 # Parse antenna name to extract identifier
-antenna_name_pattern = re.compile('ant(\w+)')
+antenna_name_pattern = re.compile(r'ant(\w+)')
 
 
 def has_data(group, dataset_name):
@@ -132,6 +132,7 @@ def load_dataset(filename, *args, **kwargs):
 # -------------------------------------------------------------------------------------------------
 # --- FUNCTION :  load_dataset_v1
 # -------------------------------------------------------------------------------------------------
+
 
 # Mapping of desired fields to KAT sensor names (format version 1)
 sensor_name_v1 = {'temperature': 'enviro_air_temperature',
@@ -496,6 +497,7 @@ def load_dataset_v1(filename, baseline='AxAx', selected_pointing='pos_actual_sca
 # -------------------------------------------------------------------------------------------------
 # --- FUNCTION :  load_dataset_v2
 # -------------------------------------------------------------------------------------------------
+
 
 # Mapping of desired fields to KAT sensor names (format version 2)
 sensor_name_v2 = {'temperature': 'asc.air.temperature',
