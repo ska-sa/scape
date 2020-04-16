@@ -5,6 +5,7 @@ import re
 import numpy as np
 import scikits.fitting
 from six import string_types
+# These are actually used, but via evil eval...
 from scikits.fitting import Spline1DFit, Polynomial1DFit, Spline2DGridFit  # noqa: F401
 from scikits.fitting import randomise as fitting_randomise
 

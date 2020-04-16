@@ -133,14 +133,14 @@ def load_dataset(filename, baseline='sd', selected_pointing='pos_actual_scan',
     else:
         file_ants = katdal.get_ants(filename)
 
-    if baseline is 'sd':
+    if baseline == 'sd':
         # First single-dish baseline found
         try:
             antA = antB = file_ants[0]
         except IndexError:
             raise ValueError('Could not load first single-dish baseline - no antennas found in file')
         logger.info("Loading single-dish baseline '%s,%s'" % (antA.name, antB.name))
-    elif baseline is 'if':
+    elif baseline == 'if':
         # First interferometric baseline found
         try:
             antA, antB = file_ants[:2]
