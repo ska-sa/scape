@@ -42,8 +42,9 @@ if _module_found('matplotlib', 'Matplotlib was not found - plotting will be disa
                                plot_data_set_in_mount_space,  # noqa: F401
                                plot_measured_beam_pattern)  # noqa: F401
 
-# Check if pyfits is present, otherwise skip FITS creation routines
-if _module_found('pyfits', 'PyFITS was not found - FITS creation will be disabled'):
+# Check if astropy.io.fits is present, otherwise skip FITS creation routines
+if _module_found('astropy.io.fits',
+                 'astropy.io.fits was not found - FITS creation will be disabled'):
     from .plots_basic import save_fits_image  # noqa: F401
 
 # BEGIN VERSION CHECK

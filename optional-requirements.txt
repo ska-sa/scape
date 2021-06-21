@@ -2,5 +2,5 @@ katdal
 acsm
 h5py
 matplotlib
-pyfits
+astropy
 setuptools

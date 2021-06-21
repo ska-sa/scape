@@ -12,7 +12,7 @@ except (ImportError, RuntimeError):
     pass
 
 try:
-    import pyfits
+    from astropy.io import fits
 except ImportError:
     pass
 
@@ -855,23 +855,23 @@ def save_fits_image(filename, x, y, Z, target_name='', coord_system='radec',
         world_per_pixel.append(1)
         Z = Z[np.newaxis]
 
-    phdu = pyfits.PrimaryHDU(Z)
+    phdu = fits.PrimaryHDU(Z)
     phdu.update_header()
-    phdu.header.update('DATE', create_date, comment='UT file creation time')
-    phdu.header.update('ORIGIN', 'SKA SA', 'institution that created file')
-    phdu.header.update('DATE-OBS', observe_date, comment='UT observation start time')
-    phdu.header.update('TELESCOP', telescope)
-    phdu.header.update('INSTRUME', instrument)
-    phdu.header.update('OBSERVER', observer)
-    phdu.header.update('OBJECT', target_name, comment='source name')
-    phdu.header.update('EQUINOX', 2000.0, comment='equinox of ra dec')
-    phdu.header.update('BUNIT', data_unit, comment='units of flux')
+    phdu.header.set('DATE', create_date, comment='UT file creation time')
+    phdu.header.set('ORIGIN', 'SKA SA', 'institution that created file')
+    phdu.header.set('DATE-OBS', observe_date, comment='UT observation start time')
+    phdu.header.set('TELESCOP', telescope)
+    phdu.header.set('INSTRUME', instrument)
+    phdu.header.set('OBSERVER', observer)
+    phdu.header.set('OBJECT', target_name, comment='source name')
+    phdu.header.set('EQUINOX', 2000.0, comment='equinox of ra dec')
+    phdu.header.set('BUNIT', data_unit, comment='units of flux')
     for n, (ax_type, ref_pix, ref_val, ref_delt) in enumerate(zip(axes, ref_pixel, ref_world, world_per_pixel)):
-        phdu.header.update('CTYPE%d' % (n + 1), ax_type)
-        phdu.header.update('CRPIX%d' % (n + 1), ref_pix)
-        phdu.header.update('CRVAL%d' % (n + 1), ref_val)
-        phdu.header.update('CDELT%d' % (n + 1), ref_delt)
-        phdu.header.update('CROTA%d' % (n + 1), 0)
-    phdu.header.update('DATAMAX', Z.max(), comment='max pixel value')
-    phdu.header.update('DATAMIN', Z.min(), comment='min pixel value')
-    pyfits.writeto(filename, phdu.data, phdu.header, clobber=clobber)
+        phdu.header.set('CTYPE%d' % (n + 1), ax_type)
+        phdu.header.set('CRPIX%d' % (n + 1), ref_pix)
+        phdu.header.set('CRVAL%d' % (n + 1), ref_val)
+        phdu.header.set('CDELT%d' % (n + 1), ref_delt)
+        phdu.header.set('CROTA%d' % (n + 1), 0)
+    phdu.header.set('DATAMAX', Z.max(), comment='max pixel value')
+    phdu.header.set('DATAMIN', Z.min(), comment='min pixel value')
+    fits.writeto(filename, phdu.data, phdu.header, overwrite=clobber)
