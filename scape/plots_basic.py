@@ -271,7 +271,8 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
         raise ValueError('Shape mismatch between x and y (segment lengths are %s vs %s)' %
                          ([np.shape(s)[0] for s in x], [np.shape(s)[0] for s in y]))
     if z is not None:
-        yx_shape = zip([np.shape(s)[0] for s in y], [np.shape(s)[0] for s in x])
+        yx_shape = list(zip([np.shape(s)[0] for s in y],
+                            [np.shape(s)[0] for s in x]))
         if [np.shape(s) for s in z] != yx_shape:
             raise ValueError('Shape mismatch between z and (y, x) (segment shapes are %s vs %s)' %
                              ([np.shape(s) for s in z], yx_shape))
@@ -330,7 +331,8 @@ def plot_segments(x, y, z=None, labels=None, width=0.0, compact=True, add_breaks
     if plot_type == 'line':
         if color is not None:
             kwargs['color'] = color
-        segments = mpl.collections.LineCollection([zip(xsegm, ysegm) for xsegm, ysegm in zip(x, y)], **kwargs)
+        segments_xy = [list(zip(xsegm, ysegm)) for xsegm, ysegm in zip(x, y)]
+        segments = mpl.collections.LineCollection(segments_xy, **kwargs)
         ax.add_collection(segments)
     elif plot_type == 'barv':
         x = np.hstack(x)
