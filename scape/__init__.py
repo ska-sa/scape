@@ -1,19 +1,23 @@
 """The Single-dish Continuum Analysis PackagE."""
 
-import logging
-import sys
+import logging as _logging
 
 
-# Setup library logger, and suppress spurious logger messages via a null handler
-class _NullHandler(logging.Handler):
-    def emit(self, record):
-        pass
+# Setup library logger and add a print-like handler used when no logging is configured
+class _NoConfigFilter(_logging.Filter):
+    """Filter which only allows event if top-level logging is not configured."""
+
+    def filter(self, record):
+        return 1 if not _logging.root.handlers else 0
 
 
-_logger = logging.getLogger("scape")
-_logger.addHandler(_NullHandler())
-# Set up basic logging if it hasn't been done yet, in order to display error messages and such
-logging.basicConfig(level=logging.DEBUG, stream=sys.stdout, format="%(levelname)s: %(message)s")
+_no_config_handler = _logging.StreamHandler()
+_no_config_handler.setFormatter(_logging.Formatter(_logging.BASIC_FORMAT))
+_no_config_handler.addFilter(_NoConfigFilter())
+logger = _logging.getLogger(__name__)
+logger.addHandler(_no_config_handler)
+logger.setLevel(_logging.DEBUG)
+
 
 # Most operations are directed through the data set
 from .dataset import DataSet  # noqa: E402,F401
@@ -27,7 +31,7 @@ def _module_found(name, message):
         __import__(name)
         return True
     except ImportError:
-        _logger.warn(message)
+        logger.warn(message)
         return False
 
 
@@ -42,8 +46,9 @@ if _module_found('matplotlib', 'Matplotlib was not found - plotting will be disa
                                plot_data_set_in_mount_space,  # noqa: F401
                                plot_measured_beam_pattern)  # noqa: F401
 
-# Check if pyfits is present, otherwise skip FITS creation routines
-if _module_found('pyfits', 'PyFITS was not found - FITS creation will be disabled'):
+# Check if astropy.io.fits is present, otherwise skip FITS creation routines
+if _module_found('astropy.io.fits',
+                 'astropy.io.fits was not found - FITS creation will be disabled'):
     from .plots_basic import save_fits_image  # noqa: F401
 
 # BEGIN VERSION CHECK
@@ -57,5 +62,3 @@ else:
     __version__ = _katversion.get_version(__path__[0])  # noqa: F821
 # END VERSION CHECK
 
-# Clean up module namespace to make it easier to spot the useful parts
-del logging, sys, _NullHandler, _module_found

@@ -16,7 +16,7 @@ import cPickle as pickle
 import re
 import os.path
 
-import pyfits
+from astropy.io import fits
 import numpy as np
 from katpoint import deg2rad, rad2deg, Target, Antenna, Catalogue
 
@@ -167,7 +167,7 @@ def load_xdm_noise_models(filename, feed_id=None):
     """
     # Open FITS file
     try:
-        hdu = pyfits.open(filename)
+        hdu = fits.open(filename)
     except (IOError, TypeError):
         msg = 'The FITS file (%s) cannot be read!' % filename
         logger.error(msg)
@@ -246,10 +246,10 @@ def load_scan(filename):
         If file would not open or is not a proper FITS file
 
     """
-    hdu = pyfits.open(filename)
+    hdu = fits.open(filename)
     try:
         hdu.verify(option='exception')
-    except pyfits.VerifyError:
+    except fits.VerifyError:
         hdu.close()
         raise IOError("File '%s' does not comply with FITS standard" % filename)
     header = hdu['PRIMARY'].header
