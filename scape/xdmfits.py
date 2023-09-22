@@ -277,7 +277,7 @@ def load_scan(filename):
                                  names=['az', 'el', 'rot'])
     # Move timestamps and pointing from start of each sample to the middle
     timestamps, pointing = move_start_to_center(timestamps, pointing, sample_period)
-    flags = np.rec.fromarrays([hdu['MSDATA'].data.field(s).astype(np.bool)
+    flags = np.rec.fromarrays([hdu['MSDATA'].data.field(s).astype(bool)
                                for s in ['Valid_F', 'ND_ON_F', 'RX_ON_F']],
                               names=['valid', 'nd_on', 'rx_on'])
     # The environmental variables are sampled when the FITS file is written to disk,

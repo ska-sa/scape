@@ -297,7 +297,7 @@ def chi2_conf_interval(dof, mean=1.0, sigma=3.0):
     if not np.isscalar(sigma):
         sigma = np.atleast_1d(np.asarray(sigma))
     # Ensure degrees of freedom is positive integer >= 1
-    dof = np.array(np.clip(np.floor(dof), 1.0, np.inf), dtype=np.int)
+    dof = np.array(np.clip(np.floor(dof), 1.0, np.inf), dtype=int)
     chi2_rv = stats.chi2(dof)
     normal_rv = stats.norm()
     # Translate normal conf interval to chi^2 distribution, maintaining the probability inside interval
