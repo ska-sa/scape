@@ -3,7 +3,7 @@
 
 import unittest
 import numpy as np
-import StringIO
+from io import StringIO
 
 from scape import gaincal
 
@@ -24,7 +24,7 @@ class NoiseDiodeModelTestCases(unittest.TestCase):
 # freq [Hz], T_nd [K]
 """
         self.file_data += '\n'.join(['%d, %.3f' % row for row in zip(self.freq, self.temp)])
-        self.csv_file = StringIO.StringIO(self.file_data)
+        self.csv_file = StringIO(self.file_data)
 
     def test_load_nd_model(self):
         nd = gaincal.NoiseDiodeModel(self.csv_file)
