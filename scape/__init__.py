@@ -31,7 +31,7 @@ def _module_found(name, message):
         __import__(name)
         return True
     except ImportError:
-        logger.warn(message)
+        logger.warning(message)
         return False
 
 

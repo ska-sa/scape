@@ -519,7 +519,7 @@ class DataSet(object):
                 scan.pointing = view.view(scan.pointing.dtype).squeeze()
                 # All flags in a window are OR'ed together to form the 'average'
                 num_fields = len(scan.flags.dtype.names)
-                view = scan.flags.view(dtype=np.bool).reshape((num_samples, num_fields))
+                view = scan.flags.view(dtype=bool).reshape((num_samples, num_fields))
                 view = (view[:cutoff, :].reshape((new_len, window, num_fields)).sum(axis=1) > 0)
                 scan.flags = view.view(scan.flags.dtype).squeeze()
                 if scan.target_coords is not None:
