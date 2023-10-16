@@ -1101,8 +1101,9 @@ def plot_compound_scan_on_target(compscan, pol='absI', subtract_baseline=True, l
     # Extract total power and target coordinates (in degrees) of all scans (or those with baselines)
     if subtract_baseline:
         compscan_power = np.hstack([remove_spikes(np.abs(scan.pol(pol)[:, band]), spike_width=spike_width) -
-                                    scan.baseline(scan.timestamps) for scan in compscan.scans if scan.baseline])
-        target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans if scan.baseline]))
+                                    (scan.baseline(scan.timestamps) if scan.baseline else compscan.baseline(scan.target_coords))
+                                    for scan in compscan.scans if (scan.baseline or compscan.baseline)])
+        target_coords = rad2deg(np.hstack([scan.target_coords for scan in compscan.scans if (scan.baseline or compscan.baseline)]))
     else:
         compscan_power = np.hstack([remove_spikes(np.abs(scan.pol(pol)[:, band]), spike_width=spike_width)
                                     for scan in compscan.scans])
